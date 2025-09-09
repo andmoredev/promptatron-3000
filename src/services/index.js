@@ -1,0 +1,1 @@
+export { bedrockService, BedrockService } from './bedrockService.js';

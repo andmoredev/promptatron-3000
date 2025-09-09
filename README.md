@@ -76,16 +76,60 @@ datasets/
 
 ## AWS Configuration
 
-Ensure your AWS credentials are configured with access to Bedrock:
+### Quick Setup (Recommended)
 
+**Using the local-setup.sh script (Best for SSO users):**
 ```bash
-aws configure
-# or use AWS CLI profiles, environment variables, or IAM roles
+# Run the setup script to configure SSO credentials
+./local-setup.sh
+
+# Then start the development server
+npm run dev
+
+# Or do both in one command
+npm run dev:local
 ```
 
-Required permissions:
+**Manual Setup:**
+```bash
+# Create .env.local file with your credentials
+echo "VITE_AWS_REGION=us-east-1" > .env.local
+echo "VITE_AWS_ACCESS_KEY_ID=your_key" >> .env.local
+echo "VITE_AWS_SECRET_ACCESS_KEY=your_secret" >> .env.local
+echo "VITE_AWS_SESSION_TOKEN=your_token" >> .env.local  # if using temporary credentials
+```
+
+### How it Works
+
+1. **local-setup.sh** extracts credentials from your AWS SSO session
+2. Sets both terminal environment variables (`AWS_*`) and creates `.env.local` with Vite variables (`VITE_AWS_*`)
+3. The React app reads the `VITE_AWS_*` variables from `.env.local` to authenticate with Bedrock
+4. Credentials are temporary and will expire with your SSO session
+
+**Note**: After running `./local-setup.sh`, you should see a `.env.local` file created in your project root with your credentials.
+
+### Required AWS Permissions
+
+Your AWS credentials need:
 - `bedrock:ListFoundationModels`
 - `bedrock:InvokeModel`
+
+### Troubleshooting
+
+**Check if credentials are loaded:**
+```bash
+# After running local-setup.sh, verify the .env.local file exists
+ls -la .env.local
+
+# Check the contents (be careful - contains sensitive data)
+head .env.local
+```
+
+**Common issues:**
+- **No .env.local file**: Make sure `./local-setup.sh` runs without errors
+- **Access denied**: Ensure your AWS account has Bedrock enabled and proper permissions
+- **Region issues**: Bedrock is available in limited regions (us-east-1, us-west-2, etc.)
+- **Credentials expired**: Re-run `./local-setup.sh` to refresh SSO credentials
 
 ## Technology Stack
 

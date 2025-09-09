@@ -6,12 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "setup-local": "./local-setup.sh",
+    "dev:local": "./local-setup.sh && npm run dev"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock": "^3.883.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "@aws-sdk/client-bedrock-runtime": "^3.0.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

@@ -1,6 +1,7 @@
 # Implementation Plan
 
 - [x] 1. Set up React project structure and core components
+
   - Create React 19 application with proper project structure (src/, public/, components/)
   - Set up Tailwind CSS integration for modern, professional styling
   - Create main App.jsx component with state management for the test harness
@@ -8,38 +9,37 @@
   - Implement beautiful, responsive layout with Tailwind utility classes
   - _Requirements: 6.1, 6.3_
 
-- [ ] 2. Implement dataset discovery and loading functionality
-  - [ ] 2.1 Create DatasetSelector React component
+- [x] 2. Integrate AWS Bedrock SDK and implement model loading
+
+  - Create BedrockService class with AWS SDK for JavaScript v3 integration
+  - Implement AWS credential detection and validation functionality
+  - Add ListFoundationModels API integration to load available models dynamically
+  - Update ModelSelector component to use real Bedrock API instead of hardcoded models
+  - Implement proper error handling for credential and authentication issues
+  - Add loading states and user feedback for model discovery
+  - _Requirements: 1.1, 1.2, 3.4, 6.2_
+
+- [ ] 3. Implement dataset discovery and loading functionality
+
+  - [ ] 3.1 Create DatasetSelector React component
+
     - Build React component with state management for dataset types and options
     - Implement dynamic loading of dataset types from folder names using fetch API
     - Create error handling for missing or inaccessible dataset directories
     - Add proper loading states and user feedback
     - _Requirements: 2.1_
 
-  - [ ] 2.2 Implement dataset option loading in DatasetSelector
+  - [ ] 3.2 Implement dataset option loading in DatasetSelector
     - Add functionality to load available dataset files for a selected type
     - Create dataset content loading functionality from JSON files
     - Implement validation for dataset file format and content
     - Add React state management for selected datasets
     - _Requirements: 2.2, 2.3_
 
-- [ ] 3. Integrate AWS Bedrock SDK and model management
-  - [ ] 3.1 Create BedrockService class for AWS integration
-    - Create bedrockService.js with AWS SDK for JavaScript v3 integration
-    - Implement credential detection and validation functionality
-    - Create error handling for credential and authentication issues
-    - Add service methods for model listing and invocation
-    - _Requirements: 3.4, 6.2_
-
-  - [ ] 3.2 Build ModelSelector React component
-    - Create React component that uses BedrockService to list available models
-    - Implement model selection UI with proper model information display
-    - Add loading states and error handling for model access failures
-    - Integrate with main App component state management
-    - _Requirements: 1.1, 1.2_
-
 - [ ] 4. Build core testing functionality
+
   - [ ] 4.1 Create PromptEditor and TestResults React components
+
     - Build PromptEditor component with textarea and validation
     - Create TestResults component for displaying LLM responses
     - Implement test execution logic that combines prompt with dataset content
@@ -54,7 +54,9 @@
     - _Requirements: 1.3, 3.4_
 
 - [ ] 5. Implement local storage and history management
+
   - [ ] 5.1 Create FileService for JSON file operations
+
     - Create fileService.js with functions to read and write history.json file
     - Implement test result saving functionality with proper data structure
     - Create error handling for file system access issues
@@ -62,6 +64,7 @@
     - _Requirements: 4.1_
 
   - [ ] 5.2 Build History React component
+
     - Create History component with state management for test history
     - Implement history listing UI with timestamps and test details
     - Add detailed history view showing complete test information
@@ -76,7 +79,9 @@
     - _Requirements: 4.4_
 
 - [ ] 6. Build template management system
+
   - [ ] 6.1 Create template saving functionality in React
+
     - Add template saving functions to FileService for templates.json management
     - Create template saving dialog/modal React component
     - Implement template naming and description interface with React forms
@@ -91,7 +96,9 @@
     - _Requirements: 7.2, 7.3, 7.4_
 
 - [ ] 7. Enhance user interface and experience
+
   - [ ] 7.1 Enhance TestResults component with advanced formatting
+
     - Improve TestResults component with proper typography and spacing for LLM responses
     - Implement structured data presentation for organized responses using React
     - Add scrolling and layout management for lengthy responses with Tailwind CSS
@@ -106,6 +113,7 @@
     - _Requirements: 5.4_
 
 - [ ] 8. Implement comprehensive error handling and validation
+
   - Add React form validation for all input fields with real-time feedback
   - Implement comprehensive AWS error handling with user-friendly error components
   - Create file system error handling with fallback options in FileService
@@ -114,7 +122,9 @@
   - _Requirements: 1.3, 3.4, 6.4_
 
 - [ ] 9. Add final polish and documentation
+
   - [ ] 9.1 Create documentation and setup instructions
+
     - Write basic usage documentation and React setup instructions
     - Add inline help tooltips and guidance components using React
     - Create README with React development and build instructions
