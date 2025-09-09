@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { bedrockService } from '../services/bedrockService'
 
-const ModelSelector = ({ selectedModel, onModelSelect }) => {
+const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
   const [models, setModels] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
   const [credentialStatus, setCredentialStatus] = useState(null)
+  const [modelValidation, setModelValidation] = useState({})
+  const [isValidatingModel, setIsValidatingModel] = useState(false)
 
   // Fallback models in case AWS API is not available
   const fallbackModels = [
@@ -133,7 +135,9 @@ const ModelSelector = ({ selectedModel, onModelSelect }) => {
           id="model-select"
           value={selectedModel}
           onChange={(e) => onModelSelect(e.target.value)}
-          className="select-field"
+          className={`select-field ${
+            validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+          }`}
           disabled={isLoading}
         >
           <option value="">Choose a model...</option>
@@ -144,6 +148,11 @@ const ModelSelector = ({ selectedModel, onModelSelect }) => {
           ))}
         </select>
       </div>
+
+      {/* Validation Error */}
+      {validationError && (
+        <p className="mt-1 text-sm text-red-600">{validationError}</p>
+      )}
 
       {/* Model Count Info */}
       {!isLoading && models.length > 0 && (

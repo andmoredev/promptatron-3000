@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
+const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) => {
   const [datasetTypes, setDatasetTypes] = useState([])
   const [datasetOptions, setDatasetOptions] = useState([])
   const [isLoadingTypes, setIsLoadingTypes] = useState(false)
@@ -162,7 +162,9 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
             id="dataset-type"
             value={selectedDataset.type}
             onChange={(e) => handleTypeChange(e.target.value)}
-            className="select-field"
+            className={`select-field ${
+              validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+            }`}
             disabled={isLoadingTypes}
           >
             <option value="">
@@ -195,7 +197,9 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
               id="dataset-option"
               value={selectedDataset.option}
               onChange={(e) => handleOptionChange(e.target.value)}
-              className="select-field"
+              className={`select-field ${
+                validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+              }`}
               disabled={isLoadingOptions}
             >
               <option value="">
@@ -216,6 +220,11 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
           </div>
         )}
       </div>
+
+      {/* Validation Error */}
+      {validationError && (
+        <p className="mt-1 text-sm text-red-600">{validationError}</p>
+      )}
 
       {/* Dataset Preview */}
       {selectedDataset.type && selectedDataset.option && (

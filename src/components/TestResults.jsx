@@ -104,9 +104,19 @@ const TestResults = ({ results, isLoading }) => {
 
       {/* Response Stats */}
       <div className="mt-4 pt-3 border-t border-gray-200">
-        <div className="flex justify-between items-center text-sm text-gray-500">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-500">
           <span>Response length: {results.response.length} characters</span>
           <span>Word count: ~{results.response.split(/\s+/).length} words</span>
+          {results.usage && (
+            <>
+              {results.usage.input_tokens && (
+                <span>Input tokens: {results.usage.input_tokens}</span>
+              )}
+              {results.usage.output_tokens && (
+                <span>Output tokens: {results.usage.output_tokens}</span>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>

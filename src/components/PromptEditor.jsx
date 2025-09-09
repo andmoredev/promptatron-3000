@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 
-const PromptEditor = ({ prompt, onPromptChange }) => {
+const PromptEditor = ({ prompt, onPromptChange, validationError }) => {
   const [isExpanded, setIsExpanded] = useState(false)
 
   const promptTemplates = [
@@ -82,8 +82,13 @@ const PromptEditor = ({ prompt, onPromptChange }) => {
           placeholder="Enter your prompt here. The selected dataset will be automatically appended to your prompt when the test runs."
           className={`input-field resize-none ${
             isExpanded ? 'h-64' : 'h-32'
-          } transition-all duration-200`}
+          } transition-all duration-200 ${
+            validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+          }`}
         />
+        {validationError && (
+          <p className="mt-1 text-sm text-red-600">{validationError}</p>
+        )}
         <div className="flex justify-between items-center text-sm text-gray-500">
           <span>{prompt.length} characters</span>
           <span>Dataset content will be appended automatically</span>
