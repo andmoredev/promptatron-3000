@@ -1,0 +1,6 @@
+{
+  "types": [
+    "enterprise-fraud"
+  ],
+  "description": "Available dataset types for the Bedrock LLM Analyzer"
+}

@@ -19,9 +19,9 @@
   - Add loading states and user feedback for model discovery
   - _Requirements: 1.1, 1.2, 3.4, 6.2_
 
-- [ ] 3. Implement dataset discovery and loading functionality
+- [x] 3. Implement dataset discovery and loading functionality
 
-  - [ ] 3.1 Create DatasetSelector React component
+  - [x] 3.1 Create DatasetSelector React component
 
     - Build React component with state management for dataset types and options
     - Implement dynamic loading of dataset types from folder names using fetch API
@@ -29,7 +29,7 @@
     - Add proper loading states and user feedback
     - _Requirements: 2.1_
 
-  - [ ] 3.2 Implement dataset option loading in DatasetSelector
+  - [x] 3.2 Implement dataset option loading in DatasetSelector
     - Add functionality to load available dataset files for a selected type
     - Create dataset content loading functionality from JSON files
     - Implement validation for dataset file format and content

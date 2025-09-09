@@ -1,0 +1,10 @@
+{
+  "name": "Enterprise Fraud Detection",
+  "description": "Transaction data for fraud detection analysis",
+  "files": [
+    "international.csv",
+    "mixed.csv",
+    "retail.csv",
+    "sample.json"
+  ]
+}

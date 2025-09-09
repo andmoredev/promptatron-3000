@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 
 const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
   const [datasetTypes, setDatasetTypes] = useState([])
@@ -6,13 +6,6 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
   const [isLoadingTypes, setIsLoadingTypes] = useState(false)
   const [isLoadingOptions, setIsLoadingOptions] = useState(false)
   const [error, setError] = useState(null)
-
-  // Placeholder dataset structure - will be replaced with actual file system scanning
-  const placeholderDatasets = {
-    'enterprise-fraud': ['international.csv', 'mixed.csv', 'retail.csv'],
-    'customer-support': ['tickets.json', 'responses.json'],
-    'content-analysis': ['articles.json', 'reviews.json']
-  }
 
   useEffect(() => {
     loadDatasetTypes()
@@ -31,12 +24,26 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
     setError(null)
 
     try {
-      // TODO: Replace with actual directory scanning in later tasks
-      await new Promise(resolve => setTimeout(resolve, 300))
-      setDatasetTypes(Object.keys(placeholderDatasets))
+      const manifestResponse = await fetch('/datasets/manifest.json')
+      if (!manifestResponse.ok) {
+        throw new Error(`Failed to load dataset manifest: ${manifestResponse.status}. Please ensure /datasets/manifest.json exists.`)
+      }
+
+      const manifest = await manifestResponse.json()
+      if (!manifest.types || !Array.isArray(manifest.types)) {
+        throw new Error('Invalid manifest format: expected "types" array in /datasets/manifest.json')
+      }
+
+      if (manifest.types.length === 0) {
+        throw new Error('No dataset types found in manifest.json')
+      }
+
+      const sortedTypes = [...manifest.types].sort()
+      setDatasetTypes(sortedTypes)
     } catch (err) {
-      setError('Failed to load dataset types')
-      setDatasetTypes(Object.keys(placeholderDatasets))
+      console.error('Error loading dataset types:', err)
+      setError(`Failed to load dataset types: ${err.message}`)
+      setDatasetTypes([])
     } finally {
       setIsLoadingTypes(false)
     }
@@ -47,12 +54,35 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
     setError(null)
 
     try {
-      // TODO: Replace with actual file scanning in later tasks
-      await new Promise(resolve => setTimeout(resolve, 200))
-      setDatasetOptions(placeholderDatasets[type] || [])
+      const manifestResponse = await fetch(`/datasets/${type}/manifest.json`)
+      if (!manifestResponse.ok) {
+        throw new Error(`Failed to load dataset manifest: ${manifestResponse.status}. Please ensure /datasets/${type}/manifest.json exists.`)
+      }
+
+      const manifest = await manifestResponse.json()
+      if (!manifest.files || !Array.isArray(manifest.files)) {
+        throw new Error(`Invalid manifest format: expected "files" array in /datasets/${type}/manifest.json`)
+      }
+
+      if (manifest.files.length === 0) {
+        throw new Error(`No dataset files found in ${type}/manifest.json`)
+      }
+
+      // Filter for supported file types and sort
+      const supportedOptions = manifest.files.filter(file =>
+        file.endsWith('.json') || file.endsWith('.csv')
+      )
+
+      if (supportedOptions.length === 0) {
+        throw new Error(`No supported dataset files (.json, .csv) found in ${type}/manifest.json`)
+      }
+
+      const sortedOptions = [...supportedOptions].sort()
+      setDatasetOptions(sortedOptions)
     } catch (err) {
-      setError('Failed to load dataset options')
-      setDatasetOptions(placeholderDatasets[type] || [])
+      console.error('Error loading dataset options:', err)
+      setError(`Failed to load dataset options: ${err.message}`)
+      setDatasetOptions([])
     } finally {
       setIsLoadingOptions(false)
     }
@@ -75,10 +105,34 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
 
     if (option) {
       try {
-        // TODO: Replace with actual file loading in later tasks
-        newDataset.content = `Sample content for ${selectedDataset.type}/${option}`
+        // Load actual dataset content from file
+        const response = await fetch(`/datasets/${selectedDataset.type}/${option}`)
+        if (!response.ok) {
+          throw new Error(`Failed to load dataset file: ${response.status}`)
+        }
+
+        let content
+        if (option.endsWith('.json')) {
+          // Parse JSON files and validate format
+          const jsonData = await response.json()
+          if (typeof jsonData !== 'object') {
+            throw new Error('Invalid JSON format: expected object or array')
+          }
+          content = JSON.stringify(jsonData, null, 2)
+        } else if (option.endsWith('.csv')) {
+          // Load CSV files as text
+          content = await response.text()
+          if (!content.trim()) {
+            throw new Error('CSV file is empty')
+          }
+        } else {
+          throw new Error('Unsupported file format')
+        }
+
+        newDataset.content = content
       } catch (err) {
-        setError('Failed to load dataset content')
+        console.error('Error loading dataset content:', err)
+        setError(`Failed to load dataset content: ${err.message}`)
       }
     }
 
@@ -100,6 +154,9 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
         <div>
           <label htmlFor="dataset-type" className="block text-sm font-medium text-gray-700 mb-2">
             Dataset Type
+            {isLoadingTypes && (
+              <span className="ml-2 text-xs text-blue-600">Loading types...</span>
+            )}
           </label>
           <select
             id="dataset-type"
@@ -108,13 +165,21 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
             className="select-field"
             disabled={isLoadingTypes}
           >
-            <option value="">Choose a dataset type...</option>
+            <option value="">
+              {isLoadingTypes ? 'Loading dataset types...' : 'Choose a dataset type...'}
+            </option>
             {datasetTypes.map((type) => (
               <option key={type} value={type}>
                 {type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
               </option>
             ))}
           </select>
+          {isLoadingTypes && (
+            <div className="mt-2 flex items-center text-sm text-blue-600">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+              Scanning datasets directory...
+            </div>
+          )}
         </div>
 
         {/* Dataset Option Selection */}
@@ -122,6 +187,9 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
           <div>
             <label htmlFor="dataset-option" className="block text-sm font-medium text-gray-700 mb-2">
               Dataset File
+              {isLoadingOptions && (
+                <span className="ml-2 text-xs text-blue-600">Loading files...</span>
+              )}
             </label>
             <select
               id="dataset-option"
@@ -130,7 +198,9 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
               className="select-field"
               disabled={isLoadingOptions}
             >
-              <option value="">Choose a dataset file...</option>
+              <option value="">
+                {isLoadingOptions ? 'Loading dataset files...' : 'Choose a dataset file...'}
+              </option>
               {datasetOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
@@ -138,7 +208,10 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect }) => {
               ))}
             </select>
             {isLoadingOptions && (
-              <p className="text-sm text-gray-500 mt-1">Loading options...</p>
+              <div className="mt-2 flex items-center text-sm text-blue-600">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                Scanning {selectedDataset.type} directory...
+              </div>
             )}
           </div>
         )}
