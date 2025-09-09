@@ -78,26 +78,9 @@
     - Integrate with main App component for seamless rerun experience
     - _Requirements: 4.4_
 
-- [ ] 6. Build template management system
+- [ ] 6. Enhance user interface and experience
 
-  - [ ] 6.1 Create template saving functionality in React
-
-    - Add template saving functions to FileService for templates.json management
-    - Create template saving dialog/modal React component
-    - Implement template naming and description interface with React forms
-    - Add template saving integration to main App component
-    - _Requirements: 7.1_
-
-  - [ ] 6.2 Build Templates React component for management
-    - Create Templates component with state management for saved templates
-    - Implement template listing UI with descriptive information and actions
-    - Add template loading functionality that populates main app form fields
-    - Implement template editing and updating capabilities with React modals
-    - _Requirements: 7.2, 7.3, 7.4_
-
-- [ ] 7. Enhance user interface and experience
-
-  - [ ] 7.1 Enhance TestResults component with advanced formatting
+  - [ ] 6.1 Enhance TestResults component with advanced formatting
 
     - Improve TestResults component with proper typography and spacing for LLM responses
     - Implement structured data presentation for organized responses using React
@@ -105,14 +88,14 @@
     - Create syntax highlighting and markdown rendering for formatted responses
     - _Requirements: 5.1, 5.2, 5.3_
 
-  - [ ] 7.2 Build Comparison React component
+  - [ ] 6.2 Build Comparison React component
     - Create Comparison component for side-by-side test result viewing
     - Implement comparison selection from history with React state management
     - Add visual indicators for differences and similarities using Tailwind CSS
     - Integrate comparison functionality with History component
     - _Requirements: 5.4_
 
-- [ ] 8. Implement comprehensive error handling and validation
+- [ ] 7. Implement comprehensive error handling and validation
 
   - Add React form validation for all input fields with real-time feedback
   - Implement comprehensive AWS error handling with user-friendly error components
@@ -121,9 +104,9 @@
   - Implement global error boundary component for React error handling
   - _Requirements: 1.3, 3.4, 6.4_
 
-- [ ] 9. Add final polish and documentation
+- [ ] 8. Add final polish and documentation
 
-  - [ ] 9.1 Create documentation and setup instructions
+  - [ ] 8.1 Create documentation and setup instructions
 
     - Write basic usage documentation and React setup instructions
     - Add inline help tooltips and guidance components using React
@@ -131,7 +114,7 @@
     - Document the expected dataset structure for users to add their own datasets
     - _Requirements: 6.3_
 
-  - [ ] 9.2 Implement final UI enhancements
+  - [ ] 8.2 Implement final UI enhancements
     - Add loading spinners and progress feedback components during API calls
     - Create keyboard shortcuts for common actions using React hooks
     - Implement responsive design and mobile compatibility with Tailwind

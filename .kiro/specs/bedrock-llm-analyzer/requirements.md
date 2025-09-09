@@ -71,13 +71,3 @@ This feature involves creating a local web application that serves as a test har
 3. WHEN I access the application THEN the system SHALL provide a clean, intuitive user interface optimized for testing workflows
 4. IF the application encounters errors THEN the system SHALL display helpful error messages without crashing
 
-### Requirement 7
-
-**User Story:** As a developer/researcher, I want to save and load test configurations, so that I can quickly iterate on promising prompt, model, and dataset combinations.
-
-#### Acceptance Criteria
-
-1. WHEN I create a successful test configuration THEN the system SHALL allow me to save it as a template including the prompt, model, and dataset selection
-2. WHEN I access saved templates THEN the system SHALL display all saved configurations with descriptive names and dataset information
-3. WHEN I load a template THEN the system SHALL populate the prompt, model selection, and dataset selection fields
-4. WHEN I modify a loaded template THEN the system SHALL allow me to save it as a new template or update the existing one

@@ -4,7 +4,7 @@
 
 The Bedrock LLM Test Harness is a simple browser-based application that provides an intuitive interface for experimenting with AWS Bedrock foundation models. The application runs entirely in the browser using the AWS SDK for JavaScript, with local file storage for persistence.
 
-The system enables users to quickly test different model and prompt combinations, compare results across multiple configurations, save successful templates for reuse, and maintain a history of experiments. All operations are performed client-side with secure local AWS credential integration.
+The system enables users to quickly test different model and prompt combinations, compare results across multiple configurations, and maintain a history of experiments. All operations are performed client-side with secure local AWS credential integration.
 
 ## Architecture
 
@@ -15,14 +15,14 @@ graph TB
     A[Web Browser] --> B[AWS SDK for JavaScript]
     A --> C[Local File System]
     B --> D[AWS Bedrock API]
-    C --> E[JSON Files for History/Templates]
+    C --> E[JSON Files for History]
 ```
 
 ### Component Overview
 
 - **Frontend**: Single-page web application built with HTML, CSS, and JavaScript
 - **AWS SDK**: AWS SDK for JavaScript (v3) for Bedrock integration
-- **File Storage**: Local JSON files for history and template persistence
+- **File Storage**: Local JSON files for history persistence
 - **Credential Management**: Uses local AWS credentials via browser environment
 
 ## Components and Interfaces
@@ -39,7 +39,6 @@ graph TB
 - Test Execution Button
 - Results Display Area
 - History Navigation Panel
-- Template Management Interface
 - Side-by-side Comparison View
 
 **Features**:
@@ -103,8 +102,7 @@ bedrock-test-harness/
 │   ├── App.jsx
 │   └── index.js
 ├── data/
-│   ├── history.json
-│   └── templates.json
+│   └── history.json
 └── datasets/
     └── enterprise-fraud/
         ├── dataset1.json
@@ -114,14 +112,11 @@ bedrock-test-harness/
 
 **Data Files**:
 - `history.json`: Array of test results
-- `templates.json`: Array of saved templates
 - `datasets/`: Directory structure for different use cases and datasets
 
 **Key Functions**:
 - `loadHistory()`: Read test history from JSON file
 - `saveTest(testResult)`: Append new test to history
-- `loadTemplates()`: Read saved templates
-- `saveTemplate(template)`: Save new template
 - `loadDatasetTypes()`: Scan datasets directory for available use case folders
 - `loadDatasetOptions(type)`: Load available datasets for a specific use case
 - `loadDataset(type, option)`: Load specific dataset content
@@ -157,22 +152,7 @@ bedrock-test-harness/
 ]
 ```
 
-### Templates File (templates.json)
-```json
-[
-  {
-    "id": "uuid-string",
-    "name": "Template Name",
-    "description": "Template description",
-    "modelId": "amazon.nova-pro-v1:0",
-    "prompt": "template-prompt",
-    "datasetType": "enterprise-fraud",
-    "datasetOption": "dataset1.json",
-    "tags": ["tag1", "tag2"],
-    "createdAt": "2025-01-09T10:30:00Z"
-  }
-]
-```
+
 
 ### Dataset Structure
 ```
@@ -272,7 +252,7 @@ export class BedrockService {
 - **Browser Compatibility**: Test across different browsers
 
 ### Test Data
-- Sample prompt templates for different use cases
+- Sample prompts for different use cases
 - Mock AWS Bedrock responses for different models
 - Edge case scenarios (empty inputs, malformed JSON, etc.)
 
@@ -288,7 +268,7 @@ export class BedrockService {
 - Process all test data locally without external transmission beyond AWS Bedrock API
 - Sanitize sensitive information in logs and error messages
 - Provide clear data usage disclosure to users
-- Allow users to clear history and templates for privacy
+- Allow users to clear history for privacy
 
 ### Browser Security
 - Input validation and sanitization
@@ -305,7 +285,6 @@ export class BedrockService {
 ### Resource Management
 - Efficient memory usage for large input datasets
 - Cleanup of old test data from JSON files
-- Template storage optimization
 - Browser memory management for large histories
 
 ### Scalability
