@@ -12,7 +12,7 @@ build/
 .env
 .env.local
 .env.development.local
-.env.test.local
+
 .env.production.local
 
 # IDE files
@@ -35,8 +35,7 @@ pids/
 *.seed
 *.pid.lock
 
-# Coverage directory used by tools like istanbul
-coverage/
+
 
 # Local data files
 data/

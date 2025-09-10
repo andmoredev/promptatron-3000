@@ -32,7 +32,7 @@
   - Write unit tests for expression changes and theme application
   - _Requirements: 1.1, 1.2, 2.1, 2.4_
 
-- [ ] 5. Add CSS animations and transitions
+- [x] 5. Add CSS animations and transitions
 
   - Implement smooth transitions between facial expressions
   - Create micro-animations for idle state (blinking, breathing)

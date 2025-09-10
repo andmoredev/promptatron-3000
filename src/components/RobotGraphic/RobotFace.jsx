@@ -186,26 +186,58 @@ const renderThinkingExpression = (scale, animated, colors) => (
       className="robot-mouth robot-mouth-thinking"
     />
 
-    {/* Thinking indicators - gears/dots */}
+    {/* Thinking indicators - gears and dots */}
     <g className="robot-thinking-indicators">
+      {/* Rotating gears */}
+      <g className={animated ? "robot-gear robot-gear-rotate" : "robot-gear"}>
+        <circle
+          cx="75"
+          cy="25"
+          r="4"
+          fill="none"
+          stroke={colors.thinkingMouth}
+          strokeWidth="1"
+        />
+        <circle cx="73" cy="23" r="0.5" fill={colors.thinkingMouth} />
+        <circle cx="77" cy="23" r="0.5" fill={colors.thinkingMouth} />
+        <circle cx="77" cy="27" r="0.5" fill={colors.thinkingMouth} />
+        <circle cx="73" cy="27" r="0.5" fill={colors.thinkingMouth} />
+      </g>
+
+      <g className={animated ? "robot-gear robot-gear-rotate-reverse" : "robot-gear"}>
+        <circle
+          cx="82"
+          cy="32"
+          r="3"
+          fill="none"
+          stroke={colors.thinkingSecondary || '#f59e0b'}
+          strokeWidth="0.8"
+        />
+        <circle cx="81" cy="30.5" r="0.3" fill={colors.thinkingSecondary || '#f59e0b'} />
+        <circle cx="83" cy="30.5" r="0.3" fill={colors.thinkingSecondary || '#f59e0b'} />
+        <circle cx="83" cy="33.5" r="0.3" fill={colors.thinkingSecondary || '#f59e0b'} />
+        <circle cx="81" cy="33.5" r="0.3" fill={colors.thinkingSecondary || '#f59e0b'} />
+      </g>
+
+      {/* Pulsing thought dots */}
       <circle
-        cx="75"
-        cy="25"
-        r="2"
+        cx="70"
+        cy="20"
+        r="1"
         fill={colors.thinkingMouth}
         className={animated ? "robot-thinking-dot robot-thinking-pulse" : "robot-thinking-dot"}
       />
       <circle
-        cx="82"
-        cy="30"
-        r="1.5"
+        cx="85"
+        cy="25"
+        r="0.8"
         fill={colors.thinkingSecondary || '#f59e0b'}
         className={animated ? "robot-thinking-dot robot-thinking-pulse-delayed" : "robot-thinking-dot"}
       />
       <circle
         cx="78"
-        cy="35"
-        r="1"
+        cy="38"
+        r="0.6"
         fill={colors.thinkingTertiary || '#fbbf24'}
         className={animated ? "robot-thinking-dot robot-thinking-pulse-delayed-2" : "robot-thinking-dot"}
       />

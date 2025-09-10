@@ -3,13 +3,28 @@
  * Provides smooth transitions and micro-animations for different robot expressions
  */
 
-/* Base animation styles */
+/* Base animation styles with performance optimizations */
 .robot-face-svg {
   transition: all 300ms ease-in-out;
+  will-change: auto;
 }
 
 .robot-animated .robot-head {
   transition: fill 300ms ease-in-out;
+  will-change: fill;
+}
+
+/* Performance optimization for animated elements */
+.robot-animated .robot-eye-blink,
+.robot-animated .robot-thinking-pulse,
+.robot-animated .robot-gear-rotate,
+.robot-animated .robot-gear-rotate-reverse,
+.robot-animated .robot-mouth-animate,
+.robot-animated .robot-speech-wave-1,
+.robot-animated .robot-speech-wave-2,
+.robot-animated .robot-speech-wave-3,
+.robot-animated .robot-error-pulse {
+  will-change: transform, opacity;
 }
 
 /* Eye blinking animation */
@@ -51,6 +66,26 @@
 .robot-thinking-pulse-delayed-2 {
   animation: robot-thinking-pulse 1.5s infinite ease-in-out;
   animation-delay: 0.6s;
+}
+
+/* Rotating gear animation for thinking state */
+@keyframes robot-gear-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.robot-gear-rotate {
+  animation: robot-gear-rotate 3s linear infinite;
+  transform-origin: center;
+}
+
+.robot-gear-rotate-reverse {
+  animation: robot-gear-rotate 4s linear infinite reverse;
+  transform-origin: center;
 }
 
 /* Talking animations */
@@ -151,12 +186,44 @@
   transform-origin: center;
 }
 
+/* Enhanced animation timing functions for smoother motion */
+.robot-eye-blink {
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.robot-thinking-pulse,
+.robot-thinking-pulse-delayed,
+.robot-thinking-pulse-delayed-2 {
+  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.robot-gear-rotate,
+.robot-gear-rotate-reverse {
+  animation-timing-function: linear;
+}
+
+.robot-mouth-animate {
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.robot-speech-wave-1,
+.robot-speech-wave-2,
+.robot-speech-wave-3 {
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.robot-error-pulse {
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 /* Accessibility: Respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
   .robot-eye-blink,
   .robot-thinking-pulse,
   .robot-thinking-pulse-delayed,
   .robot-thinking-pulse-delayed-2,
+  .robot-gear-rotate,
+  .robot-gear-rotate-reverse,
   .robot-mouth-animate,
   .robot-speech-wave-1,
   .robot-speech-wave-2,
@@ -169,6 +236,19 @@
   .robot-face-svg,
   .robot-animated .robot-head {
     transition: none;
+  }
+
+  /* Remove will-change for reduced motion */
+  .robot-animated .robot-eye-blink,
+  .robot-animated .robot-thinking-pulse,
+  .robot-animated .robot-gear-rotate,
+  .robot-animated .robot-gear-rotate-reverse,
+  .robot-animated .robot-mouth-animate,
+  .robot-animated .robot-speech-wave-1,
+  .robot-animated .robot-speech-wave-2,
+  .robot-animated .robot-speech-wave-3,
+  .robot-animated .robot-error-pulse {
+    will-change: auto;
   }
 }
 
