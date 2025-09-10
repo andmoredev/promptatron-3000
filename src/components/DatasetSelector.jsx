@@ -21,6 +21,13 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
     }
   }, [selectedDataset.type])
 
+  // Auto-load content when dataset is set from history (type and option exist but content is null)
+  useEffect(() => {
+    if (selectedDataset.type && selectedDataset.option && selectedDataset.content === null) {
+      loadDatasetContent(selectedDataset.type, selectedDataset.option)
+    }
+  }, [selectedDataset.type, selectedDataset.option, selectedDataset.content])
+
   const loadDatasetTypes = async () => {
     setIsLoadingTypes(true)
     setError(null)
@@ -98,6 +105,49 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
     })
   }
 
+  const loadDatasetContent = async (type, option) => {
+    if (!type || !option) return null
+
+    try {
+      // Load actual dataset content from file
+      const response = await fetch(`/datasets/${type}/${option}`)
+      if (!response.ok) {
+        throw new Error(`Failed to load dataset file: ${response.status}`)
+      }
+
+      let content
+      if (option.endsWith('.json')) {
+        // Parse JSON files and validate format
+        const jsonData = await response.json()
+        if (typeof jsonData !== 'object') {
+          throw new Error('Invalid JSON format: expected object or array')
+        }
+        content = JSON.stringify(jsonData, null, 2)
+      } else if (option.endsWith('.csv')) {
+        // Load CSV files as text
+        content = await response.text()
+        if (!content.trim()) {
+          throw new Error('CSV file is empty')
+        }
+      } else {
+        throw new Error('Unsupported file format')
+      }
+
+      // Update the dataset with loaded content
+      onDatasetSelect({
+        type: type,
+        option: option,
+        content: content
+      })
+
+      return content
+    } catch (err) {
+      console.error('Error loading dataset content:', err)
+      setError(`Failed to load dataset content: ${err.message}`)
+      return null
+    }
+  }
+
   const handleOptionChange = async (option) => {
     const newDataset = {
       type: selectedDataset.type,
@@ -106,39 +156,10 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
     }
 
     if (option) {
-      try {
-        // Load actual dataset content from file
-        const response = await fetch(`/datasets/${selectedDataset.type}/${option}`)
-        if (!response.ok) {
-          throw new Error(`Failed to load dataset file: ${response.status}`)
-        }
-
-        let content
-        if (option.endsWith('.json')) {
-          // Parse JSON files and validate format
-          const jsonData = await response.json()
-          if (typeof jsonData !== 'object') {
-            throw new Error('Invalid JSON format: expected object or array')
-          }
-          content = JSON.stringify(jsonData, null, 2)
-        } else if (option.endsWith('.csv')) {
-          // Load CSV files as text
-          content = await response.text()
-          if (!content.trim()) {
-            throw new Error('CSV file is empty')
-          }
-        } else {
-          throw new Error('Unsupported file format')
-        }
-
-        newDataset.content = content
-      } catch (err) {
-        console.error('Error loading dataset content:', err)
-        setError(`Failed to load dataset content: ${err.message}`)
-      }
+      await loadDatasetContent(selectedDataset.type, option)
+    } else {
+      onDatasetSelect(newDataset)
     }
-
-    onDatasetSelect(newDataset)
   }
 
   return (
