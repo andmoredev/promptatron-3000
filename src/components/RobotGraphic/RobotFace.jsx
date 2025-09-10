@@ -3,6 +3,10 @@
  */
 
 import React from "react";
+import { useTheme } from "../ThemeProvider.jsx";
+import { getThemeColor } from "../../utils/themeUtils.js";
+import { robotFacePropTypes, robotFaceDefaultProps } from "./propTypes.js";
+import "./RobotFaceAnimations.css";
 
 /**
  * RobotFace component that renders different facial expressions using SVG
@@ -10,9 +14,12 @@ import React from "react";
  * @param {string} props.expression - The facial expression to render ('happy', 'thinking', 'talking', 'concerned')
  * @param {boolean} [props.animated=true] - Whether to enable animations
  * @param {string} [props.size='md'] - Size variant for scaling
+ * @param {Object} [props.theme] - Theme object for color customization
  * @returns {JSX.Element} The RobotFace SVG component
  */
-const RobotFace = ({ expression, animated = true, size = 'md' }) => {
+const RobotFace = ({ expression, animated = true, size = 'md', theme: propTheme }) => {
+  const contextTheme = useTheme();
+  const theme = propTheme || contextTheme;
   // Size configurations for SVG scaling
   const sizeMap = {
     sm: { width: 40, height: 40, scale: 0.8 },
@@ -22,12 +29,31 @@ const RobotFace = ({ expression, animated = true, size = 'md' }) => {
 
   const { width, height, scale } = sizeMap[size] || sizeMap.md;
 
+  // Get theme colors with fallbacks
+  const colors = {
+    robotBody: getThemeColor('primary', 50, theme) || '#f8fafc',
+    robotStroke: getThemeColor('gray', 500, theme) || '#64748b',
+    happyMouth: getThemeColor('primary', 600, theme) || '#059669',
+    thinkingMouth: getThemeColor('secondary', 600, theme) || '#d97706',
+    thinkingBg: getThemeColor('secondary', 50, theme) || '#fefce8',
+    thinkingSecondary: getThemeColor('secondary', 400, theme) || '#f59e0b',
+    thinkingTertiary: getThemeColor('secondary', 300, theme) || '#fbbf24',
+    talkingElements: getThemeColor('primary', 500, theme) || '#3b82f6',
+    talkingBg: getThemeColor('primary', 50, theme) || '#eff6ff',
+    talkingSecondary: getThemeColor('primary', 400, theme) || '#60a5fa',
+    talkingTertiary: getThemeColor('primary', 300, theme) || '#93c5fd',
+    errorElements: getThemeColor('tertiary', 600, theme) || '#dc2626',
+    errorBg: getThemeColor('tertiary', 50, theme) || '#fef2f2',
+    eyeColor: '#1e293b',
+    whiteHighlight: '#ffffff'
+  };
+
   // Common SVG props
   const svgProps = {
     width,
     height,
     viewBox: "0 0 100 100",
-    className: `robot-face-svg robot-expression-${expression}`,
+    className: `robot-face-svg robot-expression-${expression} ${animated ? 'robot-animated' : 'robot-static'}`,
     "data-testid": "robot-face-svg"
   };
 
@@ -35,15 +61,15 @@ const RobotFace = ({ expression, animated = true, size = 'md' }) => {
   const renderExpression = () => {
     switch (expression) {
       case 'happy':
-        return renderHappyExpression(scale, animated);
+        return renderHappyExpression(scale, animated, colors);
       case 'thinking':
-        return renderThinkingExpression(scale, animated);
+        return renderThinkingExpression(scale, animated, colors);
       case 'talking':
-        return renderTalkingExpression(scale, animated);
+        return renderTalkingExpression(scale, animated, colors);
       case 'concerned':
-        return renderConcernedExpression(scale, animated);
+        return renderConcernedExpression(scale, animated, colors);
       default:
-        return renderHappyExpression(scale, animated);
+        return renderHappyExpression(scale, animated, colors);
     }
   };
 
@@ -58,17 +84,18 @@ const RobotFace = ({ expression, animated = true, size = 'md' }) => {
  * Renders a happy facial expression
  * @param {number} scale - Scale factor for sizing
  * @param {boolean} animated - Whether animations are enabled
+ * @param {Object} colors - Theme colors object
  * @returns {JSX.Element} SVG elements for happy expression
  */
-const renderHappyExpression = (scale, animated) => (
+const renderHappyExpression = (scale, animated, colors) => (
   <g className="robot-face-happy">
     {/* Robot head/face circle */}
     <circle
       cx="50"
       cy="50"
       r="45"
-      fill="#f8fafc"
-      stroke="#64748b"
+      fill={colors.robotBody}
+      stroke={colors.robotStroke}
       strokeWidth="2"
       className="robot-head"
     />
@@ -79,14 +106,14 @@ const renderHappyExpression = (scale, animated) => (
         cx="35"
         cy="40"
         r="4"
-        fill="#1e293b"
+        fill={colors.eyeColor}
         className={animated ? "robot-eye robot-eye-blink" : "robot-eye"}
       />
       <circle
         cx="65"
         cy="40"
         r="4"
-        fill="#1e293b"
+        fill={colors.eyeColor}
         className={animated ? "robot-eye robot-eye-blink" : "robot-eye"}
       />
     </g>
@@ -94,7 +121,7 @@ const renderHappyExpression = (scale, animated) => (
     {/* Happy mouth - smile */}
     <path
       d="M 35 65 Q 50 75 65 65"
-      stroke="#059669"
+      stroke={colors.happyMouth}
       strokeWidth="3"
       fill="none"
       strokeLinecap="round"
@@ -102,8 +129,8 @@ const renderHappyExpression = (scale, animated) => (
     />
 
     {/* Cheek highlights for happiness */}
-    <circle cx="25" cy="55" r="3" fill="#fecaca" opacity="0.6" className="robot-cheek" />
-    <circle cx="75" cy="55" r="3" fill="#fecaca" opacity="0.6" className="robot-cheek" />
+    <circle cx="25" cy="55" r="3" fill={colors.happyMouth} opacity="0.3" className="robot-cheek" />
+    <circle cx="75" cy="55" r="3" fill={colors.happyMouth} opacity="0.3" className="robot-cheek" />
   </g>
 );
 
@@ -111,17 +138,18 @@ const renderHappyExpression = (scale, animated) => (
  * Renders a thinking facial expression
  * @param {number} scale - Scale factor for sizing
  * @param {boolean} animated - Whether animations are enabled
+ * @param {Object} colors - Theme colors object
  * @returns {JSX.Element} SVG elements for thinking expression
  */
-const renderThinkingExpression = (scale, animated) => (
+const renderThinkingExpression = (scale, animated, colors) => (
   <g className="robot-face-thinking">
     {/* Robot head/face circle */}
     <circle
       cx="50"
       cy="50"
       r="45"
-      fill="#fefce8"
-      stroke="#64748b"
+      fill={colors.thinkingBg || '#fefce8'}
+      stroke={colors.robotStroke}
       strokeWidth="2"
       className="robot-head"
     />
@@ -133,7 +161,7 @@ const renderThinkingExpression = (scale, animated) => (
         cy="42"
         rx="3"
         ry="2"
-        fill="#1e293b"
+        fill={colors.eyeColor}
         className="robot-eye"
       />
       <ellipse
@@ -141,7 +169,7 @@ const renderThinkingExpression = (scale, animated) => (
         cy="42"
         rx="3"
         ry="2"
-        fill="#1e293b"
+        fill={colors.eyeColor}
         className="robot-eye"
       />
     </g>
@@ -152,7 +180,7 @@ const renderThinkingExpression = (scale, animated) => (
       y1="68"
       x2="58"
       y2="68"
-      stroke="#d97706"
+      stroke={colors.thinkingMouth}
       strokeWidth="2"
       strokeLinecap="round"
       className="robot-mouth robot-mouth-thinking"
@@ -164,29 +192,29 @@ const renderThinkingExpression = (scale, animated) => (
         cx="75"
         cy="25"
         r="2"
-        fill="#d97706"
+        fill={colors.thinkingMouth}
         className={animated ? "robot-thinking-dot robot-thinking-pulse" : "robot-thinking-dot"}
       />
       <circle
         cx="82"
         cy="30"
         r="1.5"
-        fill="#f59e0b"
+        fill={colors.thinkingSecondary || '#f59e0b'}
         className={animated ? "robot-thinking-dot robot-thinking-pulse-delayed" : "robot-thinking-dot"}
       />
       <circle
         cx="78"
         cy="35"
         r="1"
-        fill="#fbbf24"
+        fill={colors.thinkingTertiary || '#fbbf24'}
         className={animated ? "robot-thinking-dot robot-thinking-pulse-delayed-2" : "robot-thinking-dot"}
       />
     </g>
 
     {/* Eyebrows - slightly furrowed */}
     <g className="robot-eyebrows">
-      <line x1="30" y1="32" x2="40" y2="35" stroke="#64748b" strokeWidth="2" strokeLinecap="round" />
-      <line x1="60" y1="35" x2="70" y2="32" stroke="#64748b" strokeWidth="2" strokeLinecap="round" />
+      <line x1="30" y1="32" x2="40" y2="35" stroke={colors.robotStroke} strokeWidth="2" strokeLinecap="round" />
+      <line x1="60" y1="35" x2="70" y2="32" stroke={colors.robotStroke} strokeWidth="2" strokeLinecap="round" />
     </g>
   </g>
 );
@@ -195,17 +223,18 @@ const renderThinkingExpression = (scale, animated) => (
  * Renders a talking facial expression
  * @param {number} scale - Scale factor for sizing
  * @param {boolean} animated - Whether animations are enabled
+ * @param {Object} colors - Theme colors object
  * @returns {JSX.Element} SVG elements for talking expression
  */
-const renderTalkingExpression = (scale, animated) => (
+const renderTalkingExpression = (scale, animated, colors) => (
   <g className="robot-face-talking">
     {/* Robot head/face circle */}
     <circle
       cx="50"
       cy="50"
       r="45"
-      fill="#eff6ff"
-      stroke="#64748b"
+      fill={colors.talkingBg || '#eff6ff'}
+      stroke={colors.robotStroke}
       strokeWidth="2"
       className="robot-head"
     />
@@ -216,19 +245,19 @@ const renderTalkingExpression = (scale, animated) => (
         cx="35"
         cy="40"
         r="4"
-        fill="#1e293b"
+        fill={colors.eyeColor}
         className="robot-eye"
       />
       <circle
         cx="65"
         cy="40"
         r="4"
-        fill="#1e293b"
+        fill={colors.eyeColor}
         className="robot-eye"
       />
       {/* Eye highlights for alertness */}
-      <circle cx="37" cy="38" r="1" fill="#ffffff" className="robot-eye-highlight" />
-      <circle cx="67" cy="38" r="1" fill="#ffffff" className="robot-eye-highlight" />
+      <circle cx="37" cy="38" r="1" fill={colors.whiteHighlight} className="robot-eye-highlight" />
+      <circle cx="67" cy="38" r="1" fill={colors.whiteHighlight} className="robot-eye-highlight" />
     </g>
 
     {/* Talking mouth - animated oval */}
@@ -237,7 +266,7 @@ const renderTalkingExpression = (scale, animated) => (
       cy="65"
       rx="8"
       ry="5"
-      fill="#1e293b"
+      fill={colors.eyeColor}
       className={animated ? "robot-mouth robot-mouth-talking robot-mouth-animate" : "robot-mouth robot-mouth-talking"}
     />
 
@@ -245,7 +274,7 @@ const renderTalkingExpression = (scale, animated) => (
     <g className="robot-speech-indicators">
       <path
         d="M 20 45 Q 15 50 20 55"
-        stroke="#3b82f6"
+        stroke={colors.talkingElements}
         strokeWidth="2"
         fill="none"
         strokeLinecap="round"
@@ -253,7 +282,7 @@ const renderTalkingExpression = (scale, animated) => (
       />
       <path
         d="M 15 40 Q 8 50 15 60"
-        stroke="#60a5fa"
+        stroke={colors.talkingSecondary || '#60a5fa'}
         strokeWidth="1.5"
         fill="none"
         strokeLinecap="round"
@@ -261,7 +290,7 @@ const renderTalkingExpression = (scale, animated) => (
       />
       <path
         d="M 10 35 Q 2 50 10 65"
-        stroke="#93c5fd"
+        stroke={colors.talkingTertiary || '#93c5fd'}
         strokeWidth="1"
         fill="none"
         strokeLinecap="round"
@@ -275,17 +304,18 @@ const renderTalkingExpression = (scale, animated) => (
  * Renders a concerned/error facial expression
  * @param {number} scale - Scale factor for sizing
  * @param {boolean} animated - Whether animations are enabled
+ * @param {Object} colors - Theme colors object
  * @returns {JSX.Element} SVG elements for concerned expression
  */
-const renderConcernedExpression = (scale, animated) => (
+const renderConcernedExpression = (scale, animated, colors) => (
   <g className="robot-face-concerned">
     {/* Robot head/face circle */}
     <circle
       cx="50"
       cy="50"
       r="45"
-      fill="#fef2f2"
-      stroke="#64748b"
+      fill={colors.errorBg || '#fef2f2'}
+      stroke={colors.robotStroke}
       strokeWidth="2"
       className="robot-head"
     />
@@ -297,7 +327,7 @@ const renderConcernedExpression = (scale, animated) => (
         cy="42"
         rx="3"
         ry="4"
-        fill="#1e293b"
+        fill={colors.eyeColor}
         className="robot-eye"
       />
       <ellipse
@@ -305,7 +335,7 @@ const renderConcernedExpression = (scale, animated) => (
         cy="42"
         rx="3"
         ry="4"
-        fill="#1e293b"
+        fill={colors.eyeColor}
         className="robot-eye"
       />
     </g>
@@ -313,7 +343,7 @@ const renderConcernedExpression = (scale, animated) => (
     {/* Concerned mouth - downward curve */}
     <path
       d="M 35 70 Q 50 60 65 70"
-      stroke="#dc2626"
+      stroke={colors.errorElements}
       strokeWidth="3"
       fill="none"
       strokeLinecap="round"
@@ -322,8 +352,8 @@ const renderConcernedExpression = (scale, animated) => (
 
     {/* Worried eyebrows */}
     <g className="robot-eyebrows">
-      <line x1="28" y1="30" x2="42" y2="33" stroke="#64748b" strokeWidth="2" strokeLinecap="round" />
-      <line x1="58" y1="33" x2="72" y2="30" stroke="#64748b" strokeWidth="2" strokeLinecap="round" />
+      <line x1="28" y1="30" x2="42" y2="33" stroke={colors.robotStroke} strokeWidth="2" strokeLinecap="round" />
+      <line x1="58" y1="33" x2="72" y2="30" stroke={colors.robotStroke} strokeWidth="2" strokeLinecap="round" />
     </g>
 
     {/* Error indicator - exclamation or warning symbol */}
@@ -332,14 +362,14 @@ const renderConcernedExpression = (scale, animated) => (
         cx="80"
         cy="25"
         r="6"
-        fill="#dc2626"
+        fill={colors.errorElements}
         className={animated ? "robot-error-symbol robot-error-pulse" : "robot-error-symbol"}
       />
       <text
         x="80"
         y="29"
         textAnchor="middle"
-        fill="white"
+        fill={colors.whiteHighlight}
         fontSize="8"
         fontWeight="bold"
         className="robot-error-text"
@@ -349,5 +379,9 @@ const renderConcernedExpression = (scale, animated) => (
     </g>
   </g>
 );
+
+// Set PropTypes and default props
+RobotFace.propTypes = robotFacePropTypes;
+RobotFace.defaultProps = robotFaceDefaultProps;
 
 export default RobotFace;

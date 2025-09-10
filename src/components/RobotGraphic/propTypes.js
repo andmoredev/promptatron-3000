@@ -62,6 +62,7 @@ export const robotGraphicPropTypes = {
 export const robotFacePropTypes = {
   expression: robotExpressionPropType.isRequired,
   animated: PropTypes.bool,
+  size: robotSizePropType,
   theme: PropTypes.object
 };
 
@@ -79,5 +80,6 @@ export const robotGraphicDefaultProps = {
  */
 export const robotFaceDefaultProps = {
   animated: true,
+  size: 'md',
   theme: null
 };
