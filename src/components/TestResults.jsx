@@ -4,11 +4,152 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
+import StreamingOutput from './StreamingOutput'
+import PropTypes from 'prop-types'
 
-const TestResults = ({ results, isLoading }) => {
+// Reusable copy button component with feedback
+const CopyButton = ({ content, label = "Copy", className = "", icon = true }) => {
+  const [copyStatus, setCopyStatus] = useState(null) // 'success', 'error', or null
+
+  const handleCopy = async () => {
+    if (!content) return
+
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopyStatus('success')
+      setTimeout(() => setCopyStatus(null), 2000)
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error)
+      setCopyStatus('error')
+
+      // Try fallback copy method
+      try {
+        const textArea = document.createElement('textarea')
+        textArea.value = content
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+        setCopyStatus('success')
+        setTimeout(() => setCopyStatus(null), 2000)
+      } catch (fallbackError) {
+        console.error('Fallback copy also failed:', fallbackError)
+        setTimeout(() => setCopyStatus(null), 3000)
+      }
+    }
+  }
+
+  const getButtonText = () => {
+    if (copyStatus === 'success') return 'Copied!'
+    if (copyStatus === 'error') return 'Copy Failed'
+    return label
+  }
+
+  const getButtonIcon = () => {
+    if (copyStatus === 'success') {
+      return (
+        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+      )
+    }
+
+    if (copyStatus === 'error') {
+      return (
+        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      )
+    }
+
+    return (
+      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+      </svg>
+    )
+  }
+
+  const baseClassName = className || "inline-flex items-center px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+  const statusClassName = copyStatus === 'success'
+    ? "bg-green-100 text-green-700 hover:bg-green-200"
+    : copyStatus === 'error'
+    ? "bg-red-100 text-red-700 hover:bg-red-200"
+    : ""
+
+  return (
+    <button
+      onClick={handleCopy}
+      disabled={!content}
+      className={`${baseClassName} ${statusClassName}`}
+      title={`${label} to clipboard`}
+    >
+      {icon && getButtonIcon()}
+      {getButtonText()}
+    </button>
+  )
+}
+
+CopyButton.propTypes = {
+  content: PropTypes.string,
+  label: PropTypes.string,
+  className: PropTypes.string,
+  icon: PropTypes.bool
+}
+
+const TestResults = ({
+  results,
+  isLoading,
+  isStreaming = false,
+  streamingContent = '',
+  streamingProgress = null,
+  streamingError = null
+}) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const [viewMode, setViewMode] = useState('formatted') // 'formatted', 'raw', 'markdown'
   const [isDarkMode, setIsDarkMode] = useState(false)
+
+  // Handle copy functionality for streaming output
+  const handleStreamingCopy = (content) => {
+    console.log('Streaming content copied:', content.length, 'characters')
+  }
+
+  // Show streaming interface during active streaming or when there's streaming content
+  if (isStreaming || (streamingContent && !results)) {
+    return (
+      <div className="card">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Test Results</h3>
+
+        {/* Show streaming error if present */}
+        {streamingError && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-red-800">{streamingError}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <StreamingOutput
+          content={streamingContent}
+          isStreaming={isStreaming}
+          isComplete={!isStreaming && streamingContent}
+          onCopy={handleStreamingCopy}
+          streamingProgress={streamingProgress}
+          performanceMetrics={{
+            renderCount: 0, // This will be tracked internally by StreamingOutput
+            averageLatency: streamingProgress?.firstTokenLatency || 0,
+            memoryUsage: streamingContent ? new Blob([streamingContent]).size : 0
+          }}
+        />
+      </div>
+    )
+  }
 
   if (isLoading) {
     return (
@@ -192,7 +333,14 @@ const TestResults = ({ results, isLoading }) => {
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Test Results</h3>
+        <div className="flex items-center space-x-2">
+          <h3 className="text-lg font-semibold text-gray-900">Test Results</h3>
+          <div className="hidden xl:flex items-center space-x-1 px-2 py-1 bg-primary-50 text-primary-600 text-xs rounded-full" title="This panel follows as you scroll">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13l-3 3m0 0l-3-3m3 3V8m0 13a9 9 0 110-18 9 9 0 010 18z" />
+            </svg>
+          </div>
+        </div>
         <div className="flex items-center space-x-3">
           {/* View Mode Toggle */}
           <div className="flex bg-gray-100 rounded-lg p-1">
@@ -274,6 +422,23 @@ const TestResults = ({ results, isLoading }) => {
             <span className="font-medium text-gray-700">Test ID:</span>
             <span className="ml-2 text-gray-600 font-mono">{results.id}</span>
           </div>
+          {/* Show streaming indicator if response was streamed */}
+          {results.isStreamed && (
+            <div className="md:col-span-2">
+              <span className="font-medium text-gray-700">Response Type:</span>
+              <span className="ml-2 inline-flex items-center space-x-1">
+                <span className="text-primary-600">Streamed</span>
+                <svg className="h-3 w-3 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </span>
+              {results.streamingMetrics && (
+                <span className="ml-2 text-xs text-gray-500">
+                  ({results.streamingMetrics.averageTokensPerSecond?.toFixed(1)} tokens/sec)
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -473,33 +638,24 @@ const TestResults = ({ results, isLoading }) => {
         {/* Quick Actions */}
         <div className="mt-3 flex items-center justify-between">
           <div className="flex space-x-2">
-            <button
-              onClick={() => navigator.clipboard.writeText(results.response)}
-              className="inline-flex items-center px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-            >
-              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              Copy
-            </button>
+            <CopyButton
+              content={results.response}
+              label="Copy Output"
+              className="btn-secondary"
+            />
 
             {detectContentType(results.response) === 'json' && (
-              <button
-                onClick={() => {
+              <CopyButton
+                content={(() => {
                   try {
-                    const formatted = formatJSON(results.response)
-                    navigator.clipboard.writeText(formatted)
+                    return formatJSON(results.response)
                   } catch (e) {
-                    navigator.clipboard.writeText(results.response)
+                    return results.response
                   }
-                }}
+                })()}
+                label="Copy JSON"
                 className="inline-flex items-center px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-              >
-                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                </svg>
-                Copy JSON
-              </button>
+              />
             )}
           </div>
 
@@ -570,6 +726,28 @@ const TestResults = ({ results, isLoading }) => {
               )}
             </>
           )}
+
+          {/* Show streaming metrics if available */}
+          {results.streamingMetrics && (
+            <>
+              {results.streamingMetrics.streamDuration && (
+                <div className="text-center">
+                  <div className="text-lg font-semibold text-primary-600">
+                    {results.streamingMetrics.streamDuration.toFixed(1)}s
+                  </div>
+                  <div className="text-xs text-gray-500">Stream Duration</div>
+                </div>
+              )}
+              {results.streamingMetrics.averageTokensPerSecond && (
+                <div className="text-center">
+                  <div className="text-lg font-semibold text-primary-600">
+                    {results.streamingMetrics.averageTokensPerSecond.toFixed(1)}
+                  </div>
+                  <div className="text-xs text-gray-500">Tokens/Second</div>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Reading time estimate */}
@@ -581,6 +759,42 @@ const TestResults = ({ results, isLoading }) => {
       </div>
     </div>
   )
+}
+
+TestResults.propTypes = {
+  results: PropTypes.shape({
+    id: PropTypes.string,
+    modelId: PropTypes.string,
+    systemPrompt: PropTypes.string,
+    userPrompt: PropTypes.string,
+    datasetType: PropTypes.string,
+    datasetOption: PropTypes.string,
+    response: PropTypes.string,
+    usage: PropTypes.object,
+    isStreamed: PropTypes.bool,
+    streamingMetrics: PropTypes.object,
+    timestamp: PropTypes.string
+  }),
+  isLoading: PropTypes.bool,
+  isStreaming: PropTypes.bool,
+  streamingContent: PropTypes.string,
+  streamingProgress: PropTypes.shape({
+    tokensReceived: PropTypes.number,
+    estimatedTotal: PropTypes.number,
+    startTime: PropTypes.number,
+    tokensPerSecond: PropTypes.number,
+    duration: PropTypes.number
+  }),
+  streamingError: PropTypes.string
+}
+
+TestResults.defaultProps = {
+  results: null,
+  isLoading: false,
+  isStreaming: false,
+  streamingContent: '',
+  streamingProgress: null,
+  streamingError: null
 }
 
 export default TestResults

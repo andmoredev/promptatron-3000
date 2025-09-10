@@ -13,32 +13,63 @@ import { ROBOT_STATES, getRobotState } from './robotStates.js';
  * @param {string} appState.progressStatus - Current progress status message
  * @param {number} appState.progressValue - Progress value (0-100)
  * @param {Object} appState.testResults - Test results object
+ * @param {boolean} appState.isStreaming - Whether response is currently streaming
+ * @param {string} appState.streamingContent - Current streaming content
+ * @param {boolean} appState.isRequestPending - Whether request is being sent
+ * @param {string|null} appState.streamingError - Streaming-specific error
  * @returns {string} The corresponding robot state key
  */
 export function mapAppStateToRobotState(appState) {
-  const { isLoading, error, progressStatus, progressValue, testResults } = appState;
+  const {
+    isLoading,
+    error,
+    progressStatus,
+    progressValue,
+    testResults,
+    isStreaming,
+    streamingContent,
+    isRequestPending,
+    streamingError
+  } = appState;
 
-  // Error state takes highest priority
-  if (error) {
+  // Error state takes highest priority (including streaming errors)
+  if (error || streamingError) {
     return 'error';
   }
 
-  // Loading states - map to thinking or talking based on progress
+  // Streaming states - distinguish between thinking and talking phases
+  if (isStreaming) {
+    if (streamingContent) {
+      // Active streaming with content = talking state
+      return 'talking';
+    } else {
+      // Streaming started but no content yet = still thinking
+      return 'thinking';
+    }
+  }
+
+  if (isRequestPending || (isLoading && !isStreaming)) {
+    // Request being sent or initial processing = thinking state
+    return 'thinking';
+  }
+
+  // Legacy loading states - map to thinking or talking based on progress
   if (isLoading) {
     // If we have progress status, determine if we're thinking or talking
     if (progressStatus) {
       const status = progressStatus.toLowerCase();
 
-      // Early stages: thinking
+      // Early stages: thinking (request processing phase)
       if (status.includes('initializing') ||
           status.includes('connecting') ||
           status.includes('validating') ||
+          status.includes('sending request') ||
           progressValue < 50) {
         return 'thinking';
       }
 
-      // Later stages: talking (generating response)
-      if (status.includes('sending') ||
+      // Later stages: talking (response generation/streaming phase)
+      if (status.includes('receiving response') ||
           status.includes('generating') ||
           status.includes('processing response') ||
           progressValue >= 50) {
@@ -51,8 +82,8 @@ export function mapAppStateToRobotState(appState) {
   }
 
   // If we just completed a test successfully, return to happy state (idle)
-  // According to Requirement 4.3: "WHEN an operation completes successfully THEN the robot SHALL return to happy state"
-  if (testResults && !error && !isLoading) {
+  // According to Requirement 2.4: "WHEN streaming completes successfully THEN the robot SHALL transition to a completed or neutral state"
+  if (testResults && !error && !isLoading && !isStreaming) {
     return 'idle';
   }
 
@@ -98,15 +129,40 @@ export function detectStateChange(currentAppState, previousAppState) {
  * @returns {string} Reason for the state change
  */
 function getStateChangeReason(currentAppState, previousAppState) {
-  const { isLoading, error, progressStatus, testResults } = currentAppState;
+  const {
+    isLoading,
+    error,
+    progressStatus,
+    testResults,
+    isStreaming,
+    streamingContent,
+    isRequestPending,
+    streamingError
+  } = currentAppState;
   const prevState = previousAppState || {};
 
-  // Error state changes
-  if (error && !prevState.error) {
-    return 'error_occurred';
+  // Error state changes (including streaming errors)
+  if ((error || streamingError) && !prevState.error && !prevState.streamingError) {
+    return streamingError ? 'streaming_error_occurred' : 'error_occurred';
   }
-  if (!error && prevState.error) {
+  if (!error && !streamingError && (prevState.error || prevState.streamingError)) {
     return 'error_cleared';
+  }
+
+  // Streaming state changes
+  if (isStreaming && streamingContent && (!prevState.isStreaming || !prevState.streamingContent)) {
+    return 'streaming_started_talking';
+  }
+  if (!isStreaming && prevState.isStreaming) {
+    return 'streaming_completed';
+  }
+
+  // Request processing state changes
+  if (isRequestPending && !prevState.isRequestPending) {
+    return 'request_sending_started';
+  }
+  if (!isRequestPending && prevState.isRequestPending) {
+    return 'request_sending_completed';
   }
 
   // Loading state changes
@@ -117,7 +173,7 @@ function getStateChangeReason(currentAppState, previousAppState) {
     return 'loading_completed';
   }
 
-  // Progress changes within loading
+  // Progress changes within loading - distinguish thinking vs talking phases
   if (isLoading && prevState.isLoading) {
     const currentProgress = currentAppState.progressValue || 0;
     const prevProgress = prevState.progressValue || 0;
@@ -125,6 +181,14 @@ function getStateChangeReason(currentAppState, previousAppState) {
     if (currentProgress >= 50 && prevProgress < 50) {
       return 'progress_advanced_to_talking';
     }
+    if (currentProgress < 50 && prevProgress >= 50) {
+      return 'progress_returned_to_thinking';
+    }
+  }
+
+  // Streaming content changes
+  if (isStreaming && streamingContent !== prevState.streamingContent) {
+    return 'streaming_content_updated';
   }
 
   // Test completion
@@ -234,6 +298,27 @@ export function validateAppState(appState) {
     normalizedState.progressValue = 0;
   }
 
+  // Validate streaming-related properties
+  if (typeof normalizedState.isStreaming !== 'boolean') {
+    errors.push('isStreaming must be a boolean');
+    normalizedState.isStreaming = false;
+  }
+
+  if (typeof normalizedState.streamingContent !== 'string') {
+    errors.push('streamingContent must be a string');
+    normalizedState.streamingContent = '';
+  }
+
+  if (typeof normalizedState.isRequestPending !== 'boolean') {
+    errors.push('isRequestPending must be a boolean');
+    normalizedState.isRequestPending = false;
+  }
+
+  if (normalizedState.streamingError !== null && typeof normalizedState.streamingError !== 'string') {
+    errors.push('streamingError must be null or a string');
+    normalizedState.streamingError = null;
+  }
+
   return {
     isValid: errors.length === 0,
     errors,
@@ -251,7 +336,11 @@ function getDefaultAppState() {
     error: null,
     progressStatus: '',
     progressValue: 0,
-    testResults: null
+    testResults: null,
+    isStreaming: false,
+    streamingContent: '',
+    isRequestPending: false,
+    streamingError: null
   };
 }
 
@@ -293,6 +382,10 @@ export function extractRobotRelevantState(fullAppState) {
     error: fullAppState.error || null,
     progressStatus: fullAppState.progressStatus || '',
     progressValue: fullAppState.progressValue || 0,
-    testResults: fullAppState.testResults || null
+    testResults: fullAppState.testResults || null,
+    isStreaming: fullAppState.isStreaming || false,
+    streamingContent: fullAppState.streamingContent || '',
+    isRequestPending: fullAppState.isRequestPending || false,
+    streamingError: fullAppState.streamingError || null
   };
 }

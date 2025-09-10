@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import ModelSelector from "./components/ModelSelector";
 import DatasetSelector from "./components/DatasetSelector";
 import PromptEditor from "./components/PromptEditor";
@@ -12,13 +12,19 @@ import LoadingSpinner from "./components/LoadingSpinner";
 import ProgressBar from "./components/ProgressBar";
 import ThemeProvider from "./components/ThemeProvider";
 import RobotGraphicContainer from "./components/RobotGraphic/RobotGraphicContainer";
+import StreamingPerformanceMonitor from "./components/StreamingPerformanceMonitor";
 import { bedrockService } from "./services/bedrockService";
 import { useHistory } from "./hooks/useHistory";
 import { validateForm } from "./utils/formValidation";
 import { handleError, retryWithBackoff } from "./utils/errorHandling";
+import {
+  streamingMemoryManager,
+  streamingMetricsCollector
+} from "./utils/streamingOptimizations";
 
-// Robot debug mode - controlled by environment variable
+// Debug modes - controlled by environment variables
 const isRobotDebugEnabled = import.meta.env.VITE_ROBOT_DEBUG === "true";
+const isStreamingDebugEnabled = import.meta.env.VITE_STREAMING_DEBUG === "true";
 
 function App() {
   // Core state management for the test harness
@@ -40,8 +46,105 @@ function App() {
   const [progressStatus, setProgressStatus] = useState("");
   const [progressValue, setProgressValue] = useState(0);
 
+  // Streaming-related state variables
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
+  const [streamingProgress, setStreamingProgress] = useState({
+    tokensReceived: 0,
+    estimatedTotal: 0,
+    startTime: 0,
+    tokensPerSecond: 0,
+    duration: 0,
+  });
+  const [isRequestPending, setIsRequestPending] = useState(false);
+  const [streamingError, setStreamingError] = useState(null);
+
   // Use the history hook for managing test history
   const { saveTestResult } = useHistory();
+
+  // Optimized streaming handlers
+  const [streamingHandlers, setStreamingHandlers] = useState(null);
+  const [currentStreamId, setCurrentStreamId] = useState(null);
+
+  // Performance metrics state
+  const [streamingMetrics, setStreamingMetrics] = useState({
+    totalStreams: 0,
+    averageTokensPerSecond: 0,
+    successRate: 0,
+    memoryUsage: 0
+  });
+
+  // Cleanup function for streaming state with optimizations
+  const cleanupStreamingState = useCallback(() => {
+    // Clean up streaming handlers
+    if (streamingHandlers) {
+      setStreamingHandlers(null);
+    }
+
+    // Clean up current stream
+    if (currentStreamId) {
+      streamingMemoryManager.cleanupStream(currentStreamId);
+      setCurrentStreamId(null);
+    }
+
+    // Reset streaming state
+    setIsStreaming(false);
+    setIsRequestPending(false);
+    setStreamingError(null);
+    setStreamingContent("");
+    setStreamingProgress({
+      tokensReceived: 0,
+      estimatedTotal: 0,
+      startTime: 0,
+      tokensPerSecond: 0,
+      duration: 0,
+    });
+
+    // Update metrics
+    updateStreamingMetrics();
+  }, [streamingHandlers, currentStreamId]);
+
+  // Update streaming metrics from collector
+  const updateStreamingMetrics = useCallback(() => {
+    const globalStats = streamingMetricsCollector.getGlobalStats();
+    const performanceStats = streamingMetricsCollector.getPerformanceSummary();
+    const memoryStats = streamingMemoryManager.getMemoryStats();
+
+    setStreamingMetrics({
+      totalStreams: globalStats.totalStreams,
+      averageTokensPerSecond: performanceStats.averageTokensPerSecond,
+      successRate: performanceStats.successRate,
+      memoryUsage: memoryStats.totalMemoryUsage
+    });
+  }, []);
+
+  // Handle streaming interruption (e.g., user navigates away)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (isStreaming) {
+        cleanupStreamingState();
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isStreaming, cleanupStreamingState]);
+
+  // Periodic cleanup of old metrics and memory management
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      // Clean up old metrics (older than 1 hour)
+      streamingMetricsCollector.clearOldMetrics(60 * 60 * 1000);
+
+      // Force garbage collection hint if available
+      streamingMemoryManager.forceGarbageCollection();
+
+      // Update metrics display
+      updateStreamingMetrics();
+    }, 5 * 60 * 1000); // Every 5 minutes
+
+    return () => clearInterval(cleanupInterval);
+  }, [updateStreamingMetrics]);
 
   // Helper function to generate user-friendly validation messages
   const getValidationGuidance = (errors) => {
@@ -113,13 +216,20 @@ function App() {
     };
   };
 
-  // Clear error when user makes changes
+  // Clear error and streaming state when user makes changes
   useEffect(() => {
     if (error) {
       setError(null);
     }
+    if (streamingError) {
+      setStreamingError(null);
+    }
     // Clear validation errors when user makes changes
     setValidationErrors({});
+    // Clear streaming content when user changes inputs (but not during active streaming)
+    if (!isStreaming && streamingContent) {
+      setStreamingContent("");
+    }
   }, [selectedModel, selectedDataset, systemPrompt, userPrompt]);
 
   // Real-time validation using enhanced validation utility
@@ -141,7 +251,7 @@ function App() {
       // Ctrl/Cmd + Enter: Run test
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
-        if (isFormValid() && !isLoading) {
+        if (isFormValid() && !isLoading && !isStreaming) {
           handleRunTest();
         }
       }
@@ -176,12 +286,22 @@ function App() {
         if (error) {
           setError(null);
         }
+        if (streamingError) {
+          setStreamingError(null);
+        }
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isFormValid, isLoading, selectedForComparison.length, error]);
+  }, [
+    isFormValid,
+    isLoading,
+    isStreaming,
+    selectedForComparison.length,
+    error,
+    streamingError,
+  ]);
 
   const validateTestConfiguration = () => {
     const formData = {
@@ -246,11 +366,21 @@ function App() {
       return;
     }
 
+    // Initialize all state for new test run
     setIsLoading(true);
     setError(null);
+    setStreamingError(null);
     setRetryCount(0);
     setProgressStatus("Initializing...");
     setProgressValue(10);
+    setIsRequestPending(true);
+    setIsStreaming(false);
+    setStreamingContent("");
+    setStreamingProgress({
+      tokensReceived: 0,
+      estimatedTotal: 0,
+      startTime: Date.now(),
+    });
 
     try {
       console.log("Running test with:", {
@@ -263,7 +393,7 @@ function App() {
       // Use retry with backoff for the test execution
       const testResult = await retryWithBackoff(
         async () => {
-          // Ensure BedrockService is ready
+          // Ensure BedrockService is ready - this is the "thinking" phase
           setProgressStatus("Connecting to AWS Bedrock...");
           setProgressValue(25);
 
@@ -279,29 +409,126 @@ function App() {
           setProgressStatus("Sending request to model...");
           setProgressValue(50);
 
-          // Use BedrockService to invoke the model
-          const response = await bedrockService.invokeModel(
-            selectedModel,
-            systemPrompt,
-            userPrompt,
-            selectedDataset.content
-          );
+          // Check if model supports streaming
+          const supportsStreaming =
+            bedrockService.isStreamingSupported(selectedModel);
 
-          setProgressStatus("Processing response...");
-          setProgressValue(75);
+          if (supportsStreaming) {
+            // Use streaming approach with optimizations
+            setIsRequestPending(false); // Request has been sent
+            setIsStreaming(true);
+            setProgressStatus("Receiving response...");
+            setProgressValue(60);
 
-          return {
-            id: Date.now().toString(),
-            modelId: selectedModel,
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt,
-            prompt: userPrompt, // Legacy field for backward compatibility
-            datasetType: selectedDataset.type,
-            datasetOption: selectedDataset.option,
-            response: response.text,
-            usage: response.usage,
-            timestamp: new Date().toISOString(),
-          };
+            // Set up simple streaming callbacks without optimizations for now
+            const onToken = (token, fullContent) => {
+              // Update streaming content directly with full accumulated text
+              setStreamingContent(fullContent);
+
+              // Update progress metrics
+              setStreamingProgress((prev) => {
+                const now = Date.now();
+                const duration = (now - prev.startTime) / 1000; // seconds
+                const tokensReceived = prev.tokensReceived + 1;
+                const tokensPerSecond =
+                  duration > 0 ? tokensReceived / duration : 0;
+
+                return {
+                  ...prev,
+                  tokensReceived,
+                  tokensPerSecond: Math.round(tokensPerSecond * 10) / 10, // Round to 1 decimal
+                  duration: Math.round(duration * 10) / 10, // Round to 1 decimal
+                };
+              });
+            };
+
+            const onComplete = (result) => {
+              setIsStreaming(false);
+              setProgressStatus("Processing response...");
+              setProgressValue(75);
+              updateStreamingMetrics();
+            };
+
+            const onError = (streamError) => {
+              // Use enhanced error handling for streaming errors
+              const errorInfo = handleError(streamError, {
+                component: 'App',
+                action: 'streaming',
+                model: selectedModel,
+                wasStreaming: true,
+                streamingProgress: streamingProgress
+              });
+
+              setStreamingError(errorInfo.userMessage);
+              setIsStreaming(false);
+              updateStreamingMetrics();
+            };
+
+            // Use BedrockService streaming method
+            const response = await bedrockService.invokeModelStream(
+              selectedModel,
+              systemPrompt,
+              userPrompt,
+              selectedDataset.content,
+              onToken,
+              onComplete,
+              onError
+            );
+
+            return {
+              id: Date.now().toString(),
+              modelId: selectedModel,
+              systemPrompt: systemPrompt,
+              userPrompt: userPrompt,
+              prompt: userPrompt, // Legacy field for backward compatibility
+              datasetType: selectedDataset.type,
+              datasetOption: selectedDataset.option,
+              response: response.text,
+              usage: response.usage,
+              isStreamed: true,
+              streamingMetrics: {
+                totalTokens: streamingProgress.tokensReceived,
+                streamDuration:
+                  streamingProgress.duration ||
+                  (Date.now() - streamingProgress.startTime) / 1000,
+                averageTokensPerSecond:
+                  streamingProgress.tokensPerSecond ||
+                  streamingProgress.tokensReceived /
+                    ((Date.now() - streamingProgress.startTime) / 1000),
+                firstTokenLatency: 0, // Could be enhanced to track this
+              },
+              timestamp: new Date().toISOString(),
+            };
+          } else {
+            // Use non-streaming approach
+            setIsRequestPending(false);
+            setProgressStatus("Processing request...");
+            setProgressValue(60);
+
+            const response = await bedrockService.invokeModel(
+              selectedModel,
+              systemPrompt,
+              userPrompt,
+              selectedDataset.content
+            );
+
+            setProgressStatus("Processing response...");
+            setProgressValue(75);
+
+            return {
+              id: Date.now().toString(),
+              modelId: selectedModel,
+              systemPrompt: systemPrompt,
+              userPrompt: userPrompt,
+              prompt: userPrompt, // Legacy field for backward compatibility
+              datasetType: selectedDataset.type,
+              datasetOption: selectedDataset.option,
+              response: response.text,
+              usage: response.usage,
+              isStreamed: false,
+              timestamp: new Date().toISOString(),
+            };
+          }
         },
         {
           maxRetries: 2,
@@ -312,6 +539,11 @@ function App() {
               error.message
             );
             setRetryCount(attempt);
+            // Reset streaming state on retry
+            setIsStreaming(false);
+            setIsRequestPending(true);
+            setStreamingContent("");
+            setStreamingError(null);
           },
         }
       );
@@ -330,7 +562,7 @@ function App() {
     } catch (err) {
       console.error("Test execution failed:", err);
 
-      // Use enhanced error handling
+      // Use enhanced error handling with streaming context
       const errorInfo = handleError(err, {
         component: "App",
         action: "runTest",
@@ -338,14 +570,41 @@ function App() {
         datasetType: selectedDataset.type,
         systemPromptLength: systemPrompt.length,
         userPromptLength: userPrompt.length,
+        wasStreaming: isStreaming,
+        streamingError: streamingError,
       });
 
       setError(errorInfo.userMessage);
       setRetryCount(0);
     } finally {
+      // Clean up all streaming and loading state
       setIsLoading(false);
+      setIsStreaming(false);
+      setIsRequestPending(false);
       setProgressStatus("");
       setProgressValue(0);
+
+      // Clean up streaming content after a delay to allow user to see final result
+      setTimeout(() => {
+        if (!isStreaming) {
+          // Clean up streaming handlers
+          if (streamingHandlers) {
+            setStreamingHandlers(null);
+          }
+
+          setStreamingContent("");
+          setStreamingProgress({
+            tokensReceived: 0,
+            estimatedTotal: 0,
+            startTime: 0,
+            tokensPerSecond: 0,
+            duration: 0,
+          });
+
+          // Update final metrics
+          updateStreamingMetrics();
+        }
+      }, 2000);
     }
   };
 
@@ -440,6 +699,11 @@ function App() {
                           progressStatus,
                           progressValue,
                           testResults,
+                          isStreaming,
+                          streamingContent,
+                          streamingProgress,
+                          isRequestPending,
+                          streamingError,
                         }}
                         size="lg"
                         className="mx-auto"
@@ -508,7 +772,7 @@ function App() {
             {/* Main Content Area */}
             <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
               {/* Error Display */}
-              {error && (
+              {(error || streamingError) && (
                 <div className="max-w-4xl mx-auto mb-6 animate-fade-in">
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4 transform transition-all duration-300 hover:shadow-md">
                     <div className="flex">
@@ -526,7 +790,26 @@ function App() {
                         </svg>
                       </div>
                       <div className="ml-3 flex-1">
-                        <p className="text-sm text-red-800">{error}</p>
+                        {error && (
+                          <p className="text-sm text-red-800">{error}</p>
+                        )}
+                        {streamingError && (
+                          <div className="text-sm text-red-800">
+                            <p className="font-medium">Streaming Error:</p>
+                            <p>{streamingError}</p>
+                            {streamingContent && (
+                              <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                                <p className="text-xs text-yellow-700 font-medium">
+                                  Partial response received before error:
+                                </p>
+                                <p className="text-xs text-gray-600 mt-1 max-h-20 overflow-y-auto">
+                                  {streamingContent.substring(0, 200)}
+                                  {streamingContent.length > 200 && "..."}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {retryCount > 0 && (
                           <p className="text-xs text-red-600 mt-1">
                             Retried {retryCount} time
@@ -536,7 +819,10 @@ function App() {
                       </div>
                       <div className="ml-3 flex-shrink-0">
                         <button
-                          onClick={() => setError(null)}
+                          onClick={() => {
+                            setError(null);
+                            setStreamingError(null);
+                          }}
                           className="inline-flex text-red-400 hover:text-red-600"
                         >
                           <span className="sr-only">Dismiss</span>
@@ -752,6 +1038,78 @@ function App() {
                         </div>
                       )}
 
+                      {/* Streaming Status Indicator */}
+                      {(isRequestPending || isStreaming) && (
+                        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <div className="flex items-center space-x-3">
+                            <div className="flex-shrink-0">
+                              {isRequestPending ? (
+                                <svg
+                                  className="h-5 w-5 text-blue-500 animate-spin"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <circle
+                                    className="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    strokeWidth="4"
+                                  ></circle>
+                                  <path
+                                    className="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                  ></path>
+                                </svg>
+                              ) : (
+                                <svg
+                                  className="h-5 w-5 text-green-500"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M7 4V2a1 1 0 011-1h8a1 1 0 011 1v2m0 0V1a1 1 0 011-1h2a1 1 0 011 1v18a1 1 0 01-1 1H4a1 1 0 01-1-1V1a1 1 0 011-1h2a1 1 0 011 1v3m8-4v4"
+                                  />
+                                </svg>
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium text-blue-800">
+                                  {isRequestPending
+                                    ? "Thinking..."
+                                    : "Talking..."}
+                                </span>
+                                {isStreaming && (
+                                  <div className="text-xs text-blue-600 text-right">
+                                    <div>
+                                      {streamingProgress.tokensReceived} tokens
+                                    </div>
+                                    {streamingProgress.tokensPerSecond > 0 && (
+                                      <div>
+                                        {streamingProgress.tokensPerSecond}{" "}
+                                        tok/sec
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              <p className="text-xs text-blue-600 mt-1">
+                                {isRequestPending
+                                  ? "Sending request and waiting for response to begin"
+                                  : "Receiving response in real-time"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Enhanced Form Validation Status Indicator */}
                       {(() => {
                         const status = getValidationStatus();
@@ -836,18 +1194,24 @@ function App() {
                       <div className="flex justify-center">
                         <button
                           onClick={handleRunTest}
-                          disabled={isLoading || !isFormValid()}
+                          disabled={isLoading || isStreaming || !isFormValid()}
                           className={`btn-primary px-8 py-3 text-lg transition-all duration-200 ${
-                            isLoading || !isFormValid()
+                            isLoading || isStreaming || !isFormValid()
                               ? "opacity-50 cursor-not-allowed"
                               : "hover:shadow-lg"
                           }`}
                         >
-                          {isLoading ? (
+                          {isLoading || isStreaming ? (
                             <LoadingSpinner
                               size="sm"
                               color="white"
-                              text="Running Test..."
+                              text={
+                                isRequestPending
+                                  ? "Thinking..."
+                                  : isStreaming
+                                  ? "Talking..."
+                                  : "Running Test..."
+                              }
                               inline
                             />
                           ) : (
@@ -865,6 +1229,10 @@ function App() {
                       <TestResults
                         results={testResults}
                         isLoading={isLoading}
+                        isStreaming={isStreaming}
+                        streamingContent={streamingContent}
+                        streamingProgress={streamingProgress}
+                        streamingError={streamingError}
                       />
                     </div>
                   </div>
@@ -893,6 +1261,16 @@ function App() {
 
               {/* Help Guide */}
               <HelpGuide />
+
+              {/* Streaming Performance Monitor - Debug Mode */}
+              {isStreamingDebugEnabled && (
+                <div className="fixed bottom-4 right-4 w-80 z-40">
+                  <StreamingPerformanceMonitor
+                    isVisible={true}
+                    refreshInterval={3000}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </BrowserCompatibility>

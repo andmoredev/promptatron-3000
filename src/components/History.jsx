@@ -341,6 +341,12 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                     {item.modelId?.split('.')[0] || 'Unknown'}
                   </span>
+                  {/* Streaming indicator */}
+                  {item.isStreamed && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      ⚡ Streamed
+                    </span>
+                  )}
                   <span className="text-sm text-gray-500">
                     {formatTimestamp(item.timestamp)}
                   </span>
@@ -447,12 +453,46 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                     <div>
                       <h5 className="font-medium text-gray-700 mb-1">Model Details:</h5>
                       <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-3">
-                        <div className="text-sm text-gray-800">
+                        <div className="text-sm text-gray-800 space-y-1">
                           <p><span className="font-medium">Model ID:</span> {item.modelId}</p>
                           {item.datasetType && (
                             <p><span className="font-medium">Dataset:</span> {item.datasetType}/{item.datasetOption}</p>
                           )}
                           <p><span className="font-medium">Timestamp:</span> {formatTimestamp(item.timestamp)}</p>
+
+                          {/* Streaming Information */}
+                          <div className="pt-2 border-t border-gray-300">
+                            <p><span className="font-medium">Response Mode:</span> {item.isStreamed ? 'Streaming' : 'Standard'}</p>
+
+                            {/* Streaming Metrics */}
+                            {item.isStreamed && item.streamingMetrics && (
+                              <div className="mt-2 space-y-1">
+                                <p className="font-medium text-gray-700">Streaming Performance:</p>
+                                {item.streamingMetrics.totalTokens && (
+                                  <p className="text-xs"><span className="font-medium">Total Tokens:</span> {item.streamingMetrics.totalTokens}</p>
+                                )}
+                                {item.streamingMetrics.streamDuration && (
+                                  <p className="text-xs"><span className="font-medium">Duration:</span> {(item.streamingMetrics.streamDuration / 1000).toFixed(1)}s</p>
+                                )}
+                                {item.streamingMetrics.averageTokensPerSecond && (
+                                  <p className="text-xs"><span className="font-medium">Speed:</span> {item.streamingMetrics.averageTokensPerSecond.toFixed(1)} tokens/sec</p>
+                                )}
+                                {item.streamingMetrics.firstTokenLatency && (
+                                  <p className="text-xs"><span className="font-medium">First Token:</span> {item.streamingMetrics.firstTokenLatency}ms</p>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Token Usage */}
+                            {item.usage && (
+                              <div className="mt-2 space-y-1">
+                                <p className="font-medium text-gray-700">Token Usage:</p>
+                                <p className="text-xs"><span className="font-medium">Input:</span> {item.usage.input_tokens || item.usage.inputTokens || 'N/A'}</p>
+                                <p className="text-xs"><span className="font-medium">Output:</span> {item.usage.output_tokens || item.usage.outputTokens || 'N/A'}</p>
+                                <p className="text-xs"><span className="font-medium">Total:</span> {item.usage.total_tokens || item.usage.totalTokens || 'N/A'}</p>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
