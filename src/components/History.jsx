@@ -309,23 +309,77 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
         {/* Comparison Mode Notification */}
         {comparisonMode && (
           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-medium text-blue-900">Comparison Mode Active</h4>
-                <p className="text-sm text-blue-700 mt-1">
-                  Select up to 4 tests to compare. {selectedForComparison.length > 0 &&
-                    `${selectedForComparison.length} test${selectedForComparison.length !== 1 ? 's' : ''} selected.`
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <div className="flex items-center space-x-3 mb-2">
+                  <h4 className="font-medium text-blue-900">Comparison Mode Active</h4>
+                  {/* Progress indicator */}
+                  <div className="flex space-x-1">
+                    {[1, 2, 3, 4].map((step) => (
+                      <div
+                        key={step}
+                        className={`w-2 h-2 rounded-full ${
+                          selectedForComparison.length >= step
+                            ? 'bg-blue-500'
+                            : 'bg-blue-200'
+                        }`}
+                        title={`Test ${step}${selectedForComparison.length >= step ? ' selected' : ''}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <p className="text-sm text-blue-700 mb-2">
+                  {selectedForComparison.length === 0 && "Select up to 4 tests to compare."}
+                  {selectedForComparison.length === 1 && "Select 1 more test to start comparison."}
+                  {selectedForComparison.length >= 2 && selectedForComparison.length < 4 &&
+                    `${selectedForComparison.length} tests selected. You can select ${4 - selectedForComparison.length} more or start comparison now.`
                   }
+                  {selectedForComparison.length === 4 && "Maximum 4 tests selected. Ready to compare!"}
+                  {selectedForComparison.length >= 2 && (
+                    <span className="block text-xs text-blue-600 mt-1">
+                      💡 Tip: Press Ctrl+C to quickly navigate to comparison
+                    </span>
+                  )}
                 </p>
+
+                {/* Selected tests preview */}
+                {selectedForComparison.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {selectedForComparison.map((test, index) => (
+                      <span
+                        key={test.id}
+                        className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                      >
+                        {String.fromCharCode(65 + index)}: {test.modelId?.split('.')[0] || 'Unknown'}
+                        <button
+                          onClick={() => handleToggleComparison(test)}
+                          className="ml-1 text-blue-600 hover:text-blue-800"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-              {selectedForComparison.length > 0 && (
-                <button
-                  onClick={handleClearComparison}
-                  className="text-sm text-red-600 hover:text-red-700 font-medium"
-                >
-                  Clear Selection
-                </button>
-              )}
+              <div className="flex items-center space-x-2 ml-4">
+                {selectedForComparison.length >= 2 && (
+                  <button
+                    onClick={() => onCompareTests(selectedForComparison, true)} // Pass true to indicate navigation
+                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    Go to Comparison
+                  </button>
+                )}
+                {selectedForComparison.length > 0 && (
+                  <button
+                    onClick={handleClearComparison}
+                    className="text-sm text-red-600 hover:text-red-700 font-medium"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -575,6 +629,22 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
         onChange={handleImportHistory}
         className="hidden"
       />
+
+      {/* Floating Comparison Button */}
+      {selectedForComparison.length >= 2 && (
+        <div className="fixed bottom-6 right-16 sm:right-20 z-50">
+          <button
+            onClick={() => onCompareTests(selectedForComparison, true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 sm:p-4 shadow-lg hover:shadow-xl transition-all duration-200 flex items-center space-x-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 00-2 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            <span className="font-medium hidden sm:inline">Compare {selectedForComparison.length} Tests</span>
+            <span className="font-medium sm:hidden">{selectedForComparison.length}</span>
+          </button>
+        </div>
+      )}
 
       {/* Rerun Dialog */}
       {rerunDialog && (

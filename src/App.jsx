@@ -637,9 +637,10 @@ function App() {
     setActiveTab("test");
   };
 
-  const handleCompareTests = (tests) => {
+  const handleCompareTests = (tests, shouldNavigate = false) => {
     setSelectedForComparison(tests);
-    if (tests.length > 0) {
+    // Only navigate to comparison tab if explicitly requested
+    if (shouldNavigate && tests.length > 0) {
       setActiveTab("comparison");
     }
   };
