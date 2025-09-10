@@ -4,6 +4,7 @@ import DatasetSelector from './components/DatasetSelector'
 import PromptEditor from './components/PromptEditor'
 import TestResults from './components/TestResults'
 import History from './components/History'
+import Comparison from './components/Comparison'
 import { bedrockService } from './services/bedrockService'
 import { useHistory } from './hooks/useHistory'
 
@@ -22,6 +23,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('test')
   const [validationErrors, setValidationErrors] = useState({})
   const [modelValidationStatus, setModelValidationStatus] = useState({})
+  const [selectedForComparison, setSelectedForComparison] = useState([])
 
   // Use the history hook for managing test history
   const { saveTestResult } = useHistory()
@@ -195,6 +197,21 @@ function App() {
     setActiveTab('test')
   }
 
+  const handleCompareTests = (tests) => {
+    setSelectedForComparison(tests)
+    if (tests.length > 0) {
+      setActiveTab('comparison')
+    }
+  }
+
+  const handleRemoveFromComparison = (testId) => {
+    setSelectedForComparison(prev => prev.filter(test => test.id !== testId))
+  }
+
+  const handleClearComparison = () => {
+    setSelectedForComparison([])
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-8">
@@ -231,6 +248,21 @@ function App() {
             >
               History
             </button>
+            <button
+              onClick={() => setActiveTab('comparison')}
+              className={`px-6 py-2 rounded-md font-medium transition-colors duration-200 relative ${
+                activeTab === 'comparison'
+                  ? 'bg-primary-600 text-white'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Comparison
+              {selectedForComparison.length > 0 && (
+                <span className="absolute -top-1 -right-1 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-600 rounded-full">
+                  {selectedForComparison.length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -253,7 +285,7 @@ function App() {
         )}
 
         {/* Main Content */}
-        {activeTab === 'test' ? (
+        {activeTab === 'test' && (
           <div className="max-w-6xl mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Left Column - Configuration */}
@@ -333,10 +365,24 @@ function App() {
               </div>
             </div>
           </div>
-        ) : (
+        )}
+
+        {activeTab === 'history' && (
           <div className="max-w-6xl mx-auto">
             <History
               onLoadFromHistory={handleLoadFromHistory}
+              onCompareTests={handleCompareTests}
+              selectedForComparison={selectedForComparison}
+            />
+          </div>
+        )}
+
+        {activeTab === 'comparison' && (
+          <div className="max-w-6xl mx-auto">
+            <Comparison
+              selectedTests={selectedForComparison}
+              onRemoveTest={handleRemoveFromComparison}
+              onClearComparison={handleClearComparison}
             />
           </div>
         )}

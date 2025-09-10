@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react'
 import { useHistory } from '../hooks/useHistory.js'
 
-const History = ({ onLoadFromHistory }) => {
+const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = [] }) => {
   const {
     history,
     loading,
@@ -19,6 +19,7 @@ const History = ({ onLoadFromHistory }) => {
   const [showStats, setShowStats] = useState(false)
   const [showManagement, setShowManagement] = useState(false)
   const [rerunDialog, setRerunDialog] = useState(null)
+  const [comparisonMode, setComparisonMode] = useState(false)
   const fileInputRef = useRef(null)
 
   // Get unique models for filtering
@@ -59,6 +60,27 @@ const History = ({ onLoadFromHistory }) => {
 
   const handleCancelRerun = () => {
     setRerunDialog(null)
+  }
+
+  const handleToggleComparison = (item) => {
+    if (selectedForComparison.find(test => test.id === item.id)) {
+      // Remove from comparison
+      onCompareTests(selectedForComparison.filter(test => test.id !== item.id))
+    } else {
+      // Add to comparison (limit to 4 tests)
+      if (selectedForComparison.length < 4) {
+        onCompareTests([...selectedForComparison, item])
+      }
+    }
+  }
+
+  const isSelectedForComparison = (item) => {
+    return selectedForComparison.find(test => test.id === item.id) !== undefined
+  }
+
+  const handleClearComparison = () => {
+    onCompareTests([])
+    setComparisonMode(false)
   }
 
   const handleViewDetails = (item) => {
@@ -159,6 +181,21 @@ const History = ({ onLoadFromHistory }) => {
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900">Test History</h3>
           <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setComparisonMode(!comparisonMode)}
+              className={`text-sm font-medium ${
+                comparisonMode
+                  ? 'text-blue-600 hover:text-blue-700'
+                  : 'text-gray-600 hover:text-gray-700'
+              }`}
+            >
+              {comparisonMode ? 'Exit Compare' : 'Compare Tests'}
+            </button>
+            {selectedForComparison.length > 0 && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                {selectedForComparison.length} selected
+              </span>
+            )}
             <button
               onClick={() => setShowStats(!showStats)}
               className="text-sm text-gray-600 hover:text-gray-700 font-medium"
@@ -266,6 +303,30 @@ const History = ({ onLoadFromHistory }) => {
         <div className="text-sm text-gray-600">
           Showing {filteredHistory.length} of {history.length} tests
         </div>
+
+        {/* Comparison Mode Notification */}
+        {comparisonMode && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-medium text-blue-900">Comparison Mode Active</h4>
+                <p className="text-sm text-blue-700 mt-1">
+                  Select up to 4 tests to compare. {selectedForComparison.length > 0 &&
+                    `${selectedForComparison.length} test${selectedForComparison.length !== 1 ? 's' : ''} selected.`
+                  }
+                </p>
+              </div>
+              {selectedForComparison.length > 0 && (
+                <button
+                  onClick={handleClearComparison}
+                  className="text-sm text-red-600 hover:text-red-700 font-medium"
+                >
+                  Clear Selection
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* History List */}
@@ -342,18 +403,36 @@ const History = ({ onLoadFromHistory }) => {
                 >
                   {selectedItem?.id === item.id ? 'Hide Details' : 'View Details'}
                 </button>
-                <button
-                  onClick={() => handleLoadTest(item)}
-                  className="text-sm text-green-600 hover:text-green-700 font-medium"
-                >
-                  Quick Load
-                </button>
-                <button
-                  onClick={() => handleRerunTest(item)}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  Rerun Test
-                </button>
+
+                {comparisonMode ? (
+                  <button
+                    onClick={() => handleToggleComparison(item)}
+                    className={`text-sm font-medium ${
+                      isSelectedForComparison(item)
+                        ? 'text-blue-600 hover:text-blue-700'
+                        : 'text-gray-600 hover:text-gray-700'
+                    }`}
+                    disabled={!isSelectedForComparison(item) && selectedForComparison.length >= 4}
+                  >
+                    {isSelectedForComparison(item) ? '✓ Selected' :
+                     selectedForComparison.length >= 4 ? 'Max Reached' : 'Select'}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => handleLoadTest(item)}
+                      className="text-sm text-green-600 hover:text-green-700 font-medium"
+                    >
+                      Quick Load
+                    </button>
+                    <button
+                      onClick={() => handleRerunTest(item)}
+                      className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      Rerun Test
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
