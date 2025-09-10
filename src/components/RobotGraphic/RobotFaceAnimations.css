@@ -218,6 +218,7 @@
 
 /* Accessibility: Respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
+  /* Disable all animations */
   .robot-eye-blink,
   .robot-thinking-pulse,
   .robot-thinking-pulse-delayed,
@@ -230,15 +231,19 @@
   .robot-speech-wave-3,
   .robot-error-pulse,
   .robot-animated.robot-expression-happy .robot-head {
-    animation: none;
+    animation: none !important;
   }
 
+  /* Disable all transitions */
   .robot-face-svg,
-  .robot-animated .robot-head {
-    transition: none;
+  .robot-animated .robot-head,
+  .robot-animated *,
+  .robot-animated *::before,
+  .robot-animated *::after {
+    transition: none !important;
   }
 
-  /* Remove will-change for reduced motion */
+  /* Remove will-change for reduced motion to improve performance */
   .robot-animated .robot-eye-blink,
   .robot-animated .robot-thinking-pulse,
   .robot-animated .robot-gear-rotate,
@@ -248,7 +253,20 @@
   .robot-animated .robot-speech-wave-2,
   .robot-animated .robot-speech-wave-3,
   .robot-animated .robot-error-pulse {
-    will-change: auto;
+    will-change: auto !important;
+  }
+
+  /* Provide alternative visual feedback for state changes without animation */
+  .robot-state-thinking .robot-head {
+    filter: brightness(0.95);
+  }
+
+  .robot-state-talking .robot-head {
+    filter: brightness(1.05);
+  }
+
+  .robot-state-error .robot-head {
+    filter: saturate(1.2);
   }
 }
 
@@ -273,4 +291,57 @@
 
 .robot-size-lg .robot-face-svg {
   --animation-scale: 1.2;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .robot-face-svg {
+    --robot-stroke-color: #000000;
+    --robot-happy-color: #006600;
+    --robot-thinking-color: #cc6600;
+    --robot-talking-color: #0066cc;
+    --robot-error-color: #cc0000;
+  }
+
+  .robot-head {
+    stroke-width: 3 !important;
+  }
+
+  .robot-mouth,
+  .robot-eyebrows line,
+  .robot-speech-wave,
+  .robot-thinking-indicators circle,
+  .robot-error-indicator {
+    stroke-width: 2.5 !important;
+  }
+
+  .robot-eye {
+    fill: #000000 !important;
+  }
+}
+
+/* Forced colors mode (Windows High Contrast) */
+@media (forced-colors: active) {
+  .robot-face-svg {
+    forced-color-adjust: none;
+  }
+
+  .robot-head {
+    fill: Canvas !important;
+    stroke: CanvasText !important;
+    stroke-width: 2px !important;
+  }
+
+  .robot-eye {
+    fill: CanvasText !important;
+  }
+
+  .robot-mouth,
+  .robot-eyebrows line,
+  .robot-speech-wave,
+  .robot-thinking-indicators *,
+  .robot-error-indicator {
+    stroke: Highlight !important;
+    fill: Highlight !important;
+  }
 }

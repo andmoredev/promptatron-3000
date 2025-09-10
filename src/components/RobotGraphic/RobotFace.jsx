@@ -2,10 +2,10 @@
  * @fileoverview RobotFace component that renders SVG-based facial expressions
  */
 
-import React from "react";
 import { useTheme } from "../ThemeProvider.jsx";
 import { getThemeColor } from "../../utils/themeUtils.js";
 import { robotFacePropTypes, robotFaceDefaultProps } from "./propTypes.js";
+import { getAccessibleColors } from "./accessibility.js";
 import "./RobotFaceAnimations.css";
 
 /**
@@ -29,32 +29,38 @@ const RobotFace = ({ expression, animated = true, size = 'md', theme: propTheme 
 
   const { width, height, scale } = sizeMap[size] || sizeMap.md;
 
-  // Get theme colors with fallbacks
-  const colors = {
+  // Get theme colors with fallbacks ensuring proper contrast ratios
+  const baseColors = {
     robotBody: getThemeColor('primary', 50, theme) || '#f8fafc',
-    robotStroke: getThemeColor('gray', 500, theme) || '#64748b',
-    happyMouth: getThemeColor('primary', 600, theme) || '#059669',
-    thinkingMouth: getThemeColor('secondary', 600, theme) || '#d97706',
+    robotStroke: getThemeColor('gray', 600, theme) || '#475569', // Darker for better contrast
+    happyMouth: getThemeColor('primary', 700, theme) || '#047857', // Darker for better contrast
+    thinkingMouth: getThemeColor('secondary', 700, theme) || '#b45309', // Darker for better contrast
     thinkingBg: getThemeColor('secondary', 50, theme) || '#fefce8',
-    thinkingSecondary: getThemeColor('secondary', 400, theme) || '#f59e0b',
-    thinkingTertiary: getThemeColor('secondary', 300, theme) || '#fbbf24',
-    talkingElements: getThemeColor('primary', 500, theme) || '#3b82f6',
+    thinkingSecondary: getThemeColor('secondary', 500, theme) || '#d97706', // Adjusted for contrast
+    thinkingTertiary: getThemeColor('secondary', 400, theme) || '#f59e0b',
+    talkingElements: getThemeColor('primary', 600, theme) || '#2563eb', // Darker for better contrast
     talkingBg: getThemeColor('primary', 50, theme) || '#eff6ff',
-    talkingSecondary: getThemeColor('primary', 400, theme) || '#60a5fa',
-    talkingTertiary: getThemeColor('primary', 300, theme) || '#93c5fd',
-    errorElements: getThemeColor('tertiary', 600, theme) || '#dc2626',
+    talkingSecondary: getThemeColor('primary', 500, theme) || '#3b82f6',
+    talkingTertiary: getThemeColor('primary', 400, theme) || '#60a5fa',
+    errorElements: getThemeColor('tertiary', 700, theme) || '#b91c1c', // Darker for better contrast
     errorBg: getThemeColor('tertiary', 50, theme) || '#fef2f2',
-    eyeColor: '#1e293b',
+    eyeColor: '#0f172a', // Darker for better contrast
     whiteHighlight: '#ffffff'
   };
 
-  // Common SVG props
+  // Apply accessibility adjustments for high contrast and forced colors
+  const colors = getAccessibleColors(baseColors);
+
+  // Common SVG props with accessibility attributes
   const svgProps = {
     width,
     height,
     viewBox: "0 0 100 100",
     className: `robot-face-svg robot-expression-${expression} ${animated ? 'robot-animated' : 'robot-static'}`,
-    "data-testid": "robot-face-svg"
+    "data-testid": "robot-face-svg",
+    role: "presentation",
+    "aria-hidden": "true",
+    focusable: "false"
   };
 
   // Render different expressions based on the expression prop
