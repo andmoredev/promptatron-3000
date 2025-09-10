@@ -5,6 +5,7 @@ import PromptEditor from './components/PromptEditor'
 import TestResults from './components/TestResults'
 import History from './components/History'
 import { bedrockService } from './services/bedrockService'
+import { useHistory } from './hooks/useHistory'
 
 function App() {
   // Core state management for the test harness
@@ -16,12 +17,14 @@ function App() {
   })
   const [prompt, setPrompt] = useState('')
   const [testResults, setTestResults] = useState(null)
-  const [history, setHistory] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState('test')
   const [validationErrors, setValidationErrors] = useState({})
   const [modelValidationStatus, setModelValidationStatus] = useState({})
+
+  // Use the history hook for managing test history
+  const { saveTestResult } = useHistory()
 
   // Clear error when user makes changes
   useEffect(() => {
@@ -145,7 +148,9 @@ function App() {
       }
 
       setTestResults(testResult)
-      setHistory(prev => [testResult, ...prev])
+
+      // Save to history using the history service
+      await saveTestResult(testResult)
 
     } catch (err) {
       console.error('Test execution failed:', err)
@@ -331,7 +336,6 @@ function App() {
         ) : (
           <div className="max-w-6xl mx-auto">
             <History
-              history={history}
               onLoadFromHistory={handleLoadFromHistory}
             />
           </div>
