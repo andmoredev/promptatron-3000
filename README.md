@@ -1,4 +1,4 @@
-# Bedrock LLM Analyzer
+# Promptatron 3000
 
 A React-based test harness for experimenting with AWS Bedrock foundation models. Test different models with various prompts and datasets, compare results, and maintain a complete history of experiments.
 
