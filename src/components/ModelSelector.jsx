@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import PropTypes from 'prop-types'
 import { bedrockService } from '../services/bedrockService'
 
 const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
@@ -177,6 +178,12 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
       )}
     </div>
   )
+}
+
+ModelSelector.propTypes = {
+  selectedModel: PropTypes.string.isRequired,
+  onModelSelect: PropTypes.func.isRequired,
+  validationError: PropTypes.string
 }
 
 export default ModelSelector

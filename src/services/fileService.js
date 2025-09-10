@@ -30,20 +30,85 @@ export class FileService {
    */
   async loadHistory() {
     try {
-      // First try to load from localStorage as fallback
+      // Check if localStorage is available
+      if (!this.isLocalStorageAvailable()) {
+        console.warn('localStorage is not available, using in-memory storage');
+        return this.getInMemoryHistory();
+      }
+
+      // Try to load from localStorage
       const localStorageHistory = localStorage.getItem('bedrock-test-history');
       if (localStorageHistory) {
-        const parsed = JSON.parse(localStorageHistory);
-        if (Array.isArray(parsed)) {
-          return parsed;
+        try {
+          const parsed = JSON.parse(localStorageHistory);
+          if (Array.isArray(parsed)) {
+            // Validate each record
+            const validRecords = parsed.filter(record => this.validateTestResult(record));
+            if (validRecords.length !== parsed.length) {
+              console.warn(`Filtered out ${parsed.length - validRecords.length} invalid records from history`);
+              // Save the cleaned history back
+              await this.saveCleanedHistory(validRecords);
+            }
+            return validRecords;
+          } else {
+            console.warn('History data is not an array, resetting to empty array');
+            localStorage.removeItem('bedrock-test-history');
+            return [];
+          }
+        } catch (parseError) {
+          console.error('Failed to parse history JSON, resetting:', parseError);
+          localStorage.removeItem('bedrock-test-history');
+          return [];
         }
       }
 
       // If no localStorage data, return empty array
       return [];
     } catch (error) {
-      console.warn('Failed to load history from localStorage:', error);
-      return [];
+      console.error('Failed to load history from localStorage:', error);
+      // Fallback to in-memory storage
+      return this.getInMemoryHistory();
+    }
+  }
+
+  /**
+   * Check if localStorage is available and working
+   * @returns {boolean} True if localStorage is available
+   * @private
+   */
+  isLocalStorageAvailable() {
+    try {
+      const test = '__localStorage_test__';
+      localStorage.setItem(test, test);
+      localStorage.removeItem(test);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Get in-memory history as fallback
+   * @returns {Array} Array of test results
+   * @private
+   */
+  getInMemoryHistory() {
+    if (!this._inMemoryHistory) {
+      this._inMemoryHistory = [];
+    }
+    return [...this._inMemoryHistory];
+  }
+
+  /**
+   * Save cleaned history back to localStorage
+   * @param {Array} cleanedHistory - The cleaned history array
+   * @private
+   */
+  async saveCleanedHistory(cleanedHistory) {
+    try {
+      localStorage.setItem('bedrock-test-history', JSON.stringify(cleanedHistory));
+    } catch (error) {
+      console.error('Failed to save cleaned history:', error);
     }
   }
 
@@ -56,7 +121,8 @@ export class FileService {
     try {
       // Validate test result structure
       if (!this.validateTestResult(testResult)) {
-        throw new Error('Invalid test result structure');
+        const validationErrors = this.getValidationErrors(testResult);
+        throw new Error(`Invalid test result structure: ${validationErrors.join(', ')}`);
       }
 
       // Add ID and timestamp if not present
@@ -75,14 +141,102 @@ export class FileService {
       // Keep only the last 100 results to prevent excessive storage usage
       const trimmedHistory = history.slice(0, 100);
 
-      // Save to localStorage
-      localStorage.setItem('bedrock-test-history', JSON.stringify(trimmedHistory));
+      // Try to save to localStorage
+      if (this.isLocalStorageAvailable()) {
+        try {
+          const historyJson = JSON.stringify(trimmedHistory);
+
+          // Check if we're approaching localStorage limits
+          if (historyJson.length > 5 * 1024 * 1024) { // 5MB limit
+            console.warn('History approaching localStorage size limits, trimming to 50 records');
+            const furtherTrimmed = trimmedHistory.slice(0, 50);
+            localStorage.setItem('bedrock-test-history', JSON.stringify(furtherTrimmed));
+          } else {
+            localStorage.setItem('bedrock-test-history', historyJson);
+          }
+        } catch (storageError) {
+          if (storageError.name === 'QuotaExceededError') {
+            console.warn('localStorage quota exceeded, trimming history and retrying');
+            const trimmedForQuota = trimmedHistory.slice(0, 25);
+            localStorage.setItem('bedrock-test-history', JSON.stringify(trimmedForQuota));
+          } else {
+            throw storageError;
+          }
+        }
+      } else {
+        // Fallback to in-memory storage
+        console.warn('localStorage not available, using in-memory storage');
+        this._inMemoryHistory = trimmedHistory;
+      }
 
       return true;
     } catch (error) {
       console.error('Failed to save test result:', error);
-      throw new Error(`Failed to save test result: ${error.message}`);
+
+      // Try fallback save to in-memory storage
+      try {
+        const enrichedResult = {
+          id: testResult.id || this.generateId(),
+          timestamp: testResult.timestamp || new Date().toISOString(),
+          ...testResult
+        };
+
+        if (!this._inMemoryHistory) {
+          this._inMemoryHistory = [];
+        }
+        this._inMemoryHistory.unshift(enrichedResult);
+        this._inMemoryHistory = this._inMemoryHistory.slice(0, 100);
+
+        console.warn('Saved to in-memory storage as fallback');
+        return true;
+      } catch (fallbackError) {
+        console.error('Fallback save also failed:', fallbackError);
+        throw new Error(`Failed to save test result: ${error.message}`);
+      }
     }
+  }
+
+  /**
+   * Get detailed validation errors for a test result
+   * @param {Object} testResult - The test result to validate
+   * @returns {Array} Array of validation error messages
+   * @private
+   */
+  getValidationErrors(testResult) {
+    const errors = [];
+
+    if (!testResult || typeof testResult !== 'object') {
+      errors.push('Test result must be an object');
+      return errors;
+    }
+
+    // Required fields
+    if (!testResult.modelId || typeof testResult.modelId !== 'string') {
+      errors.push('modelId is required and must be a string');
+    }
+
+    if (!testResult.prompt || typeof testResult.prompt !== 'string') {
+      errors.push('prompt is required and must be a string');
+    }
+
+    // Optional but expected fields
+    if (testResult.datasetType && typeof testResult.datasetType !== 'string') {
+      errors.push('datasetType must be a string if provided');
+    }
+
+    if (testResult.datasetOption && typeof testResult.datasetOption !== 'string') {
+      errors.push('datasetOption must be a string if provided');
+    }
+
+    if (testResult.response && typeof testResult.response !== 'string') {
+      errors.push('response must be a string if provided');
+    }
+
+    if (testResult.timestamp && !this.isValidTimestamp(testResult.timestamp)) {
+      errors.push('timestamp must be a valid ISO string if provided');
+    }
+
+    return errors;
   }
 
   /**
@@ -91,11 +245,27 @@ export class FileService {
    */
   async clearHistory() {
     try {
-      localStorage.removeItem('bedrock-test-history');
+      // Clear localStorage if available
+      if (this.isLocalStorageAvailable()) {
+        localStorage.removeItem('bedrock-test-history');
+      }
+
+      // Clear in-memory storage
+      this._inMemoryHistory = [];
+
       return true;
     } catch (error) {
       console.error('Failed to clear history:', error);
-      throw new Error(`Failed to clear history: ${error.message}`);
+
+      // Try to clear in-memory storage as fallback
+      try {
+        this._inMemoryHistory = [];
+        console.warn('Cleared in-memory storage as fallback');
+        return true;
+      } catch (fallbackError) {
+        console.error('Fallback clear also failed:', fallbackError);
+        throw new Error(`Failed to clear history: ${error.message}`);
+      }
     }
   }
 

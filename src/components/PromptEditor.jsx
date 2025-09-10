@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import PropTypes from 'prop-types'
 
 const PromptEditor = ({ prompt, onPromptChange, validationError }) => {
   const [isExpanded, setIsExpanded] = useState(false)
@@ -110,6 +111,12 @@ const PromptEditor = ({ prompt, onPromptChange, validationError }) => {
       )}
     </div>
   )
+}
+
+PromptEditor.propTypes = {
+  prompt: PropTypes.string.isRequired,
+  onPromptChange: PropTypes.func.isRequired,
+  validationError: PropTypes.string
 }
 
 export default PromptEditor

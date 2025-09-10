@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import PropTypes from 'prop-types'
 
 const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) => {
   const [datasetTypes, setDatasetTypes] = useState([])
@@ -38,7 +39,7 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
         throw new Error('No dataset types found in manifest.json')
       }
 
-      const sortedTypes = [...manifest.types].sort()
+      const sortedTypes = [...manifest.types].sort((a, b) => a.localeCompare(b))
       setDatasetTypes(sortedTypes)
     } catch (err) {
       console.error('Error loading dataset types:', err)
@@ -77,7 +78,7 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
         throw new Error(`No supported dataset files (.json, .csv) found in ${type}/manifest.json`)
       }
 
-      const sortedOptions = [...supportedOptions].sort()
+      const sortedOptions = [...supportedOptions].sort((a, b) => a.localeCompare(b))
       setDatasetOptions(sortedOptions)
     } catch (err) {
       console.error('Error loading dataset options:', err)
@@ -244,6 +245,16 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
       )}
     </div>
   )
+}
+
+DatasetSelector.propTypes = {
+  selectedDataset: PropTypes.shape({
+    type: PropTypes.string,
+    option: PropTypes.string,
+    content: PropTypes.string
+  }).isRequired,
+  onDatasetSelect: PropTypes.func.isRequired,
+  validationError: PropTypes.string
 }
 
 export default DatasetSelector

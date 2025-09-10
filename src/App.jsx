@@ -5,8 +5,12 @@ import PromptEditor from './components/PromptEditor'
 import TestResults from './components/TestResults'
 import History from './components/History'
 import Comparison from './components/Comparison'
+import ErrorBoundary from './components/ErrorBoundary'
+import BrowserCompatibility from './components/BrowserCompatibility'
 import { bedrockService } from './services/bedrockService'
 import { useHistory } from './hooks/useHistory'
+import { validateForm } from './utils/formValidation'
+import { handleError, retryWithBackoff } from './utils/errorHandling'
 
 function App() {
   // Core state management for the test harness
@@ -22,8 +26,8 @@ function App() {
   const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState('test')
   const [validationErrors, setValidationErrors] = useState({})
-  const [modelValidationStatus, setModelValidationStatus] = useState({})
   const [selectedForComparison, setSelectedForComparison] = useState([])
+  const [retryCount, setRetryCount] = useState(0)
 
   // Use the history hook for managing test history
   const { saveTestResult } = useHistory()
@@ -37,34 +41,16 @@ function App() {
     setValidationErrors({})
   }, [selectedModel, selectedDataset, prompt])
 
-  // Real-time validation
+  // Real-time validation using enhanced validation utility
   useEffect(() => {
-    const errors = {}
-
-    // Model validation
-    if (selectedModel === '') {
-      errors.model = 'Model selection is required'
+    const formData = {
+      selectedModel,
+      prompt,
+      selectedDataset
     }
 
-    // Prompt validation
-    if (prompt.trim() === '') {
-      errors.prompt = 'Prompt is required'
-    } else if (prompt.trim().length < 10) {
-      errors.prompt = 'Prompt must be at least 10 characters long'
-    } else if (prompt.trim().length > 10000) {
-      errors.prompt = 'Prompt must be less than 10,000 characters'
-    }
-
-    // Dataset validation
-    if (!selectedDataset.type) {
-      errors.dataset = 'Dataset type selection is required'
-    } else if (!selectedDataset.option) {
-      errors.dataset = 'Dataset file selection is required'
-    } else if (!selectedDataset.content) {
-      errors.dataset = 'Dataset content not loaded'
-    }
-
-    setValidationErrors(errors)
+    const validationResult = validateForm(formData)
+    setValidationErrors(validationResult.errors)
   }, [selectedModel, prompt, selectedDataset])
 
   const isFormValid = () => {
@@ -77,44 +63,36 @@ function App() {
   }
 
   const validateTestConfiguration = () => {
-    const errors = []
-
-    // Model validation
-    if (!selectedModel) {
-      errors.push('Please select a model')
+    const formData = {
+      selectedModel,
+      prompt,
+      selectedDataset
     }
 
-    // Prompt validation
-    if (!prompt.trim()) {
-      errors.push('Please enter a prompt')
-    } else if (prompt.trim().length < 10) {
-      errors.push('Prompt must be at least 10 characters long')
-    } else if (prompt.trim().length > 10000) {
-      errors.push('Prompt must be less than 10,000 characters')
+    const validationResult = validateForm(formData)
+
+    if (!validationResult.isValid) {
+      return Object.values(validationResult.errors)
     }
 
-    // Dataset validation
-    if (!selectedDataset.type) {
-      errors.push('Please select a dataset type')
-    } else if (!selectedDataset.option) {
-      errors.push('Please select a dataset file')
-    } else if (!selectedDataset.content) {
-      errors.push('Dataset content not loaded. Please reselect your dataset.')
-    }
-
-    return errors
+    return []
   }
 
   const handleRunTest = async () => {
     // Comprehensive validation
     const validationErrors = validateTestConfiguration()
     if (validationErrors.length > 0) {
-      setError(validationErrors.join('. '))
+      const errorInfo = handleError(
+        new Error(validationErrors.join('. ')),
+        { component: 'App', action: 'validateTestConfiguration' }
+      )
+      setError(errorInfo.userMessage)
       return
     }
 
     setIsLoading(true)
     setError(null)
+    setRetryCount(0)
 
     try {
       console.log('Running test with:', {
@@ -123,33 +101,47 @@ function App() {
         prompt: prompt
       })
 
-      // Ensure BedrockService is ready
-      if (!bedrockService.isReady()) {
-        const initResult = await bedrockService.initialize()
-        if (!initResult.success) {
-          throw new Error(`AWS Bedrock initialization failed: ${initResult.message}`)
-        }
-      }
+      // Use retry with backoff for the test execution
+      const testResult = await retryWithBackoff(
+        async () => {
+          // Ensure BedrockService is ready
+          if (!bedrockService.isReady()) {
+            const initResult = await bedrockService.initialize()
+            if (!initResult.success) {
+              throw new Error(`AWS Bedrock initialization failed: ${initResult.message}`)
+            }
+          }
 
-      // Use BedrockService to invoke the model
-      const response = await bedrockService.invokeModel(
-        selectedModel,
-        prompt,
-        selectedDataset.content
+          // Use BedrockService to invoke the model
+          const response = await bedrockService.invokeModel(
+            selectedModel,
+            prompt,
+            selectedDataset.content
+          )
+
+          return {
+            id: Date.now().toString(),
+            modelId: selectedModel,
+            prompt: prompt,
+            datasetType: selectedDataset.type,
+            datasetOption: selectedDataset.option,
+            response: response.text,
+            usage: response.usage,
+            timestamp: new Date().toISOString()
+          }
+        },
+        {
+          maxRetries: 2,
+          baseDelay: 1000,
+          onRetry: (error, attempt, delay) => {
+            console.log(`Retrying test execution (attempt ${attempt}) after ${delay}ms:`, error.message)
+            setRetryCount(attempt)
+          }
+        }
       )
 
-      const testResult = {
-        id: Date.now().toString(),
-        modelId: selectedModel,
-        prompt: prompt,
-        datasetType: selectedDataset.type,
-        datasetOption: selectedDataset.option,
-        response: response.text,
-        usage: response.usage,
-        timestamp: new Date().toISOString()
-      }
-
       setTestResults(testResult)
+      setRetryCount(0)
 
       // Save to history using the history service
       await saveTestResult(testResult)
@@ -157,30 +149,17 @@ function App() {
     } catch (err) {
       console.error('Test execution failed:', err)
 
-      // Enhanced error handling with user-friendly messages
-      let errorMessage = 'An error occurred during testing'
+      // Use enhanced error handling
+      const errorInfo = handleError(err, {
+        component: 'App',
+        action: 'runTest',
+        model: selectedModel,
+        datasetType: selectedDataset.type,
+        promptLength: prompt.length
+      })
 
-      if (err.message.includes('credentials')) {
-        errorMessage = 'AWS credentials issue: ' + err.message + '. Please check your AWS configuration.'
-      } else if (err.message.includes('AccessDenied') || err.message.includes('UnauthorizedOperation')) {
-        errorMessage = 'Access denied: Your AWS credentials do not have permission to access this Bedrock model. Please check your IAM permissions.'
-      } else if (err.message.includes('ValidationException')) {
-        errorMessage = 'Invalid request: ' + err.message + '. Please check your model selection and prompt format.'
-      } else if (err.message.includes('ThrottlingException')) {
-        errorMessage = 'Request throttled: Too many requests. Please wait a moment and try again.'
-      } else if (err.message.includes('ServiceUnavailableException')) {
-        errorMessage = 'Service temporarily unavailable: Please try again in a few moments.'
-      } else if (err.message.includes('ModelNotReadyException')) {
-        errorMessage = 'Model not ready: The selected model is currently unavailable. Please try a different model.'
-      } else if (err.message.includes('network') || err.message.includes('ENOTFOUND')) {
-        errorMessage = 'Network error: Please check your internet connection and try again.'
-      } else if (err.message.includes('timeout')) {
-        errorMessage = 'Request timeout: The model took too long to respond. Please try again.'
-      } else {
-        errorMessage = err.message || errorMessage
-      }
-
-      setError(errorMessage)
+      setError(errorInfo.userMessage)
+      setRetryCount(0)
     } finally {
       setIsLoading(false)
     }
@@ -213,8 +192,10 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="container mx-auto px-4 py-8">
+    <ErrorBoundary>
+      <BrowserCompatibility>
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+          <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
@@ -276,8 +257,24 @@ function App() {
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>
                 </div>
-                <div className="ml-3">
+                <div className="ml-3 flex-1">
                   <p className="text-sm text-red-800">{error}</p>
+                  {retryCount > 0 && (
+                    <p className="text-xs text-red-600 mt-1">
+                      Retried {retryCount} time{retryCount !== 1 ? 's' : ''}
+                    </p>
+                  )}
+                </div>
+                <div className="ml-3 flex-shrink-0">
+                  <button
+                    onClick={() => setError(null)}
+                    className="inline-flex text-red-400 hover:text-red-600"
+                  >
+                    <span className="sr-only">Dismiss</span>
+                    <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
@@ -386,8 +383,10 @@ function App() {
             />
           </div>
         )}
-      </div>
-    </div>
+          </div>
+        </div>
+      </BrowserCompatibility>
+    </ErrorBoundary>
   )
 }
 
