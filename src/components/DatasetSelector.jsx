@@ -243,9 +243,11 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
           {selectedDataset.content && (
             <div className="mt-2">
               <p className="text-xs text-green-700 font-medium">Preview:</p>
-              <p className="text-xs text-green-700 mt-1 font-mono bg-green-100 p-2 rounded">
-                {selectedDataset.content.substring(0, 100)}...
-              </p>
+              <div className="text-xs text-green-700 mt-1 font-mono bg-green-100 p-2 rounded overflow-hidden">
+                <pre className="whitespace-pre-wrap break-words overflow-hidden text-xs">
+                  {selectedDataset.content.substring(0, 200)}...
+                </pre>
+              </div>
             </div>
           )}
         </div>
