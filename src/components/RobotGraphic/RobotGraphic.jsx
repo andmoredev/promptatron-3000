@@ -1,5 +1,5 @@
 /**
- * @fileoverview Main RobotGraphic component with static expressions
+ * @fileoverview Main RobotGraphic component with SVG-based facial expressions
  */
 
 import React from "react";
@@ -8,7 +8,9 @@ import {
   robotGraphicDefaultProps,
 } from "./propTypes.js";
 import { getRobotState, SIZE_CONFIGS } from "./robotStates.js";
+import RobotFace from "./RobotFace.jsx";
 import "./RobotGraphic.css";
+import "./RobotFaceAnimations.css";
 
 /**
  * RobotGraphic component that displays a robot with different facial expressions
@@ -56,11 +58,13 @@ const RobotGraphic = ({ currentState, size, className, ariaLabel }) => {
       data-state={robotState.key}
       data-expression={robotState.expression}
     >
-      {/* Static robot face placeholder - will be replaced with actual SVG in future tasks */}
+      {/* SVG-based robot face with expressions */}
       <div className="robot-face" data-testid="robot-face">
-        <div className="robot-expression-indicator">
-          {robotState.expression}
-        </div>
+        <RobotFace
+          expression={robotState.expression}
+          animated={true}
+          size={size}
+        />
       </div>
     </div>
   );

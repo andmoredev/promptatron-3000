@@ -1,0 +1,177 @@
+/**
+ * CSS animations for RobotFace component expressions
+ * Includes animations for blinking, thinking indicators, talking mouth, and error states
+ */
+
+/* Base robot face styles */
+.robot-face-svg {
+  transition: all 0.3s ease-in-out;
+}
+
+/* Eye blinking animation for happy state */
+@keyframes robot-blink {
+  0%, 90%, 100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+
+.robot-eye-blink {
+  animation: robot-blink 3s infinite;
+  transform-origin: center;
+}
+
+/* Thinking state animations */
+@keyframes robot-thinking-pulse {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.robot-thinking-pulse {
+  animation: robot-thinking-pulse 1.5s infinite ease-in-out;
+}
+
+.robot-thinking-pulse-delayed {
+  animation: robot-thinking-pulse 1.5s infinite ease-in-out;
+  animation-delay: 0.3s;
+}
+
+.robot-thinking-pulse-delayed-2 {
+  animation: robot-thinking-pulse 1.5s infinite ease-in-out;
+  animation-delay: 0.6s;
+}
+
+/* Talking state animations */
+@keyframes robot-mouth-talk {
+  0%, 100% {
+    rx: 8;
+    ry: 5;
+  }
+  25% {
+    rx: 6;
+    ry: 7;
+  }
+  50% {
+    rx: 10;
+    ry: 3;
+  }
+  75% {
+    rx: 7;
+    ry: 6;
+  }
+}
+
+.robot-mouth-animate {
+  animation: robot-mouth-talk 0.8s infinite ease-in-out;
+}
+
+/* Speech wave animations */
+@keyframes robot-speech-wave-animation {
+  0%, 100% {
+    opacity: 0.3;
+    stroke-width: 1;
+  }
+  50% {
+    opacity: 1;
+    stroke-width: 2;
+  }
+}
+
+.robot-speech-wave-1 {
+  animation: robot-speech-wave-animation 2s infinite ease-in-out;
+}
+
+.robot-speech-wave-2 {
+  animation: robot-speech-wave-animation 2s infinite ease-in-out;
+  animation-delay: 0.3s;
+}
+
+.robot-speech-wave-3 {
+  animation: robot-speech-wave-animation 2s infinite ease-in-out;
+  animation-delay: 0.6s;
+}
+
+/* Error state animations */
+@keyframes robot-error-pulse {
+  0%, 100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.robot-error-pulse {
+  animation: robot-error-pulse 1s ease-in-out 3;
+}
+
+/* Subtle breathing animation for idle state */
+@keyframes robot-subtle-breathing {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+.robot-face-happy .robot-head {
+  animation: robot-subtle-breathing 3s infinite ease-in-out;
+}
+
+/* Hover effects for interactivity */
+.robot-face-svg:hover .robot-head {
+  filter: brightness(1.05);
+}
+
+/* Accessibility: Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .robot-eye-blink,
+  .robot-thinking-pulse,
+  .robot-thinking-pulse-delayed,
+  .robot-thinking-pulse-delayed-2,
+  .robot-mouth-animate,
+  .robot-speech-wave-1,
+  .robot-speech-wave-2,
+  .robot-speech-wave-3,
+  .robot-error-pulse,
+  .robot-face-happy .robot-head {
+    animation: none;
+  }
+
+  .robot-face-svg {
+    transition: none;
+  }
+}
+
+/* Expression-specific styling enhancements */
+.robot-expression-happy {
+  filter: drop-shadow(0 2px 4px rgba(16, 185, 129, 0.1));
+}
+
+.robot-expression-thinking {
+  filter: drop-shadow(0 2px 4px rgba(245, 158, 11, 0.1));
+}
+
+.robot-expression-talking {
+  filter: drop-shadow(0 2px 4px rgba(59, 130, 246, 0.1));
+}
+
+.robot-expression-concerned {
+  filter: drop-shadow(0 2px 4px rgba(220, 38, 38, 0.1));
+}
+
+/* Smooth transitions between expressions */
+.robot-face-svg * {
+  transition: fill 0.3s ease-in-out, stroke 0.3s ease-in-out, opacity 0.3s ease-in-out;
+}

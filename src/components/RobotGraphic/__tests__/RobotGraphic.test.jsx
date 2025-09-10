@@ -34,11 +34,12 @@ describe('RobotGraphic Component', () => {
       expect(faceElement).toBeInTheDocument();
     });
 
-    it('should display expression indicator', () => {
+    it('should display SVG robot face', () => {
       render(<RobotGraphic currentState="idle" />);
 
-      const expressionIndicator = screen.getByText('happy');
-      expect(expressionIndicator).toBeInTheDocument();
+      const robotFaceSvg = screen.getByTestId('robot-face-svg');
+      expect(robotFaceSvg).toBeInTheDocument();
+      expect(robotFaceSvg.tagName).toBe('svg');
     });
   });
 
@@ -49,7 +50,9 @@ describe('RobotGraphic Component', () => {
       const robotElement = screen.getByTestId('robot-graphic');
       expect(robotElement).toHaveAttribute('data-state', 'idle');
       expect(robotElement).toHaveAttribute('data-expression', 'happy');
-      expect(screen.getByText('happy')).toBeInTheDocument();
+
+      const robotFaceSvg = screen.getByTestId('robot-face-svg');
+      expect(robotFaceSvg).toHaveClass('robot-expression-happy');
     });
 
     it('should map thinking state to thinking expression', () => {
@@ -58,7 +61,9 @@ describe('RobotGraphic Component', () => {
       const robotElement = screen.getByTestId('robot-graphic');
       expect(robotElement).toHaveAttribute('data-state', 'thinking');
       expect(robotElement).toHaveAttribute('data-expression', 'thinking');
-      expect(screen.getByText('thinking')).toBeInTheDocument();
+
+      const robotFaceSvg = screen.getByTestId('robot-face-svg');
+      expect(robotFaceSvg).toHaveClass('robot-expression-thinking');
     });
 
     it('should map talking state to talking expression', () => {
@@ -67,7 +72,9 @@ describe('RobotGraphic Component', () => {
       const robotElement = screen.getByTestId('robot-graphic');
       expect(robotElement).toHaveAttribute('data-state', 'talking');
       expect(robotElement).toHaveAttribute('data-expression', 'talking');
-      expect(screen.getByText('talking')).toBeInTheDocument();
+
+      const robotFaceSvg = screen.getByTestId('robot-face-svg');
+      expect(robotFaceSvg).toHaveClass('robot-expression-talking');
     });
 
     it('should map error state to concerned expression', () => {
@@ -76,7 +83,9 @@ describe('RobotGraphic Component', () => {
       const robotElement = screen.getByTestId('robot-graphic');
       expect(robotElement).toHaveAttribute('data-state', 'error');
       expect(robotElement).toHaveAttribute('data-expression', 'concerned');
-      expect(screen.getByText('concerned')).toBeInTheDocument();
+
+      const robotFaceSvg = screen.getByTestId('robot-face-svg');
+      expect(robotFaceSvg).toHaveClass('robot-expression-concerned');
     });
 
     it('should fallback to idle state for invalid states', () => {
@@ -222,14 +231,14 @@ describe('RobotGraphic Component', () => {
       expect(faceElement).toHaveClass('robot-face');
     });
 
-    it('should have expression indicator inside face', () => {
+    it('should have SVG robot face inside face container', () => {
       render(<RobotGraphic currentState="idle" />);
 
       const faceElement = screen.getByTestId('robot-face');
-      const expressionIndicator = screen.getByText('happy');
+      const robotFaceSvg = screen.getByTestId('robot-face-svg');
 
-      expect(faceElement).toContainElement(expressionIndicator);
-      expect(expressionIndicator).toHaveClass('robot-expression-indicator');
+      expect(faceElement).toContainElement(robotFaceSvg);
+      expect(robotFaceSvg).toHaveClass('robot-face-svg');
     });
   });
 });

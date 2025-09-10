@@ -22,24 +22,15 @@
   width: 100%;
   height: 100%;
   border-radius: 50%;
+  overflow: hidden;
 }
 
-.robot-expression-indicator {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #374151;
-  text-transform: capitalize;
-  user-select: none;
-}
+/* Remove the old expression indicator styles since we're using SVG now */
 
 /* Size variants */
 .robot-size-sm {
   width: 48px;
   height: 48px;
-}
-
-.robot-size-sm .robot-expression-indicator {
-  font-size: 0.625rem;
 }
 
 .robot-size-md {
@@ -50,10 +41,6 @@
 .robot-size-lg {
   width: 96px;
   height: 96px;
-}
-
-.robot-size-lg .robot-expression-indicator {
-  font-size: 0.875rem;
 }
 
 /* State-specific styling */
@@ -77,22 +64,7 @@
   border-color: #ef4444;
 }
 
-/* Expression-specific styling */
-.robot-expression-happy .robot-expression-indicator {
-  color: #059669;
-}
-
-.robot-expression-thinking .robot-expression-indicator {
-  color: #d97706;
-}
-
-.robot-expression-talking .robot-expression-indicator {
-  color: #2563eb;
-}
-
-.robot-expression-concerned .robot-expression-indicator {
-  color: #dc2626;
-}
+/* Expression-specific styling - now handled by SVG animations */
 
 /* Accessibility: Respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
