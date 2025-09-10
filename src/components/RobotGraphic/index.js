@@ -53,12 +53,7 @@ export {
   useOptimizedRobotState
 } from './useRobotState.js';
 
-export {
-  withRobotStateOptimization,
-  withRobotStateMonitoring,
-  createOptimizedRobotGraphic,
-  useRenderTracking
-} from './withRobotStateOptimization.jsx';
+
 
 export {
   default as RobotGraphicContainer,

@@ -50,9 +50,10 @@ export function mapAppStateToRobotState(appState) {
     return 'thinking';
   }
 
-  // If we just completed a test successfully, briefly show talking before returning to idle
-  if (testResults && !error) {
-    return 'talking';
+  // If we just completed a test successfully, return to happy state (idle)
+  // According to Requirement 4.3: "WHEN an operation completes successfully THEN the robot SHALL return to happy state"
+  if (testResults && !error && !isLoading) {
+    return 'idle';
   }
 
   // Default state is idle (happy)
@@ -70,6 +71,17 @@ export function detectStateChange(currentAppState, previousAppState) {
   const previousRobotState = previousAppState ? mapAppStateToRobotState(previousAppState) : 'idle';
 
   const hasChanged = currentRobotState !== previousRobotState;
+
+  // Debug logging when robot debug is enabled
+  if (import.meta.env.VITE_ROBOT_DEBUG === 'true') {
+    console.log('🔍 State Change Detection:', {
+      currentAppState,
+      previousAppState,
+      currentRobotState,
+      previousRobotState,
+      hasChanged
+    });
+  }
 
   return {
     hasChanged,

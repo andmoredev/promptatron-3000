@@ -11,6 +11,45 @@ import {
   createDebouncedStateHandler
 } from './stateMapping.js';
 
+// Import the internal function for state change reasons
+function getStateChangeReason(currentAppState, previousAppState) {
+  const { isLoading, error, progressStatus, testResults } = currentAppState;
+  const prevState = previousAppState || {};
+
+  // Error state changes
+  if (error && !prevState.error) {
+    return 'error_occurred';
+  }
+  if (!error && prevState.error) {
+    return 'error_cleared';
+  }
+
+  // Loading state changes
+  if (isLoading && !prevState.isLoading) {
+    return 'loading_started';
+  }
+  if (!isLoading && prevState.isLoading) {
+    return 'loading_completed';
+  }
+
+  // Progress changes within loading
+  if (isLoading && prevState.isLoading) {
+    const currentProgress = currentAppState.progressValue || 0;
+    const prevProgress = prevState.progressValue || 0;
+
+    if (currentProgress >= 50 && prevProgress < 50) {
+      return 'progress_advanced_to_talking';
+    }
+  }
+
+  // Test completion
+  if (testResults && !prevState.testResults) {
+    return 'test_completed';
+  }
+
+  return 'state_updated';
+}
+
 /**
  * Custom hook for managing robot state based on application state
  * @param {Object} appState - Current application state
@@ -51,57 +90,55 @@ export function useRobotState(appState, options = {}) {
     return extractRobotRelevantState(validatedAppState);
   }, [validatedAppState]);
 
-  // Create debounced state change handler
+  // Simplified state change handler
   const handleStateChange = useCallback((newAppState) => {
     const newRobotState = mapAppStateToRobotState(newAppState);
+    const previousAppState = previousAppStateRef.current;
 
-    // Detect if this is actually a change
-    const changeDetection = detectStateChange(newAppState, previousAppStateRef.current);
+    console.log('🤖 Processing state change:', {
+      newAppState,
+      newRobotState,
+      currentRobotState,
+      previousAppState
+    });
 
-    if (changeDetection.hasChanged) {
-      setIsTransitioning(true);
+    // Always update the previous state reference
+    previousAppStateRef.current = newAppState;
+
+    // Check if robot state actually changed
+    const previousRobotState = previousAppState ? mapAppStateToRobotState(previousAppState) : 'idle';
+
+    if (newRobotState !== previousRobotState) {
+      console.log('🤖 Robot state changed:', previousRobotState, '→', newRobotState);
 
       // Update state history for debugging
       setStateHistory(prev => [
         ...prev.slice(-9), // Keep last 10 entries
         {
           timestamp: Date.now(),
-          from: changeDetection.previousState,
-          to: changeDetection.currentState,
-          reason: changeDetection.reason,
+          from: previousRobotState,
+          to: newRobotState,
+          reason: getStateChangeReason(newAppState, previousAppState),
           appState: { ...newAppState }
         }
       ]);
 
-      // Handle special case: successful completion should show talking briefly
-      if (newRobotState === 'talking' &&
-          !newAppState.isLoading &&
-          newAppState.testResults &&
-          !newAppState.error &&
-          enableTransitions) {
+      // All state changes are immediate - success goes directly to happy (idle) state
+      // As per Requirement 4.3: "WHEN an operation completes successfully THEN the robot SHALL return to happy state"
+      console.log('🤖 State change to:', newRobotState);
+      setCurrentRobotState(newRobotState);
+      setIsTransitioning(false);
 
-        // Show talking state
-        setCurrentRobotState('talking');
-
-        // Clear any existing timeout
-        if (transitionTimeoutRef.current) {
-          clearTimeout(transitionTimeoutRef.current);
-        }
-
-        // Transition to idle after delay
-        transitionTimeoutRef.current = setTimeout(() => {
-          setCurrentRobotState('idle');
-          setIsTransitioning(false);
-        }, talkingDuration);
-      } else {
-        // Immediate state change
-        setCurrentRobotState(newRobotState);
-        setIsTransitioning(false);
+      // Clear any existing timeout since we're changing state
+      if (transitionTimeoutRef.current) {
+        console.log('🤖 Clearing existing timeout');
+        clearTimeout(transitionTimeoutRef.current);
+        transitionTimeoutRef.current = null;
       }
+    } else {
+      console.log('🤖 No robot state change detected, staying in:', newRobotState);
     }
-
-    previousAppStateRef.current = newAppState;
-  }, [talkingDuration, enableTransitions]);
+  }, [talkingDuration, enableTransitions, currentRobotState]);
 
   // Create or update debounced handler
   useEffect(() => {
@@ -110,10 +147,11 @@ export function useRobotState(appState, options = {}) {
 
   // React to app state changes
   useEffect(() => {
-    if (debouncedHandlerRef.current) {
-      debouncedHandlerRef.current(robotRelevantState);
-    }
-  }, [robotRelevantState]);
+    // Direct state change handling (bypassing debouncing for now)
+    handleStateChange(robotRelevantState);
+  }, [robotRelevantState, handleStateChange]);
+
+
 
   // Cleanup timeouts on unmount
   useEffect(() => {

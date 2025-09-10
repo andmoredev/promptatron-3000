@@ -7,7 +7,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import RobotGraphic from './RobotGraphic.jsx';
 import { useRobotState } from './useRobotState.js';
-import { withRobotStateOptimization } from './withRobotStateOptimization.jsx';
+
 import { extractRobotRelevantState } from './stateMapping.js';
 
 /**
@@ -47,9 +47,9 @@ const RobotGraphicContainer = ({
     enableTransitions: options.enableTransitions !== false
   });
 
-  // Debug information (only in development)
+  // Debug information (when debug mode is enabled)
   React.useEffect(() => {
-    if (enableDebug && process.env.NODE_ENV === 'development') {
+    if (enableDebug) {
       console.log('RobotGraphicContainer Debug:', {
         currentState,
         isTransitioning,
@@ -88,8 +88,8 @@ const RobotGraphicContainer = ({
         ariaLabel={enhancedAriaLabel}
       />
 
-      {/* Debug panel (development only) */}
-      {enableDebug && process.env.NODE_ENV === 'development' && (
+      {/* Debug panel (when debug mode is enabled) */}
+      {enableDebug && (
         <RobotDebugPanel
           currentState={currentState}
           isTransitioning={isTransitioning}
@@ -184,8 +184,7 @@ const RobotDebugPanel = ({
   );
 };
 
-// Optimize the container component
-const OptimizedRobotGraphicContainer = withRobotStateOptimization(RobotGraphicContainer);
+
 
 // PropTypes
 RobotGraphicContainer.propTypes = {
@@ -215,9 +214,8 @@ RobotDebugPanel.propTypes = {
   getStateInfo: PropTypes.func.isRequired
 };
 
-// Export both optimized and non-optimized versions
-export default OptimizedRobotGraphicContainer;
-export { RobotGraphicContainer as UnoptimizedRobotGraphicContainer };
+// Export the container component
+export default RobotGraphicContainer;
 
 /**
  * Hook for easy integration with App.jsx
