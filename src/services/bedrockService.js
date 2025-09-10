@@ -1,4 +1,4 @@
-import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
 
 /**
@@ -214,6 +214,199 @@ export class BedrockService {
 
     } catch (error) {
       throw new Error(`Failed to invoke model ${modelId}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Invoke a foundation model with streaming response using ConverseStream API
+   * @param {string} modelId - The model ID to invoke
+   * @param {string} systemPrompt - The system prompt to send to the model
+   * @param {string} userPrompt - The user prompt to send to the model
+   * @param {string} content - Additional content/context for the model
+   * @param {Function} onToken - Callback function called for each token received
+   * @param {Function} onComplete - Callback function called when streaming completes
+   * @param {Function} onError - Callback function called if streaming fails
+   * @returns {Promise<Object>} The complete model response
+   */
+  async invokeModelStream(modelId, systemPrompt, userPrompt, content = '', onToken, onComplete, onError) {
+    if (!this.isInitialized || !this.credentialsValid) {
+      const initResult = await this.initialize();
+      if (!initResult.success) {
+        throw new Error(initResult.message);
+      }
+    }
+
+    try {
+      // Check if model supports streaming
+      if (!this.isStreamingSupported(modelId)) {
+        console.warn(`Model ${modelId} doesn't support streaming, falling back to non-streaming`);
+        const result = await this.invokeModel(modelId, systemPrompt, userPrompt, content);
+        onComplete?.(result);
+        return result;
+      }
+
+      // Combine user prompt and content if content exists
+      const fullUserPrompt = content ? `${userPrompt}\n\nData to analyze:\n${content}` : userPrompt;
+
+      // Prepare messages array for ConverseStream API
+      const messages = [
+        {
+          role: 'user',
+          content: [
+            {
+              text: fullUserPrompt
+            }
+          ]
+        }
+      ];
+
+      // Prepare the ConverseStream API command
+      const converseParams = {
+        modelId: modelId,
+        messages: messages,
+        inferenceConfig: {
+          maxTokens: 4000,
+          temperature: 0.7
+        }
+      };
+
+      // Add system prompt if provided
+      if (systemPrompt?.trim()) {
+        converseParams.system = [
+          {
+            text: systemPrompt
+          }
+        ];
+      }
+
+      const command = new ConverseStreamCommand(converseParams);
+      const response = await this.runtimeClient.send(command);
+
+      // Process the streaming response
+      let fullText = '';
+      let usage = null;
+
+      for await (const event of response.stream) {
+        const parsedEvent = this.parseStreamEvent(event);
+
+        if (parsedEvent.type === 'token' && parsedEvent.text) {
+          fullText += parsedEvent.text;
+          onToken?.(parsedEvent.text, fullText);
+        } else if (parsedEvent.type === 'metadata' && parsedEvent.usage) {
+          usage = parsedEvent.usage;
+        } else if (parsedEvent.type === 'error') {
+          onError?.(new Error(parsedEvent.error));
+          throw new Error(parsedEvent.error);
+        }
+      }
+
+      const result = {
+        text: fullText,
+        usage: usage
+      };
+
+      onComplete?.(result);
+      return result;
+
+    } catch (error) {
+      // Graceful fallback to non-streaming
+      console.warn('Streaming failed, falling back to non-streaming:', error.message);
+      try {
+        const result = await this.invokeModel(modelId, systemPrompt, userPrompt, content);
+        onComplete?.(result);
+        return result;
+      } catch (fallbackError) {
+        const finalError = new Error(`Both streaming and fallback failed. Streaming error: ${error.message}. Fallback error: ${fallbackError.message}`);
+        onError?.(finalError);
+        throw finalError;
+      }
+    }
+  }
+
+  /**
+   * Check if a model supports streaming
+   * @param {string} modelId - The model ID to check
+   * @returns {boolean} True if the model supports streaming
+   */
+  isStreamingSupported(modelId) {
+    // Most modern Bedrock models support streaming, but we'll maintain a list
+    // of known streaming-capable models for safety
+    const streamingSupportedModels = [
+      'amazon.nova-pro-v1:0',
+      'amazon.nova-lite-v1:0',
+      'amazon.nova-micro-v1:0',
+      'anthropic.claude-3-5-sonnet-20241022-v2:0',
+      'anthropic.claude-3-5-sonnet-20240620-v1:0',
+      'anthropic.claude-3-5-haiku-20241022-v1:0',
+      'anthropic.claude-3-haiku-20240307-v1:0',
+      'anthropic.claude-3-sonnet-20240229-v1:0',
+      'anthropic.claude-3-opus-20240229-v1:0',
+      'meta.llama3-2-90b-instruct-v1:0',
+      'meta.llama3-2-11b-instruct-v1:0',
+      'meta.llama3-2-3b-instruct-v1:0',
+      'meta.llama3-2-1b-instruct-v1:0',
+      'meta.llama3-1-70b-instruct-v1:0',
+      'meta.llama3-1-8b-instruct-v1:0'
+    ];
+
+    return streamingSupportedModels.includes(modelId);
+  }
+
+  /**
+   * Parse streaming events from ConverseStream API
+   * @param {Object} event - The streaming event
+   * @returns {Object} Parsed event with type and data
+   * @private
+   */
+  parseStreamEvent(event) {
+    try {
+      // Handle messageStart event
+      if (event.messageStart) {
+        return {
+          type: 'messageStart',
+          role: event.messageStart.role
+        };
+      }
+
+      // Handle contentBlockDelta event (contains tokens)
+      if (event.contentBlockDelta && event.contentBlockDelta.delta && event.contentBlockDelta.delta.text) {
+        return {
+          type: 'token',
+          text: event.contentBlockDelta.delta.text
+        };
+      }
+
+      // Handle messageStop event
+      if (event.messageStop) {
+        return {
+          type: 'complete',
+          stopReason: event.messageStop.stopReason
+        };
+      }
+
+      // Handle metadata event (contains usage information)
+      if (event.metadata && event.metadata.usage) {
+        return {
+          type: 'metadata',
+          usage: {
+            input_tokens: event.metadata.usage.inputTokens,
+            output_tokens: event.metadata.usage.outputTokens,
+            total_tokens: event.metadata.usage.totalTokens
+          }
+        };
+      }
+
+      // Handle any other event types
+      return {
+        type: 'unknown',
+        event: event
+      };
+
+    } catch (error) {
+      return {
+        type: 'error',
+        error: `Failed to parse stream event: ${error.message}`
+      };
     }
   }
 
