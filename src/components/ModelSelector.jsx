@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import { bedrockService } from '../services/bedrockService'
+import HelpTooltip from './HelpTooltip'
+import LoadingSpinner from './LoadingSpinner'
 
 const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
   const [models, setModels] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
   const [credentialStatus, setCredentialStatus] = useState(null)
-  const [modelValidation, setModelValidation] = useState({})
-  const [isValidatingModel, setIsValidatingModel] = useState(false)
 
   // Fallback models in case AWS API is not available
   const fallbackModels = [
@@ -70,7 +70,13 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Select Model</h3>
+        <div className="flex items-center space-x-2">
+          <h3 className="text-lg font-semibold text-gray-900">Select Model</h3>
+          <HelpTooltip
+            content="Choose from available AWS Bedrock foundation models. Different models excel at different tasks - Claude for reasoning, Nova for general tasks, and Llama for open-source alternatives."
+            position="right"
+          />
+        </div>
         <button
           onClick={loadModels}
           disabled={isLoading}
@@ -122,9 +128,8 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
 
       {/* Loading State */}
       {isLoading && (
-        <div className="mb-4 flex items-center justify-center py-4">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
-          <span className="ml-2 text-sm text-gray-600">Discovering models...</span>
+        <div className="mb-4 py-4">
+          <LoadingSpinner size="md" text="Discovering models..." />
         </div>
       )}
 

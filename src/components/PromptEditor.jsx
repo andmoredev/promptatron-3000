@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import PropTypes from 'prop-types'
+import HelpTooltip from './HelpTooltip'
 
 const PromptEditor = ({ prompt, onPromptChange, validationError }) => {
   const [isExpanded, setIsExpanded] = useState(false)
@@ -34,7 +35,13 @@ const PromptEditor = ({ prompt, onPromptChange, validationError }) => {
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Prompt Configuration</h3>
+        <div className="flex items-center space-x-2">
+          <h3 className="text-lg font-semibold text-gray-900">Prompt Configuration</h3>
+          <HelpTooltip
+            content="Write your prompt here. The selected dataset content will be automatically appended to your prompt when the test runs. Use templates for common patterns or write custom prompts."
+            position="right"
+          />
+        </div>
         <div className="flex space-x-2">
           <button
             onClick={() => setIsExpanded(!isExpanded)}

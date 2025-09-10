@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
+import HelpTooltip from './HelpTooltip'
 
 const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) => {
   const [datasetTypes, setDatasetTypes] = useState([])
@@ -142,7 +143,13 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
 
   return (
     <div className="card">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Dataset</h3>
+      <div className="flex items-center space-x-2 mb-4">
+        <h3 className="text-lg font-semibold text-gray-900">Select Dataset</h3>
+        <HelpTooltip
+          content="Choose a dataset type (use case) and specific dataset file. Datasets are organized by use case in the public/datasets/ folder. You can add your own CSV files to test with custom data."
+          position="right"
+        />
+      </div>
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">

@@ -7,6 +7,9 @@ import History from './components/History'
 import Comparison from './components/Comparison'
 import ErrorBoundary from './components/ErrorBoundary'
 import BrowserCompatibility from './components/BrowserCompatibility'
+import HelpGuide from './components/HelpGuide'
+import LoadingSpinner from './components/LoadingSpinner'
+import ProgressBar from './components/ProgressBar'
 import { bedrockService } from './services/bedrockService'
 import { useHistory } from './hooks/useHistory'
 import { validateForm } from './utils/formValidation'
@@ -28,9 +31,21 @@ function App() {
   const [validationErrors, setValidationErrors] = useState({})
   const [selectedForComparison, setSelectedForComparison] = useState([])
   const [retryCount, setRetryCount] = useState(0)
+  const [progressStatus, setProgressStatus] = useState('')
+  const [progressValue, setProgressValue] = useState(0)
 
   // Use the history hook for managing test history
   const { saveTestResult } = useHistory()
+
+  // Form validation function
+  const isFormValid = () => {
+    return Object.keys(validationErrors).length === 0 &&
+           selectedModel &&
+           prompt.trim() &&
+           selectedDataset.type &&
+           selectedDataset.option &&
+           selectedDataset.content
+  }
 
   // Clear error when user makes changes
   useEffect(() => {
@@ -53,14 +68,49 @@ function App() {
     setValidationErrors(validationResult.errors)
   }, [selectedModel, prompt, selectedDataset])
 
-  const isFormValid = () => {
-    return Object.keys(validationErrors).length === 0 &&
-           selectedModel &&
-           prompt.trim() &&
-           selectedDataset.type &&
-           selectedDataset.option &&
-           selectedDataset.content
-  }
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      // Ctrl/Cmd + Enter: Run test
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault()
+        if (isFormValid() && !isLoading) {
+          handleRunTest()
+        }
+      }
+
+      // Ctrl/Cmd + H: Switch to History tab
+      if ((event.ctrlKey || event.metaKey) && event.key === 'h') {
+        event.preventDefault()
+        setActiveTab('history')
+      }
+
+      // Ctrl/Cmd + T: Switch to Test tab
+      if ((event.ctrlKey || event.metaKey) && event.key === 't') {
+        event.preventDefault()
+        setActiveTab('test')
+      }
+
+      // Ctrl/Cmd + C: Switch to Comparison tab (when available)
+      if ((event.ctrlKey || event.metaKey) && event.key === 'c' && selectedForComparison.length > 0) {
+        event.preventDefault()
+        setActiveTab('comparison')
+      }
+
+      // Escape: Clear current selection or close modals
+      if (event.key === 'Escape') {
+        if (selectedForComparison.length > 0) {
+          setSelectedForComparison([])
+        }
+        if (error) {
+          setError(null)
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isFormValid, isLoading, selectedForComparison.length, error])
 
   const validateTestConfiguration = () => {
     const formData = {
@@ -93,6 +143,8 @@ function App() {
     setIsLoading(true)
     setError(null)
     setRetryCount(0)
+    setProgressStatus('Initializing...')
+    setProgressValue(10)
 
     try {
       console.log('Running test with:', {
@@ -105,6 +157,9 @@ function App() {
       const testResult = await retryWithBackoff(
         async () => {
           // Ensure BedrockService is ready
+          setProgressStatus('Connecting to AWS Bedrock...')
+          setProgressValue(25)
+
           if (!bedrockService.isReady()) {
             const initResult = await bedrockService.initialize()
             if (!initResult.success) {
@@ -112,12 +167,18 @@ function App() {
             }
           }
 
+          setProgressStatus('Sending request to model...')
+          setProgressValue(50)
+
           // Use BedrockService to invoke the model
           const response = await bedrockService.invokeModel(
             selectedModel,
             prompt,
             selectedDataset.content
           )
+
+          setProgressStatus('Processing response...')
+          setProgressValue(75)
 
           return {
             id: Date.now().toString(),
@@ -140,11 +201,17 @@ function App() {
         }
       )
 
+      setProgressStatus('Saving results...')
+      setProgressValue(90)
+
       setTestResults(testResult)
       setRetryCount(0)
 
       // Save to history using the history service
       await saveTestResult(testResult)
+
+      setProgressStatus('Complete!')
+      setProgressValue(100)
 
     } catch (err) {
       console.error('Test execution failed:', err)
@@ -162,6 +229,8 @@ function App() {
       setRetryCount(0)
     } finally {
       setIsLoading(false)
+      setProgressStatus('')
+      setProgressValue(0)
     }
   }
 
@@ -195,23 +264,23 @@ function App() {
     <ErrorBoundary>
       <BrowserCompatibility>
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-          <div className="container mx-auto px-4 py-8">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+        <div className="text-center mb-6 lg:mb-8">
+          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
             Bedrock LLM Analyzer
           </h1>
-          <p className="text-lg text-gray-600">
+          <p className="text-base md:text-lg text-gray-600 px-4">
             Test and compare AWS Bedrock foundation models with your datasets
           </p>
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex justify-center mb-8">
-          <div className="bg-white rounded-lg p-1 shadow-sm border border-gray-200">
+        <div className="flex justify-center mb-6 lg:mb-8 px-4">
+          <div className="bg-white rounded-lg p-1 shadow-sm border border-gray-200 flex flex-wrap sm:flex-nowrap">
             <button
               onClick={() => setActiveTab('test')}
-              className={`px-6 py-2 rounded-md font-medium transition-colors duration-200 ${
+              className={`px-4 sm:px-6 py-2 rounded-md font-medium transition-colors duration-200 text-sm sm:text-base ${
                 activeTab === 'test'
                   ? 'bg-primary-600 text-white'
                   : 'text-gray-600 hover:text-gray-900'
@@ -221,7 +290,7 @@ function App() {
             </button>
             <button
               onClick={() => setActiveTab('history')}
-              className={`px-6 py-2 rounded-md font-medium transition-colors duration-200 ${
+              className={`px-4 sm:px-6 py-2 rounded-md font-medium transition-colors duration-200 text-sm sm:text-base ${
                 activeTab === 'history'
                   ? 'bg-primary-600 text-white'
                   : 'text-gray-600 hover:text-gray-900'
@@ -231,7 +300,7 @@ function App() {
             </button>
             <button
               onClick={() => setActiveTab('comparison')}
-              className={`px-6 py-2 rounded-md font-medium transition-colors duration-200 relative ${
+              className={`px-4 sm:px-6 py-2 rounded-md font-medium transition-colors duration-200 relative text-sm sm:text-base ${
                 activeTab === 'comparison'
                   ? 'bg-primary-600 text-white'
                   : 'text-gray-600 hover:text-gray-900'
@@ -249,8 +318,8 @@ function App() {
 
         {/* Error Display */}
         {error && (
-          <div className="max-w-4xl mx-auto mb-6">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="max-w-4xl mx-auto mb-6 animate-fade-in">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 transform transition-all duration-300 hover:shadow-md">
               <div className="flex">
                 <div className="flex-shrink-0">
                   <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
@@ -283,10 +352,10 @@ function App() {
 
         {/* Main Content */}
         {activeTab === 'test' && (
-          <div className="max-w-6xl mx-auto">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="max-w-7xl mx-auto animate-fade-in">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8">
               {/* Left Column - Configuration */}
-              <div className="space-y-6">
+              <div className="space-y-6 animate-slide-up">
                 <ModelSelector
                   selectedModel={selectedModel}
                   onModelSelect={setSelectedModel}
@@ -330,6 +399,17 @@ function App() {
                   </div>
                 )}
 
+                {/* Progress Bar */}
+                {isLoading && progressStatus && (
+                  <div className="mb-6">
+                    <ProgressBar
+                      progress={progressValue}
+                      status={progressStatus}
+                      color="primary"
+                    />
+                  </div>
+                )}
+
                 <div className="flex justify-center">
                   <button
                     onClick={handleRunTest}
@@ -339,13 +419,7 @@ function App() {
                     }`}
                   >
                     {isLoading ? (
-                      <div className="flex items-center">
-                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Running Test...
-                      </div>
+                      <LoadingSpinner size="sm" color="white" text="Running Test..." inline />
                     ) : (
                       'Run Test'
                     )}
@@ -354,7 +428,7 @@ function App() {
               </div>
 
               {/* Right Column - Results */}
-              <div>
+              <div className="animate-slide-up" style={{ animationDelay: '0.1s' }}>
                 <TestResults
                   results={testResults}
                   isLoading={isLoading}
@@ -365,7 +439,7 @@ function App() {
         )}
 
         {activeTab === 'history' && (
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-6xl mx-auto animate-fade-in">
             <History
               onLoadFromHistory={handleLoadFromHistory}
               onCompareTests={handleCompareTests}
@@ -375,7 +449,7 @@ function App() {
         )}
 
         {activeTab === 'comparison' && (
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-6xl mx-auto animate-fade-in">
             <Comparison
               selectedTests={selectedForComparison}
               onRemoveTest={handleRemoveFromComparison}
@@ -385,6 +459,9 @@ function App() {
         )}
           </div>
         </div>
+
+        {/* Help Guide */}
+        <HelpGuide />
       </BrowserCompatibility>
     </ErrorBoundary>
   )
