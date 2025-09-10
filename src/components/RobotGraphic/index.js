@@ -26,5 +26,7 @@ export {
   robotFaceDefaultProps
 } from './propTypes.js';
 
+// Export main components
+export { default as RobotGraphic } from './RobotGraphic.jsx';
+
 // Type definitions are available via JSDoc comments in types.js
-// Components will be exported here once they are implemented in future tasks

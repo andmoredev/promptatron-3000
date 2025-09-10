@@ -1,0 +1,102 @@
+/**
+ * Basic styles for RobotGraphic component
+ * These are minimal styles to make the component functional
+ * More detailed styling will be added in future tasks
+ */
+
+.robot-graphic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border-radius: 50%;
+  background-color: #f3f4f6;
+  border: 2px solid #e5e7eb;
+  transition: all 300ms ease-in-out;
+}
+
+.robot-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.robot-expression-indicator {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #374151;
+  text-transform: capitalize;
+  user-select: none;
+}
+
+/* Size variants */
+.robot-size-sm {
+  width: 48px;
+  height: 48px;
+}
+
+.robot-size-sm .robot-expression-indicator {
+  font-size: 0.625rem;
+}
+
+.robot-size-md {
+  width: 64px;
+  height: 64px;
+}
+
+.robot-size-lg {
+  width: 96px;
+  height: 96px;
+}
+
+.robot-size-lg .robot-expression-indicator {
+  font-size: 0.875rem;
+}
+
+/* State-specific styling */
+.robot-state-idle {
+  background-color: #ecfdf5;
+  border-color: #10b981;
+}
+
+.robot-state-thinking {
+  background-color: #fef3c7;
+  border-color: #f59e0b;
+}
+
+.robot-state-talking {
+  background-color: #dbeafe;
+  border-color: #3b82f6;
+}
+
+.robot-state-error {
+  background-color: #fee2e2;
+  border-color: #ef4444;
+}
+
+/* Expression-specific styling */
+.robot-expression-happy .robot-expression-indicator {
+  color: #059669;
+}
+
+.robot-expression-thinking .robot-expression-indicator {
+  color: #d97706;
+}
+
+.robot-expression-talking .robot-expression-indicator {
+  color: #2563eb;
+}
+
+.robot-expression-concerned .robot-expression-indicator {
+  color: #dc2626;
+}
+
+/* Accessibility: Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .robot-graphic {
+    transition: none;
+  }
+}

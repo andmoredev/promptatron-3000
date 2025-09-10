@@ -208,7 +208,6 @@ const PromptEditor = ({
     )
   }
 
-  // Dual prompt mode
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
@@ -475,7 +474,6 @@ const PromptEditor = ({
 }
 
 PromptEditor.propTypes = {
-  // Dual prompt mode props
   systemPrompt: PropTypes.string,
   userPrompt: PropTypes.string,
   onSystemPromptChange: PropTypes.func,

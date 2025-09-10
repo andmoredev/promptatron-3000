@@ -549,14 +549,14 @@ function App() {
                             )}
                           </ul>
 
-                          {/* Enhanced user guidance for dual prompt requirements */}
+                          {/* Enhanced user guidance for prompt requirements */}
                           {(validationErrors.systemPrompt || validationErrors.userPrompt) && (
                             <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
                               <h4 className="text-sm font-medium text-blue-800 mb-2 flex items-center space-x-1">
                                 <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                                <span>Dual Prompt Guide</span>
+                                <span>Prompt Guide</span>
                               </h4>
                               <div className="text-xs text-blue-700 space-y-2">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

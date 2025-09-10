@@ -16,7 +16,8 @@ import {
   robotGraphicPropTypes,
   robotFacePropTypes,
   robotGraphicDefaultProps,
-  robotFaceDefaultProps
+  robotFaceDefaultProps,
+  RobotGraphic
 } from '../index.js';
 
 describe('Index Exports', () => {
@@ -69,5 +70,10 @@ describe('Index Exports', () => {
     expect(getRobotState('idle')).toBe(ROBOT_STATES.IDLE);
     expect(isValidRobotState('thinking')).toBe(true);
     expect(isValidRobotState('invalid')).toBe(false);
+  });
+
+  it('should export RobotGraphic component', () => {
+    expect(RobotGraphic).toBeDefined();
+    expect(typeof RobotGraphic).toBe('function');
   });
 });
