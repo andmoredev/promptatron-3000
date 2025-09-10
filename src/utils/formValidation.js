@@ -10,16 +10,6 @@ export const validationRules = {
     required: true,
     message: 'Model selection is required'
   },
-  prompt: {
-    required: true,
-    minLength: 10,
-    maxLength: 10000,
-    messages: {
-      required: 'Prompt is required',
-      minLength: 'Prompt must be at least 10 characters long',
-      maxLength: 'Prompt must be less than 10,000 characters'
-    }
-  },
   systemPrompt: {
     required: true,
     minLength: 1,
@@ -52,7 +42,7 @@ export const validationRules = {
 
 /**
  * Validate a single field based on its type and value
- * @param {string} fieldType - The type of field (model, prompt, systemPrompt, userPrompt, dataset)
+ * @param {string} fieldType - The type of field (model, systemPrompt, userPrompt, dataset)
  * @param {any} value - The value to validate
  * @param {Object} options - Additional validation options
  * @returns {Object} Validation result with isValid and error message
@@ -66,8 +56,6 @@ export function validateField(fieldType, value, options = {}) {
   switch (fieldType) {
     case 'model':
       return validateModel(value, rules)
-    case 'prompt':
-      return validatePrompt(value, rules)
     case 'systemPrompt':
       return validateSystemPrompt(value, rules)
     case 'userPrompt':
@@ -92,29 +80,6 @@ function validateModel(value, rules) {
   return { isValid: true, error: null }
 }
 
-/**
- * Validate prompt text
- * @param {string} value - The prompt text
- * @param {Object} rules - Validation rules
- * @returns {Object} Validation result
- */
-function validatePrompt(value, rules) {
-  if (rules.required && (!value || value.trim() === '')) {
-    return { isValid: false, error: rules.messages.required }
-  }
-
-  const trimmedValue = value ? value.trim() : ''
-
-  if (rules.minLength && trimmedValue.length < rules.minLength) {
-    return { isValid: false, error: rules.messages.minLength }
-  }
-
-  if (rules.maxLength && trimmedValue.length > rules.maxLength) {
-    return { isValid: false, error: rules.messages.maxLength }
-  }
-
-  return { isValid: true, error: null }
-}
 
 /**
  * Validate system prompt text
@@ -208,30 +173,18 @@ export function validateForm(formData) {
     errors.model = modelResult.error
   }
 
-  // Check if using dual prompt mode (systemPrompt and userPrompt) or legacy single prompt mode
-  const isDualPromptMode = formData.hasOwnProperty('systemPrompt') || formData.hasOwnProperty('userPrompt')
+  // Validate system prompt
+  const systemPromptResult = validateField('systemPrompt', formData.systemPrompt)
+  results.systemPrompt = systemPromptResult
+  if (!systemPromptResult.isValid) {
+    errors.systemPrompt = systemPromptResult.error
+  }
 
-  if (isDualPromptMode) {
-    // Validate system prompt
-    const systemPromptResult = validateField('systemPrompt', formData.systemPrompt)
-    results.systemPrompt = systemPromptResult
-    if (!systemPromptResult.isValid) {
-      errors.systemPrompt = systemPromptResult.error
-    }
-
-    // Validate user prompt
-    const userPromptResult = validateField('userPrompt', formData.userPrompt)
-    results.userPrompt = userPromptResult
-    if (!userPromptResult.isValid) {
-      errors.userPrompt = userPromptResult.error
-    }
-  } else {
-    // Legacy single prompt validation
-    const promptResult = validateField('prompt', formData.prompt)
-    results.prompt = promptResult
-    if (!promptResult.isValid) {
-      errors.prompt = promptResult.error
-    }
+  // Validate user prompt
+  const userPromptResult = validateField('userPrompt', formData.userPrompt)
+  results.userPrompt = userPromptResult
+  if (!userPromptResult.isValid) {
+    errors.userPrompt = userPromptResult.error
   }
 
   // Validate dataset
@@ -256,29 +209,15 @@ export function validateForm(formData) {
  * @param {Array} fieldsToValidate - Array of field names to validate
  * @returns {Object} Validation utilities
  */
-export function createFormValidationHelpers(formData, fieldsToValidate = ['model', 'prompt', 'dataset']) {
-  // Auto-detect dual prompt mode and adjust fields to validate
-  const isDualPromptMode = formData.hasOwnProperty('systemPrompt') || formData.hasOwnProperty('userPrompt')
-  let actualFieldsToValidate = fieldsToValidate
-
-  if (isDualPromptMode && fieldsToValidate.includes('prompt')) {
-    // Replace 'prompt' with 'systemPrompt' and 'userPrompt' for dual prompt mode
-    actualFieldsToValidate = fieldsToValidate
-      .filter(field => field !== 'prompt')
-      .concat(['systemPrompt', 'userPrompt'])
-  }
-
+export function createFormValidationHelpers(formData, fieldsToValidate = ['model', 'systemPrompt', 'userPrompt', 'dataset']) {
   const validateCurrentForm = () => {
     const errors = {}
 
-    actualFieldsToValidate.forEach(fieldType => {
+    fieldsToValidate.forEach(fieldType => {
       let value
       switch (fieldType) {
         case 'model':
           value = formData.selectedModel
-          break
-        case 'prompt':
-          value = formData.prompt
           break
         case 'systemPrompt':
           value = formData.systemPrompt
@@ -322,7 +261,7 @@ export function createFormValidationHelpers(formData, fieldsToValidate = ['model
     isFieldValid,
     getFieldError,
     isFormValid,
-    fieldsToValidate: actualFieldsToValidate
+    fieldsToValidate
   }
 }
 
@@ -353,8 +292,8 @@ export function validateModelId(modelId) {
     return { isValid: false, error: 'Model ID must be a string' }
   }
 
-  // Basic format validation for AWS Bedrock model IDs
-  const modelIdPattern = /^[a-zA-Z0-9\-_.]+$/
+  // Basic format validation for AWS Bedrock model IDs (allow colons for version numbers)
+  const modelIdPattern = /^[a-zA-Z0-9\-_.:]+$/
   if (!modelIdPattern.test(modelId)) {
     return { isValid: false, error: 'Invalid model ID format' }
   }

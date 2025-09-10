@@ -1,4 +1,4 @@
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
 
 /**
@@ -156,13 +156,14 @@ export class BedrockService {
   }
 
   /**
-   * Invoke a foundation model with the given prompt and content
+   * Invoke a foundation model with the given system prompt, user prompt and content using Converse API
    * @param {string} modelId - The model ID to invoke
-   * @param {string} prompt - The prompt to send to the model
+   * @param {string} systemPrompt - The system prompt to send to the model
+   * @param {string} userPrompt - The user prompt to send to the model
    * @param {string} content - Additional content/context for the model
    * @returns {Promise<Object>} The model response
    */
-  async invokeModel(modelId, prompt, content = '') {
+  async invokeModel(modelId, systemPrompt, userPrompt, content = '') {
     if (!this.isInitialized || !this.credentialsValid) {
       const initResult = await this.initialize();
       if (!initResult.success) {
@@ -171,24 +172,45 @@ export class BedrockService {
     }
 
     try {
-      // Combine prompt and content
-      const fullPrompt = content ? `${prompt}\n\nData to analyze:\n${content}` : prompt;
+      // Combine user prompt and content if content exists
+      const fullUserPrompt = content ? `${userPrompt}\n\nData to analyze:\n${content}` : userPrompt;
 
-      // Prepare the request body based on the model provider
-      const requestBody = this.prepareModelRequest(modelId, fullPrompt);
+      // Prepare messages array for Converse API
+      const messages = [
+        {
+          role: 'user',
+          content: [
+            {
+              text: fullUserPrompt
+            }
+          ]
+        }
+      ];
 
-      const command = new InvokeModelCommand({
+      // Prepare the Converse API command
+      const converseParams = {
         modelId: modelId,
-        body: JSON.stringify(requestBody),
-        contentType: 'application/json',
-        accept: 'application/json'
-      });
+        messages: messages,
+        inferenceConfig: {
+          maxTokens: 4000,
+          temperature: 0.7
+        }
+      };
 
+      // Add system prompt if provided using Converse API's native system message handling
+      if (systemPrompt?.trim()) {
+        converseParams.system = [
+          {
+            text: systemPrompt
+          }
+        ];
+      }
+
+      const command = new ConverseCommand(converseParams);
       const response = await this.runtimeClient.send(command);
 
-      // Parse the response based on the model provider
-      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-      return this.parseModelResponse(modelId, responseBody);
+      // Parse the Converse API response
+      return this.parseConverseResponse(response);
 
     } catch (error) {
       throw new Error(`Failed to invoke model ${modelId}: ${error.message}`);
@@ -196,88 +218,27 @@ export class BedrockService {
   }
 
   /**
-   * Prepare the request body for different model providers
+   * Parse the response from the Converse API
    * @private
    */
-  prepareModelRequest(modelId, prompt) {
-    if (modelId.startsWith('anthropic.')) {
-      return {
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        max_tokens: 4000,
-        temperature: 0.7,
-        anthropic_version: 'bedrock-2023-05-31'
-      };
-    } else if (modelId.startsWith('amazon.nova')) {
-      return {
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                text: prompt
-              }
-            ]
-          }
-        ],
-        inferenceConfig: {
-          max_new_tokens: 4000,
-          temperature: 0.7
-        }
-      };
-    } else if (modelId.startsWith('meta.llama')) {
-      return {
-        prompt: prompt,
-        max_gen_len: 4000,
-        temperature: 0.7,
-        top_p: 0.9
-      };
-    } else {
-      // Generic format for other models
-      return {
-        inputText: prompt,
-        textGenerationConfig: {
-          maxTokenCount: 4000,
-          temperature: 0.7,
-          topP: 0.9
-        }
-      };
-    }
-  }
+  parseConverseResponse(response) {
+    try {
+      // Extract text from the Converse API response
+      const text = response.output?.message?.content?.[0]?.text || 'No response generated';
 
-  /**
-   * Parse the response from different model providers
-   * @private
-   */
-  parseModelResponse(modelId, responseBody) {
-    if (modelId.startsWith('anthropic.')) {
+      // Extract usage information if available
+      const usage = response.usage ? {
+        input_tokens: response.usage.inputTokens,
+        output_tokens: response.usage.outputTokens,
+        total_tokens: response.usage.totalTokens
+      } : null;
+
       return {
-        text: responseBody.content?.[0]?.text || responseBody.completion || 'No response generated',
-        usage: responseBody.usage
+        text: text,
+        usage: usage
       };
-    } else if (modelId.startsWith('amazon.nova')) {
-      return {
-        text: responseBody.output?.message?.content?.[0]?.text || 'No response generated',
-        usage: responseBody.usage
-      };
-    } else if (modelId.startsWith('meta.llama')) {
-      return {
-        text: responseBody.generation || 'No response generated',
-        usage: responseBody.prompt_token_count ? {
-          input_tokens: responseBody.prompt_token_count,
-          output_tokens: responseBody.generation_token_count
-        } : null
-      };
-    } else {
-      // Generic parsing for other models
-      return {
-        text: responseBody.outputText || responseBody.generated_text || responseBody.text || 'No response generated',
-        usage: responseBody.usage
-      };
+    } catch (error) {
+      throw new Error(`Failed to parse Converse API response: ${error.message}`);
     }
   }
 

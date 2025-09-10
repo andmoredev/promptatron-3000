@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { useHistory } from '../hooks/useHistory.js'
 
 const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = [] }) => {
@@ -9,7 +9,6 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
     clearHistory,
     exportHistory,
     importHistory,
-    filterHistory,
     getHistoryStats
   } = useHistory()
 
@@ -28,8 +27,11 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
   // Filter history based on search and model filter
   const filteredHistory = history.filter(item => {
     const matchesSearch = !searchTerm ||
-      item.prompt?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.systemPrompt?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.userPrompt?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.prompt?.toLowerCase().includes(searchTerm.toLowerCase()) || // Legacy prompt field for backward compatibility
       item.datasetType?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.datasetOption?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.response?.toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesModel = !filterModel || item.modelId === filterModel
@@ -278,7 +280,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search prompts, datasets, or responses..."
+              placeholder="Search system prompts, user prompts, datasets, or responses..."
               className="input-field"
             />
           </div>
@@ -355,20 +357,91 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                       Dataset: {item.datasetType}/{item.datasetOption}
                     </p>
                   )}
-                  <p className="text-sm text-gray-600">
-                    <span className="font-medium">Prompt:</span> {truncateText(item.prompt || 'No prompt')}
-                  </p>
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium">Prompts:</span>
+                    <div className="mt-1 space-y-1">
+                      {item.systemPrompt && (
+                        <div className="flex items-start">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 mr-2 flex-shrink-0">
+                            System
+                          </span>
+                          <span className="text-gray-700">{truncateText(item.systemPrompt, 60)}</span>
+                        </div>
+                      )}
+                      {(item.userPrompt || item.prompt) && (
+                        <div className="flex items-start">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 mr-2 flex-shrink-0">
+                            User
+                          </span>
+                          <span className="text-gray-700">{truncateText(item.userPrompt || item.prompt, 60)}</span>
+                        </div>
+                      )}
+                      {!item.systemPrompt && !item.userPrompt && !item.prompt && (
+                        <span className="text-gray-500 italic">No prompts available</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {selectedItem?.id === item.id && (
                   <div className="mt-4 space-y-3">
                     <div>
-                      <h5 className="font-medium text-gray-700 mb-1">Full Prompt:</h5>
-                      <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                        <pre className="text-sm text-blue-800 whitespace-pre-wrap">
-                          {item.prompt}
-                        </pre>
+                      <div className="flex items-center justify-between mb-2">
+                        <h5 className="font-medium text-gray-700">Full Prompts:</h5>
+                        {!item.systemPrompt && item.prompt && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                            Legacy Format
+                          </span>
+                        )}
                       </div>
+
+                      {/* System Prompt */}
+                      {item.systemPrompt && (
+                        <div className="mb-3">
+                          <div className="flex items-center mb-2">
+                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800 mr-2">
+                              System Prompt
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {item.systemPrompt.length} characters
+                            </span>
+                          </div>
+                          <div className="bg-purple-50 border border-purple-200 rounded p-3">
+                            <pre className="text-sm text-purple-800 whitespace-pre-wrap">
+                              {item.systemPrompt}
+                            </pre>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* User Prompt */}
+                      {(item.userPrompt || item.prompt) && (
+                        <div className="mb-3">
+                          <div className="flex items-center mb-2">
+                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800 mr-2">
+                              User Prompt
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {(item.userPrompt || item.prompt).length} characters
+                            </span>
+                            {!item.userPrompt && item.prompt && (
+                              <span className="ml-2 text-xs text-gray-400">(from legacy format)</span>
+                            )}
+                          </div>
+                          <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                            <pre className="text-sm text-blue-800 whitespace-pre-wrap">
+                              {item.userPrompt || item.prompt}
+                            </pre>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* No prompts available */}
+                      {!item.systemPrompt && !item.userPrompt && !item.prompt && (
+                        <div className="text-center py-4 text-gray-500 italic">
+                          No prompts available for this test
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -479,7 +552,8 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
 const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
   const [modifiedItem, setModifiedItem] = useState({
     modelId: testItem.modelId || '',
-    prompt: testItem.prompt || '',
+    systemPrompt: testItem.systemPrompt || '',
+    userPrompt: testItem.userPrompt || testItem.prompt || '', // Handle legacy prompt field
     datasetType: testItem.datasetType || '',
     datasetOption: testItem.datasetOption || ''
   })
@@ -489,17 +563,25 @@ const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
     onConfirm(modifiedItem)
   }
 
-  const handlePromptChange = (e) => {
+  const handleSystemPromptChange = (e) => {
     setModifiedItem(prev => ({
       ...prev,
-      prompt: e.target.value
+      systemPrompt: e.target.value
+    }))
+  }
+
+  const handleUserPromptChange = (e) => {
+    setModifiedItem(prev => ({
+      ...prev,
+      userPrompt: e.target.value
     }))
   }
 
   const isModified = () => {
     return (
       modifiedItem.modelId !== testItem.modelId ||
-      modifiedItem.prompt !== testItem.prompt ||
+      modifiedItem.systemPrompt !== (testItem.systemPrompt || '') ||
+      modifiedItem.userPrompt !== (testItem.userPrompt || testItem.prompt || '') ||
       modifiedItem.datasetType !== testItem.datasetType ||
       modifiedItem.datasetOption !== testItem.datasetOption
     )
@@ -549,14 +631,26 @@ const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
               {/* Quick Actions */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                 <button
-                  onClick={() => setModifiedItem({ ...testItem })}
+                  onClick={() => setModifiedItem({
+                    modelId: testItem.modelId || '',
+                    systemPrompt: testItem.systemPrompt || '',
+                    userPrompt: testItem.userPrompt || testItem.prompt || '',
+                    datasetType: testItem.datasetType || '',
+                    datasetOption: testItem.datasetOption || ''
+                  })}
                   className="p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50"
                 >
                   <div className="font-medium text-gray-900">Exact Rerun</div>
                   <div className="text-sm text-gray-600">Use identical configuration</div>
                 </button>
                 <button
-                  onClick={() => setModifiedItem({ ...testItem, prompt: testItem.prompt })}
+                  onClick={() => setModifiedItem({
+                    modelId: testItem.modelId || '',
+                    systemPrompt: testItem.systemPrompt || '',
+                    userPrompt: testItem.userPrompt || testItem.prompt || '',
+                    datasetType: testItem.datasetType || '',
+                    datasetOption: testItem.datasetOption || ''
+                  })}
                   className="p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50"
                 >
                   <div className="font-medium text-gray-900">Modify & Rerun</div>
@@ -608,12 +702,25 @@ const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Prompt
+                      System Prompt
                     </label>
                     <textarea
-                      value={modifiedItem.prompt}
-                      onChange={handlePromptChange}
-                      rows={6}
+                      value={modifiedItem.systemPrompt}
+                      onChange={handleSystemPromptChange}
+                      rows={4}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      placeholder="Enter system prompt"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      User Prompt
+                    </label>
+                    <textarea
+                      value={modifiedItem.userPrompt}
+                      onChange={handleUserPromptChange}
+                      rows={4}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
                       placeholder="Enter your prompt"
                     />

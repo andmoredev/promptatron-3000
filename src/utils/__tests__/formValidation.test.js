@@ -18,20 +18,21 @@ describe('Form Validation', () => {
   })
 
   test('should validate prompt field correctly', () => {
-    // Valid prompt
+    // Note: 'prompt' field type is no longer supported in dual prompt mode
+    // This test validates that unknown field types return valid by default
     const validResult = validateField('prompt', 'This is a valid prompt with enough characters')
     expect(validResult.isValid).toBe(true)
     expect(validResult.error).toBeNull()
 
-    // Invalid prompt (too short)
+    // Unknown field types should always return valid
     const shortResult = validateField('prompt', 'short')
-    expect(shortResult.isValid).toBe(false)
-    expect(shortResult.error).toBe('Prompt must be at least 10 characters long')
+    expect(shortResult.isValid).toBe(true)
+    expect(shortResult.error).toBeNull()
 
-    // Invalid prompt (empty)
+    // Unknown field types should always return valid
     const emptyResult = validateField('prompt', '')
-    expect(emptyResult.isValid).toBe(false)
-    expect(emptyResult.error).toBe('Prompt is required')
+    expect(emptyResult.isValid).toBe(true)
+    expect(emptyResult.error).toBeNull()
   })
 
   test('should validate dataset field correctly', () => {
@@ -57,9 +58,11 @@ describe('Form Validation', () => {
   })
 
   test('should validate entire form correctly with single prompt', () => {
+    // Note: Single prompt mode is no longer supported, form validation now requires dual prompts
     const validFormData = {
       selectedModel: 'amazon.nova-pro-v1:0',
-      prompt: 'This is a valid prompt with enough characters',
+      systemPrompt: 'You are a helpful assistant.',
+      userPrompt: 'This is a valid prompt with enough characters',
       selectedDataset: {
         type: 'enterprise-fraud',
         option: 'dataset1.json',
@@ -98,6 +101,11 @@ describe('Form Validation', () => {
     expect(validateModelId('').isValid).toBe(false)
     expect(validateModelId('invalid model id').isValid).toBe(false)
     expect(validateModelId(null).isValid).toBe(false)
+
+    // Model ID with unknown prefix should still be valid but with warning
+    const unknownPrefixResult = validateModelId('unknown.model-id')
+    expect(unknownPrefixResult.isValid).toBe(true)
+    expect(unknownPrefixResult.warning).toContain('does not match known AWS Bedrock model patterns')
   })
 
   test('should validate dataset content', () => {
@@ -206,23 +214,7 @@ describe('Form Validation', () => {
       expect(result.errors.userPrompt).toBeUndefined()
     })
 
-    test('should handle form validation mode detection correctly', () => {
-      // Single prompt mode
-      const singlePromptForm = {
-        selectedModel: 'amazon.nova-pro-v1:0',
-        prompt: 'This is a single prompt',
-        selectedDataset: {
-          type: 'enterprise-fraud',
-          option: 'dataset1.json',
-          content: '{"data": "test"}'
-        }
-      }
-
-      const singleResult = validateForm(singlePromptForm)
-      expect(singleResult.results.prompt).toBeDefined()
-      expect(singleResult.results.systemPrompt).toBeUndefined()
-      expect(singleResult.results.userPrompt).toBeUndefined()
-
+    test('should handle dual prompt validation correctly', () => {
       // Dual prompt mode
       const dualPromptForm = {
         selectedModel: 'amazon.nova-pro-v1:0',
@@ -238,7 +230,7 @@ describe('Form Validation', () => {
       const dualResult = validateForm(dualPromptForm)
       expect(dualResult.results.systemPrompt).toBeDefined()
       expect(dualResult.results.userPrompt).toBeDefined()
-      expect(dualResult.results.prompt).toBeUndefined()
+      expect(dualResult.isValid).toBe(true)
     })
   })
 })

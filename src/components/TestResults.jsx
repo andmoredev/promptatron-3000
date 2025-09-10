@@ -279,12 +279,31 @@ const TestResults = ({ results, isLoading }) => {
 
       {/* Prompt Display */}
       <div className="mb-4">
-        <h4 className="font-medium text-gray-700 mb-2">Prompt Used:</h4>
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <pre className="text-sm text-blue-800 whitespace-pre-wrap font-mono">
-            {results.prompt}
-          </pre>
-        </div>
+        <h4 className="font-medium text-gray-700 mb-2">Prompts Used:</h4>
+
+        {/* System Prompt */}
+        {results.systemPrompt && (
+          <div className="mb-3">
+            <h5 className="text-sm font-medium text-gray-600 mb-1">System Prompt:</h5>
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+              <pre className="text-sm text-purple-800 whitespace-pre-wrap font-mono">
+                {results.systemPrompt}
+              </pre>
+            </div>
+          </div>
+        )}
+
+        {/* User Prompt */}
+        {results.userPrompt && (
+          <div className="mb-3">
+            <h5 className="text-sm font-medium text-gray-600 mb-1">User Prompt:</h5>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <pre className="text-sm text-blue-800 whitespace-pre-wrap font-mono">
+                {results.userPrompt}
+              </pre>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Response Display */}

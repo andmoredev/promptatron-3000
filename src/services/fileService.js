@@ -215,8 +215,13 @@ export class FileService {
       errors.push('modelId is required and must be a string');
     }
 
-    if (!testResult.prompt || typeof testResult.prompt !== 'string') {
-      errors.push('prompt is required and must be a string');
+    // Check for dual prompt format (preferred) or legacy single prompt
+    const hasSystemPrompt = testResult.systemPrompt && typeof testResult.systemPrompt === 'string';
+    const hasUserPrompt = testResult.userPrompt && typeof testResult.userPrompt === 'string';
+    const hasLegacyPrompt = testResult.prompt && typeof testResult.prompt === 'string';
+
+    if (!hasSystemPrompt && !hasUserPrompt && !hasLegacyPrompt) {
+      errors.push('either systemPrompt and userPrompt, or legacy prompt field is required');
     }
 
     // Optional but expected fields

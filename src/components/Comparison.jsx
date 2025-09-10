@@ -362,15 +362,34 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
               </div>
             )}
 
-            {/* Prompt */}
+            {/* Prompts */}
             {(compareMode === 'all') && (
               <div className="mb-4">
-                <h5 className="font-medium text-gray-700 mb-2">Prompt:</h5>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <pre className="text-sm text-blue-800 whitespace-pre-wrap">
-                    {test.prompt}
-                  </pre>
-                </div>
+                <h5 className="font-medium text-gray-700 mb-2">Prompts:</h5>
+
+                {/* System Prompt */}
+                {test.systemPrompt && (
+                  <div className="mb-2">
+                    <h6 className="text-xs font-medium text-gray-600 mb-1">System:</h6>
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-2">
+                      <pre className="text-xs text-purple-800 whitespace-pre-wrap">
+                        {test.systemPrompt}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+
+                {/* User Prompt */}
+                {test.userPrompt && (
+                  <div className="mb-2">
+                    <h6 className="text-xs font-medium text-gray-600 mb-1">User:</h6>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                      <pre className="text-xs text-blue-800 whitespace-pre-wrap">
+                        {test.userPrompt}
+                      </pre>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

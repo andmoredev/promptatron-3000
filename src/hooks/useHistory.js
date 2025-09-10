@@ -116,7 +116,9 @@ export function useHistory() {
     return history.filter(record => {
       return (
         record.modelId?.toLowerCase().includes(term) ||
-        record.prompt?.toLowerCase().includes(term) ||
+        record.systemPrompt?.toLowerCase().includes(term) ||
+        record.userPrompt?.toLowerCase().includes(term) ||
+        record.prompt?.toLowerCase().includes(term) || // Legacy prompt field for backward compatibility
         record.datasetType?.toLowerCase().includes(term) ||
         record.datasetOption?.toLowerCase().includes(term) ||
         record.response?.toLowerCase().includes(term)
