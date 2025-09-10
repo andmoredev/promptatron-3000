@@ -3,6 +3,28 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Primary colors with fallbacks */
+    --color-primary-50: #f0f9f0;
+    --color-primary-100: #e6f3d5;
+    --color-primary-500: #5c8c5a;
+    --color-primary-600: #5c8c5a;
+    --color-primary-700: #4a7348;
+
+    /* Secondary colors with fallbacks */
+    --color-secondary-100: #e6f3d5;
+    --color-secondary-200: #d4ecc8;
+    --color-secondary-300: #b8d8b4;
+    --color-secondary-500: #9ecc8c;
+    --color-secondary-700: #739965;
+    --color-secondary-800: #5e7d53;
+
+    /* Tertiary colors with fallbacks */
+    --color-tertiary-50: #e6f3d5;
+    --color-tertiary-100: #e6f3d5;
+    --color-tertiary-500: #e6f3d5;
+  }
+
   body {
     @apply font-sans antialiased;
   }
@@ -14,7 +36,7 @@
   }
 
   .btn-secondary {
-    @apply bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+    @apply bg-secondary-200 hover:bg-secondary-300 text-secondary-800 font-medium py-2 px-4 rounded-lg transition-colors duration-200;
   }
 
   .card {

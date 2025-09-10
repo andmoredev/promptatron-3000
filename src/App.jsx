@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import ModelSelector from './components/ModelSelector'
 import DatasetSelector from './components/DatasetSelector'
 import PromptEditor from './components/PromptEditor'
@@ -10,10 +10,12 @@ import BrowserCompatibility from './components/BrowserCompatibility'
 import HelpGuide from './components/HelpGuide'
 import LoadingSpinner from './components/LoadingSpinner'
 import ProgressBar from './components/ProgressBar'
+import ThemeProvider from './components/ThemeProvider'
 import { bedrockService } from './services/bedrockService'
 import { useHistory } from './hooks/useHistory'
 import { validateForm } from './utils/formValidation'
 import { handleError, retryWithBackoff } from './utils/errorHandling'
+import { getSafeColorClass } from './utils/themeUtils'
 
 function App() {
   // Core state management for the test harness
@@ -260,23 +262,50 @@ function App() {
     setSelectedForComparison([])
   }
 
+  // Theme configuration with null-checking
+  const themeConfig = {
+    colors: {
+      primary: {
+        50: '#f0f9f0',
+        100: '#e6f3d5',
+        500: '#5c8c5a',
+        600: '#5c8c5a',
+        700: '#4a7348'
+      },
+      secondary: {
+        100: '#e6f3d5',
+        200: '#d4ecc8',
+        300: '#b8d8b4',
+        500: '#9ecc8c',
+        700: '#739965',
+        800: '#5e7d53'
+      },
+      tertiary: {
+        50: '#e6f3d5',
+        100: '#e6f3d5',
+        500: '#e6f3d5'
+      }
+    }
+  }
+
   return (
     <ErrorBoundary>
-      <BrowserCompatibility>
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Header */}
-        <div className="text-center mb-6 lg:mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
-            Bedrock LLM Analyzer
-          </h1>
-          <p className="text-base md:text-lg text-gray-600 px-4">
-            Test and compare AWS Bedrock foundation models with your datasets
-          </p>
-        </div>
+      <ThemeProvider theme={themeConfig}>
+        <BrowserCompatibility>
+          <div className="min-h-screen bg-gradient-to-br from-tertiary-50 to-secondary-100">
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+              {/* Header */}
+              <div className="text-center mb-6 lg:mb-8">
+                <h1 className="text-3xl md:text-4xl font-bold text-primary-700 mb-2">
+                  Promptatron 3000
+                </h1>
+                <p className="text-base md:text-lg text-secondary-700 px-4">
+                  Building enterprise-grade AI agents before it was cool
+                </p>
+              </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex justify-center mb-6 lg:mb-8 px-4">
+              {/* Navigation Tabs */}
+              <div className="flex justify-center mb-6 lg:mb-8 px-4">
           <div className="bg-white rounded-lg p-1 shadow-sm border border-gray-200 flex flex-wrap sm:flex-nowrap">
             <button
               onClick={() => setActiveTab('test')}
@@ -316,8 +345,8 @@ function App() {
           </div>
         </div>
 
-        {/* Error Display */}
-        {error && (
+              {/* Error Display */}
+              {error && (
           <div className="max-w-4xl mx-auto mb-6 animate-fade-in">
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 transform transition-all duration-300 hover:shadow-md">
               <div className="flex">
@@ -350,8 +379,8 @@ function App() {
           </div>
         )}
 
-        {/* Main Content */}
-        {activeTab === 'test' && (
+              {/* Main Content */}
+              {activeTab === 'test' && (
           <div className="max-w-7xl mx-auto animate-fade-in">
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8">
               {/* Left Column - Configuration */}
@@ -438,7 +467,7 @@ function App() {
           </div>
         )}
 
-        {activeTab === 'history' && (
+              {activeTab === 'history' && (
           <div className="max-w-6xl mx-auto animate-fade-in">
             <History
               onLoadFromHistory={handleLoadFromHistory}
@@ -448,7 +477,7 @@ function App() {
           </div>
         )}
 
-        {activeTab === 'comparison' && (
+              {activeTab === 'comparison' && (
           <div className="max-w-6xl mx-auto animate-fade-in">
             <Comparison
               selectedTests={selectedForComparison}
@@ -456,13 +485,14 @@ function App() {
               onClearComparison={handleClearComparison}
             />
           </div>
-        )}
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Help Guide */}
-        <HelpGuide />
-      </BrowserCompatibility>
+          {/* Help Guide */}
+          <HelpGuide />
+        </BrowserCompatibility>
+      </ThemeProvider>
     </ErrorBoundary>
   )
 }
