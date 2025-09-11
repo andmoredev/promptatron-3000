@@ -313,6 +313,76 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
             </div>
           </div>
         )}
+
+        {/* Streaming Performance Comparison */}
+        {selectedTests.length === 2 && selectedTests.every(test => test.isStreamed && test.streamingMetrics) && (
+          <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+            <h4 className="text-sm font-medium text-blue-900 mb-2">Streaming Performance Comparison</h4>
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              {selectedTests.map((test, index) => (
+                <div key={test.id} className="space-y-1">
+                  <div className="font-medium text-blue-800">
+                    Test {String.fromCharCode(65 + index)} ({test.modelId?.split('.')[0]})
+                  </div>
+                  {test.streamingMetrics.streamDuration && (
+                    <div className="flex justify-between">
+                      <span>Duration:</span>
+                      <span>{(test.streamingMetrics.streamDuration / 1000).toFixed(1)}s</span>
+                    </div>
+                  )}
+                  {test.streamingMetrics.averageTokensPerSecond && (
+                    <div className="flex justify-between">
+                      <span>Speed:</span>
+                      <span>{test.streamingMetrics.averageTokensPerSecond.toFixed(1)} tok/s</span>
+                    </div>
+                  )}
+                  {test.streamingMetrics.firstTokenLatency && (
+                    <div className="flex justify-between">
+                      <span>First Token:</span>
+                      <span>{test.streamingMetrics.firstTokenLatency}ms</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Performance Winner */}
+            {(() => {
+              const [testA, testB] = selectedTests;
+              const speedA = testA.streamingMetrics?.averageTokensPerSecond || 0;
+              const speedB = testB.streamingMetrics?.averageTokensPerSecond || 0;
+              const latencyA = testA.streamingMetrics?.firstTokenLatency || Infinity;
+              const latencyB = testB.streamingMetrics?.firstTokenLatency || Infinity;
+
+              if (speedA > speedB * 1.1) {
+                return (
+                  <div className="mt-2 text-xs text-blue-700">
+                    🏆 Test A is {((speedA / speedB - 1) * 100).toFixed(0)}% faster
+                  </div>
+                );
+              } else if (speedB > speedA * 1.1) {
+                return (
+                  <div className="mt-2 text-xs text-blue-700">
+                    🏆 Test B is {((speedB / speedA - 1) * 100).toFixed(0)}% faster
+                  </div>
+                );
+              } else if (Math.abs(latencyA - latencyB) > 100) {
+                const winner = latencyA < latencyB ? 'A' : 'B';
+                const diff = Math.abs(latencyA - latencyB);
+                return (
+                  <div className="mt-2 text-xs text-blue-700">
+                    🏆 Test {winner} has {diff}ms lower first token latency
+                  </div>
+                );
+              }
+              return (
+                <div className="mt-2 text-xs text-blue-700">
+                  📊 Similar streaming performance
+                </div>
+              );
+            })()}
+          </div>
+        )}
       </div>
 
       {/* Comparison Content */}
@@ -374,6 +444,68 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
                       )}
                     </div>
                   )}
+
+                  {/* Streaming Information */}
+                  <div className="pt-2 border-t border-gray-300">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-medium text-gray-700">Response Mode:</span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        test.isStreamed
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {test.isStreamed ? '⚡ Streamed' : 'Standard'}
+                      </span>
+                    </div>
+
+                    {/* Streaming Performance Metrics */}
+                    {test.isStreamed && test.streamingMetrics && (
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        {test.streamingMetrics.streamDuration && (
+                          <div>
+                            <span className="font-medium text-gray-600">Duration:</span>
+                            <span className="ml-1 text-gray-500">{(test.streamingMetrics.streamDuration / 1000).toFixed(1)}s</span>
+                          </div>
+                        )}
+                        {test.streamingMetrics.averageTokensPerSecond && (
+                          <div>
+                            <span className="font-medium text-gray-600">Speed:</span>
+                            <span className="ml-1 text-gray-500">{test.streamingMetrics.averageTokensPerSecond.toFixed(1)} tok/s</span>
+                          </div>
+                        )}
+                        {test.streamingMetrics.firstTokenLatency && (
+                          <div>
+                            <span className="font-medium text-gray-600">First Token:</span>
+                            <span className="ml-1 text-gray-500">{test.streamingMetrics.firstTokenLatency}ms</span>
+                          </div>
+                        )}
+                        {test.streamingMetrics.totalTokens && (
+                          <div>
+                            <span className="font-medium text-gray-600">Tokens:</span>
+                            <span className="ml-1 text-gray-500">{test.streamingMetrics.totalTokens}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Token Usage */}
+                    {test.usage && (
+                      <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <span className="font-medium text-gray-600">Input:</span>
+                          <span className="ml-1 text-gray-500">{test.usage.input_tokens || test.usage.inputTokens || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-600">Output:</span>
+                          <span className="ml-1 text-gray-500">{test.usage.output_tokens || test.usage.outputTokens || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-600">Total:</span>
+                          <span className="ml-1 text-gray-500">{test.usage.total_tokens || test.usage.totalTokens || 'N/A'}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

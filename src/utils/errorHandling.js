@@ -10,6 +10,10 @@ export const ErrorTypes = {
   AWS_CREDENTIALS: 'aws_credentials',
   AWS_PERMISSIONS: 'aws_permissions',
   AWS_SERVICE: 'aws_service',
+  STREAMING: 'streaming',
+  STREAMING_TIMEOUT: 'streaming_timeout',
+  STREAMING_INTERRUPTED: 'streaming_interrupted',
+  MODEL_COMPATIBILITY: 'model_compatibility',
   VALIDATION: 'validation',
   FILE_SYSTEM: 'file_system',
   BROWSER_COMPATIBILITY: 'browser_compatibility',
@@ -96,6 +100,30 @@ function categorizeError(message, code) {
     return { type: ErrorTypes.AWS_PERMISSIONS, severity: ErrorSeverity.HIGH }
   }
 
+  // Streaming-specific errors
+  if (lowerMessage.includes('stream timeout') ||
+      lowerMessage.includes('no tokens received')) {
+    return { type: ErrorTypes.STREAMING_TIMEOUT, severity: ErrorSeverity.MEDIUM }
+  }
+
+  if (lowerMessage.includes('connection interrupted') ||
+      lowerMessage.includes('stream interrupted') ||
+      lowerMessage.includes('streaming failed')) {
+    return { type: ErrorTypes.STREAMING_INTERRUPTED, severity: ErrorSeverity.MEDIUM }
+  }
+
+  if (lowerMessage.includes('streaming not supported') ||
+      lowerMessage.includes('model doesn\'t support streaming') ||
+      lowerMessage.includes('model compatibility')) {
+    return { type: ErrorTypes.MODEL_COMPATIBILITY, severity: ErrorSeverity.LOW }
+  }
+
+  if (lowerMessage.includes('stream') ||
+      lowerMessage.includes('streaming') ||
+      lowerMessage.includes('parse stream event')) {
+    return { type: ErrorTypes.STREAMING, severity: ErrorSeverity.MEDIUM }
+  }
+
   // AWS Service errors
   if (lowerMessage.includes('bedrock') ||
       lowerMessage.includes('throttling') ||
@@ -149,6 +177,18 @@ function generateUserFriendlyMessage(type, originalMessage, errorCode) {
 
     case ErrorTypes.AWS_PERMISSIONS:
       return 'Access denied. Your AWS credentials do not have the required permissions for Amazon Bedrock.'
+
+    case ErrorTypes.STREAMING_TIMEOUT:
+      return 'Streaming response timed out. The partial response has been preserved and the system will use standard mode for future requests.'
+
+    case ErrorTypes.STREAMING_INTERRUPTED:
+      return 'Streaming was interrupted due to connection issues. The partial response has been preserved and the system switched to standard mode.'
+
+    case ErrorTypes.MODEL_COMPATIBILITY:
+      return 'The selected model does not support streaming. The system will use standard (non-streaming) mode instead.'
+
+    case ErrorTypes.STREAMING:
+      return 'Streaming encountered an issue. The system has switched to standard mode to complete your request.'
 
     case ErrorTypes.AWS_SERVICE:
       if (originalMessage.includes('throttling')) {
@@ -206,6 +246,34 @@ function generateSuggestedActions(type, errorCode, context) {
       actions.push('Check your IAM permissions for Bedrock services')
       actions.push('Ensure Bedrock is enabled in your AWS account')
       actions.push('Try using a different AWS region (us-east-1 or us-west-2)')
+      break
+
+    case ErrorTypes.STREAMING_TIMEOUT:
+      actions.push('Check your internet connection stability')
+      actions.push('Try using a shorter prompt to reduce response time')
+      actions.push('The system will automatically use standard mode for future requests')
+      actions.push('Refresh the page if issues persist')
+      break
+
+    case ErrorTypes.STREAMING_INTERRUPTED:
+      actions.push('Check your network connection')
+      actions.push('Try again - the system will automatically retry')
+      actions.push('Consider using a more stable internet connection')
+      actions.push('The partial response has been preserved')
+      break
+
+    case ErrorTypes.MODEL_COMPATIBILITY:
+      actions.push('This is expected behavior - not all models support streaming')
+      actions.push('The system will automatically use standard mode')
+      actions.push('Try selecting a different model if you prefer streaming')
+      actions.push('No action needed - your request will still be processed')
+      break
+
+    case ErrorTypes.STREAMING:
+      actions.push('Try refreshing the page and running the test again')
+      actions.push('Check your internet connection')
+      actions.push('The system will automatically fall back to standard mode')
+      actions.push('Contact support if this issue persists')
       break
 
     case ErrorTypes.AWS_SERVICE:

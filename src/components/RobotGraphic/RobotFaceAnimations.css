@@ -1,0 +1,571 @@
+/**
+ * @fileoverview CSS animations for RobotFace component
+ * Provides smooth transitions and micro-animations for different robot expressions
+ */
+
+/* Base animation styles with performance optimizations */
+.robot-face-svg {
+  transition: all 300ms ease-in-out;
+  will-change: auto;
+}
+
+.robot-animated .robot-head {
+  transition: fill 300ms ease-in-out;
+  will-change: fill;
+}
+
+/* Performance optimization for animated elements */
+.robot-animated .robot-eye-blink,
+.robot-animated .robot-thinking-pulse,
+.robot-animated .robot-gear-rotate,
+.robot-animated .robot-gear-rotate-reverse,
+.robot-animated .robot-mouth-animate,
+.robot-animated .robot-speech-wave-1,
+.robot-animated .robot-speech-wave-2,
+.robot-animated .robot-speech-wave-3,
+.robot-animated .robot-error-pulse {
+  will-change: transform, opacity;
+}
+
+/* Eye blinking animation - updated for rectangular robot eyes */
+@keyframes robot-blink {
+  0%, 90%, 100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+
+.robot-eye-blink {
+  animation: robot-blink 3s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* LED pulsing animations */
+@keyframes robot-led-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.robot-eye-led {
+  animation: robot-led-pulse 2s infinite ease-in-out;
+}
+
+/* CPU processing animation */
+@keyframes robot-cpu-pulse {
+  0%, 100% {
+    fill: var(--robot-thinking-bg, #fefce8);
+  }
+  50% {
+    fill: var(--robot-thinking-color, #d97706);
+  }
+}
+
+.robot-cpu-pulse {
+  animation: robot-cpu-pulse 1.5s infinite ease-in-out;
+}
+
+/* Memory access animation */
+@keyframes robot-memory-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scaleX(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1.1);
+  }
+}
+
+.robot-memory-pulse {
+  animation: robot-memory-pulse 0.8s infinite ease-in-out;
+}
+
+/* Data flow animation */
+@keyframes robot-data-flow {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -10;
+  }
+}
+
+.robot-data-flow {
+  animation: robot-data-flow 2s linear infinite;
+}
+
+/* Antenna pulse animation */
+@keyframes robot-antenna-pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.robot-antenna-pulse {
+  animation: robot-antenna-pulse 2s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* Thinking animations */
+@keyframes robot-thinking-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.robot-thinking-pulse {
+  animation: robot-thinking-pulse 1.5s infinite ease-in-out;
+}
+
+.robot-thinking-pulse-delayed {
+  animation: robot-thinking-pulse 1.5s infinite ease-in-out;
+  animation-delay: 0.3s;
+}
+
+.robot-thinking-pulse-delayed-2 {
+  animation: robot-thinking-pulse 1.5s infinite ease-in-out;
+  animation-delay: 0.6s;
+}
+
+/* Rotating gear animation for thinking state */
+@keyframes robot-gear-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.robot-gear-rotate {
+  animation: robot-gear-rotate 3s linear infinite;
+  transform-origin: center;
+}
+
+.robot-gear-rotate-reverse {
+  animation: robot-gear-rotate 4s linear infinite reverse;
+  transform-origin: center;
+}
+
+/* Talking animations - updated for robotic speaker */
+@keyframes robot-speaker-animate {
+  0%, 100% {
+    transform: scaleY(1);
+  }
+  25% {
+    transform: scaleY(0.8);
+  }
+  50% {
+    transform: scaleY(1.1);
+  }
+  75% {
+    transform: scaleY(0.9);
+  }
+}
+
+.robot-speaker-animate {
+  animation: robot-speaker-animate 0.6s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* Digital wave animations */
+@keyframes robot-digital-wave {
+  0%, 100% {
+    transform: scaleY(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scaleY(1.5);
+    opacity: 1;
+  }
+}
+
+.robot-wave-1 {
+  animation: robot-digital-wave 0.8s infinite ease-in-out;
+}
+
+.robot-wave-2 {
+  animation: robot-digital-wave 0.8s infinite ease-in-out;
+  animation-delay: 0.1s;
+}
+
+.robot-wave-3 {
+  animation: robot-digital-wave 0.8s infinite ease-in-out;
+  animation-delay: 0.2s;
+}
+
+.robot-wave-4 {
+  animation: robot-digital-wave 0.8s infinite ease-in-out;
+  animation-delay: 0.3s;
+}
+
+/* Talking LED blink */
+@keyframes robot-talking-blink {
+  0%, 70%, 100% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 0.3;
+  }
+}
+
+.robot-talking-blink {
+  animation: robot-talking-blink 1.2s infinite ease-in-out;
+}
+
+.robot-talking-blink-delayed {
+  animation: robot-talking-blink 1.2s infinite ease-in-out;
+  animation-delay: 0.2s;
+}
+
+/* Transmission pulse */
+@keyframes robot-transmission-pulse {
+  0%, 100% {
+    stroke-width: 1;
+    opacity: 0.6;
+  }
+  50% {
+    stroke-width: 2;
+    opacity: 1;
+  }
+}
+
+.robot-transmission-pulse {
+  animation: robot-transmission-pulse 1s infinite ease-in-out;
+}
+
+/* Talking status pulse */
+@keyframes robot-talking-pulse {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.robot-talking-pulse {
+  animation: robot-talking-pulse 1s infinite ease-in-out;
+  transform-origin: center;
+}
+
+.robot-talking-pulse-delayed {
+  animation: robot-talking-pulse 1s infinite ease-in-out;
+  animation-delay: 0.3s;
+  transform-origin: center;
+}
+
+/* Active antenna */
+@keyframes robot-antenna-active {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+}
+
+.robot-antenna-active {
+  animation: robot-antenna-active 0.8s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* Speech wave animations */
+@keyframes robot-speech-wave {
+  0%, 100% {
+    opacity: 0.3;
+    transform: translateX(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-2px);
+  }
+}
+
+.robot-speech-wave-1 {
+  animation: robot-speech-wave 2s infinite ease-in-out;
+}
+
+.robot-speech-wave-2 {
+  animation: robot-speech-wave 2s infinite ease-in-out;
+  animation-delay: 0.3s;
+}
+
+.robot-speech-wave-3 {
+  animation: robot-speech-wave 2s infinite ease-in-out;
+  animation-delay: 0.6s;
+}
+
+/* Error indicator animation */
+@keyframes robot-error-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+}
+
+.robot-error-pulse {
+  animation: robot-error-pulse 1s ease-in-out infinite;
+}
+
+/* Error LED blink */
+@keyframes robot-error-blink {
+  0%, 50%, 100% {
+    opacity: 1;
+  }
+  25%, 75% {
+    opacity: 0.2;
+  }
+}
+
+.robot-error-blink {
+  animation: robot-error-blink 1.5s infinite ease-in-out;
+}
+
+.robot-error-blink-delayed {
+  animation: robot-error-blink 1.5s infinite ease-in-out;
+  animation-delay: 0.3s;
+}
+
+/* Error antenna */
+@keyframes robot-antenna-error {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.robot-antenna-error {
+  animation: robot-antenna-error 0.8s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* Expression transition animations */
+.robot-expression-happy .robot-head {
+  fill: var(--robot-happy-bg, #f8fafc);
+}
+
+.robot-expression-thinking .robot-head {
+  fill: var(--robot-thinking-bg, #fefce8);
+}
+
+.robot-expression-talking .robot-head {
+  fill: var(--robot-talking-bg, #eff6ff);
+}
+
+.robot-expression-concerned .robot-head {
+  fill: var(--robot-error-bg, #fef2f2);
+}
+
+/* Subtle breathing animation for idle state - updated for rectangular head */
+@keyframes robot-subtle-breathing {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.01);
+  }
+}
+
+.robot-animated.robot-expression-happy .robot-head {
+  animation: robot-subtle-breathing 4s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* Status LED pulse */
+@keyframes robot-status-pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.robot-status-led {
+  animation: robot-status-pulse 2s infinite ease-in-out;
+}
+
+/* Enhanced animation timing functions for smoother motion */
+.robot-eye-blink {
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.robot-thinking-pulse,
+.robot-thinking-pulse-delayed,
+.robot-thinking-pulse-delayed-2 {
+  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.robot-gear-rotate,
+.robot-gear-rotate-reverse {
+  animation-timing-function: linear;
+}
+
+.robot-mouth-animate {
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.robot-speech-wave-1,
+.robot-speech-wave-2,
+.robot-speech-wave-3 {
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.robot-error-pulse {
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Accessibility: Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  /* Disable all animations */
+  .robot-eye-blink,
+  .robot-thinking-pulse,
+  .robot-thinking-pulse-delayed,
+  .robot-thinking-pulse-delayed-2,
+  .robot-gear-rotate,
+  .robot-gear-rotate-reverse,
+  .robot-mouth-animate,
+  .robot-speech-wave-1,
+  .robot-speech-wave-2,
+  .robot-speech-wave-3,
+  .robot-error-pulse,
+  .robot-animated.robot-expression-happy .robot-head {
+    animation: none !important;
+  }
+
+  /* Disable all transitions */
+  .robot-face-svg,
+  .robot-animated .robot-head,
+  .robot-animated *,
+  .robot-animated *::before,
+  .robot-animated *::after {
+    transition: none !important;
+  }
+
+  /* Remove will-change for reduced motion to improve performance */
+  .robot-animated .robot-eye-blink,
+  .robot-animated .robot-thinking-pulse,
+  .robot-animated .robot-gear-rotate,
+  .robot-animated .robot-gear-rotate-reverse,
+  .robot-animated .robot-mouth-animate,
+  .robot-animated .robot-speech-wave-1,
+  .robot-animated .robot-speech-wave-2,
+  .robot-animated .robot-speech-wave-3,
+  .robot-animated .robot-error-pulse {
+    will-change: auto !important;
+  }
+
+  /* Provide alternative visual feedback for state changes without animation */
+  .robot-state-thinking .robot-head {
+    filter: brightness(0.95);
+  }
+
+  .robot-state-talking .robot-head {
+    filter: brightness(1.05);
+  }
+
+  .robot-state-error .robot-head {
+    filter: saturate(1.2);
+  }
+}
+
+/* Theme integration - CSS custom properties for colors */
+.robot-face-svg {
+  --robot-body-color: var(--color-primary-50, #f8fafc);
+  --robot-stroke-color: var(--color-gray-500, #64748b);
+  --robot-happy-color: var(--color-primary-600, #059669);
+  --robot-thinking-color: var(--color-secondary-600, #d97706);
+  --robot-talking-color: var(--color-primary-500, #3b82f6);
+  --robot-error-color: var(--color-tertiary-600, #dc2626);
+}
+
+/* Size-specific adjustments */
+.robot-size-sm .robot-face-svg {
+  --animation-scale: 0.8;
+}
+
+.robot-size-md .robot-face-svg {
+  --animation-scale: 1.0;
+}
+
+.robot-size-lg .robot-face-svg {
+  --animation-scale: 1.2;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .robot-face-svg {
+    --robot-stroke-color: #000000;
+    --robot-happy-color: #006600;
+    --robot-thinking-color: #cc6600;
+    --robot-talking-color: #0066cc;
+    --robot-error-color: #cc0000;
+  }
+
+  .robot-head {
+    stroke-width: 3 !important;
+  }
+
+  .robot-mouth,
+  .robot-eyebrows line,
+  .robot-speech-wave,
+  .robot-thinking-indicators circle,
+  .robot-error-indicator {
+    stroke-width: 2.5 !important;
+  }
+
+  .robot-eye {
+    fill: #000000 !important;
+  }
+}
+
+/* Forced colors mode (Windows High Contrast) */
+@media (forced-colors: active) {
+  .robot-face-svg {
+    forced-color-adjust: none;
+  }
+
+  .robot-head {
+    fill: Canvas !important;
+    stroke: CanvasText !important;
+    stroke-width: 2px !important;
+  }
+
+  .robot-eye {
+    fill: CanvasText !important;
+  }
+
+  .robot-mouth,
+  .robot-eyebrows line,
+  .robot-speech-wave,
+  .robot-thinking-indicators *,
+  .robot-error-indicator {
+    stroke: Highlight !important;
+    fill: Highlight !important;
+  }
+}

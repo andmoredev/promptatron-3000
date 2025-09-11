@@ -1,54 +1,176 @@
 #!/bin/zsh
 
-# Use existing AWS_PROFILE or prompt for it
-if [ -z "$AWS_PROFILE" ]; then
-  read "AWS_PROFILE?Enter your AWS SSO profile name: "
-  export AWS_PROFILE
-else
-  echo "Using existing AWS_PROFILE: $AWS_PROFILE"
+echo "🤖 Promptatron 3000 - AWS Setup Script"
+echo "======================================"
+
+# Function to list available AWS profiles
+list_profiles() {
+  echo "Available AWS profiles:"
+  aws configure list-profiles 2>/dev/null | sed 's/^/  - /'
+}
+
+# Function to validate AWS profile exists
+validate_profile() {
+  local profile="$1"
+  if ! aws configure list-profiles 2>/dev/null | grep -q "^${profile}$"; then
+    echo "❌ Profile '$profile' not found in AWS configuration."
+    list_profiles
+    return 1
+  fi
+  return 0
+}
+
+# Check if AWS CLI is installed
+if ! command -v aws >/dev/null 2>&1; then
+  echo "❌ AWS CLI not found. Please install it first:"
+  echo "   brew install awscli"
+  exit 1
 fi
 
+# Determine AWS profile to use
+if [ -n "$AWS_PROFILE" ]; then
+  echo "🔍 Found AWS_PROFILE environment variable: $AWS_PROFILE"
+  if validate_profile "$AWS_PROFILE"; then
+    echo "✅ Using existing AWS_PROFILE: $AWS_PROFILE"
+  else
+    echo "❌ Invalid profile in AWS_PROFILE environment variable"
+    unset AWS_PROFILE
+  fi
+fi
+
+# If no valid profile found, prompt user
+if [ -z "$AWS_PROFILE" ]; then
+  echo ""
+  list_profiles
+  echo ""
+
+  # Check if there's a default profile
+  if aws configure list-profiles 2>/dev/null | grep -q "^default$"; then
+    read "AWS_PROFILE?Enter your AWS profile name (press Enter for 'default'): "
+    AWS_PROFILE="${AWS_PROFILE:-default}"
+  else
+    read "AWS_PROFILE?Enter your AWS profile name: "
+  fi
+
+  # Validate the entered profile
+  if ! validate_profile "$AWS_PROFILE"; then
+    echo "❌ Setup failed. Please check your AWS configuration."
+    exit 1
+  fi
+
+  export AWS_PROFILE
+fi
+
+echo ""
+echo "🔐 Using AWS profile: $AWS_PROFILE"
+
 # Check if you're already logged in
+echo "🔍 Checking authentication status..."
 if aws sts get-caller-identity --profile "$AWS_PROFILE" >/dev/null 2>&1; then
-  echo "✅ Already logged in with AWS SSO for profile '$AWS_PROFILE'."
+  echo "✅ Already authenticated with profile '$AWS_PROFILE'"
+
+  # Show current identity
+  IDENTITY=$(aws sts get-caller-identity --profile "$AWS_PROFILE" --output text --query 'Arn' 2>/dev/null)
+  if [ -n "$IDENTITY" ]; then
+    echo "   Identity: $IDENTITY"
+  fi
 else
-  echo "🔐 Logging in with AWS SSO for profile '$AWS_PROFILE'..."
-  aws sso login --profile "$AWS_PROFILE"
+  echo "🔐 Authentication required for profile '$AWS_PROFILE'"
+
+  # Check if this is an SSO profile
+  SSO_START_URL=$(aws configure get sso_start_url --profile "$AWS_PROFILE" 2>/dev/null)
+  if [ -n "$SSO_START_URL" ]; then
+    echo "   Detected SSO profile, initiating SSO login..."
+    aws sso login --profile "$AWS_PROFILE"
+  else
+    echo "   Using standard AWS credentials for profile '$AWS_PROFILE'"
+    # For non-SSO profiles, credentials should already be configured
+    if ! aws sts get-caller-identity --profile "$AWS_PROFILE" >/dev/null 2>&1; then
+      echo "❌ Authentication failed. Please check your AWS credentials."
+      exit 1
+    fi
+  fi
 fi
 
 # Retrieve credentials from CLI cache
-echo "🔄 Extracting temporary credentials..."
+echo ""
+echo "🔄 Extracting credentials for React app..."
 
-eval "$(aws configure export-credentials --format env)"
+# Export credentials using the profile
+eval "$(aws configure export-credentials --profile "$AWS_PROFILE" --format env)"
 
-# Verify extraction
-if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_SESSION_TOKEN" ]; then
+# Get the region for this profile
+AWS_REGION=$(aws configure get region --profile "$AWS_PROFILE" 2>/dev/null)
+if [ -z "$AWS_REGION" ]; then
+  AWS_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+  echo "⚠️  No region configured for profile '$AWS_PROFILE', using default: $AWS_REGION"
+else
+  echo "📍 Using region: $AWS_REGION"
+fi
+
+# Verify credential extraction
+if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
   echo "❌ Failed to extract credentials for profile '$AWS_PROFILE'."
+  echo "   This might be due to expired SSO session or missing credentials."
   exit 1
+fi
+
+# Check if we have session token (for temporary credentials)
+if [ -n "$AWS_SESSION_TOKEN" ]; then
+  echo "✅ Extracted temporary credentials (with session token)"
+else
+  echo "✅ Extracted long-term credentials (no session token)"
 fi
 
 # Set VITE_ prefixed variables for the React app
 export VITE_AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
 export VITE_AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 export VITE_AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN"
-export VITE_AWS_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+export VITE_AWS_REGION="$AWS_REGION"
 
 # Create .env.local file for the React app
+echo "📝 Creating .env.local file..."
+
 cat > .env.local << EOF
-# AWS Credentials for Bedrock LLM Analyzer
+# AWS Credentials for Promptatron 3000 (Bedrock LLM Analyzer)
 # Generated by local-setup.sh at $(date)
 # Profile: $AWS_PROFILE
+# Region: $AWS_REGION
 
-VITE_AWS_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+VITE_AWS_REGION=$AWS_REGION
 VITE_AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
 VITE_AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
-VITE_AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN
-
-# Note: These are temporary SSO credentials that will expire
 EOF
+
+# Only add session token if it exists (for temporary credentials)
+if [ -n "$AWS_SESSION_TOKEN" ]; then
+  echo "VITE_AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> .env.local
+  echo "" >> .env.local
+  echo "# Note: These are temporary SSO credentials that will expire" >> .env.local
+else
+  echo "" >> .env.local
+  echo "# Note: These are long-term AWS credentials" >> .env.local
+fi
+
+# Test Bedrock access
+echo ""
+echo "🧪 Testing Bedrock access..."
+if aws bedrock list-foundation-models --region "$AWS_REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1; then
+  echo "✅ Bedrock access confirmed in region $AWS_REGION"
+else
+  echo "⚠️  Could not access Bedrock in region $AWS_REGION"
+  echo "   Make sure Bedrock is available in your region and you have proper permissions"
+fi
 
 # Output confirmation
 echo ""
+echo "🎉 Setup Complete!"
 echo "✅ Environment variables set for terminal session"
 echo "✅ Created .env.local file for React app"
+echo "✅ AWS Profile: $AWS_PROFILE"
+echo "✅ Region: $AWS_REGION"
+echo ""
 echo "🚀 You can now run: npm run dev"
+echo ""
+echo "💡 Tip: Set 'export AWS_PROFILE=$AWS_PROFILE' in your shell profile"
+echo "   to avoid being prompted for the profile name in future runs."

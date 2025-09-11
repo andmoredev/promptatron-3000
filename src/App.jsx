@@ -1,17 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import ModelSelector from './components/ModelSelector';
 import DatasetSelector from './components/DatasetSelector';
 import PromptEditor from './components/PromptEditor';
 import TestResults from './components/TestResults';
 import History from './components/History';
 import Comparison from './components/Comparison';
-import DeterminismEvaluator from './components/DeterminismEvaluator';
 import ErrorBoundary from './components/ErrorBoundary';
 import BrowserCompatibility from './components/BrowserCompatibility';
 import HelpGuide from './components/HelpGuide';
 import LoadingSpinner from './components/LoadingSpinner';
 import ProgressBar from './components/ProgressBar';
 import ThemeProvider from './components/ThemeProvider';
+import { RobotGraphicContainer } from './components/RobotGraphic';
+import StreamingPerformanceMonitor from './components/StreamingPerformanceMonitor';
 import { bedrockService } from './services/bedrockService';
 import { useHistory } from './hooks/useHistory';
 import { validateForm } from './utils/formValidation';
@@ -37,7 +38,23 @@ function App() {
   const [retryCount, setRetryCount] = useState(0);
   const [progressStatus, setProgressStatus] = useState('');
   const [progressValue, setProgressValue] = useState(0);
+
+  // Streaming-related state
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingContent, setStreamingContent] = useState('');
+  const [streamingProgress, setStreamingProgress] = useState(null);
+  const [isRequestPending, setIsRequestPending] = useState(false);
+  const [streamingError, setStreamingError] = useState(null);
+
+  // Debug flags
+  const [isRobotDebugEnabled, setIsRobotDebugEnabled] = useState(false);
+  const [isStreamingDebugEnabled, setIsStreamingDebugEnabled] = useState(false);
+
+  // Determinism evaluation state
   const [determinismEnabled, setDeterminismEnabled] = useState(true);
+
+  // Streaming preference state
+  const [streamingEnabled, setStreamingEnabled] = useState(true);
 
   // Use the history hook for managing test history
   const { saveTestResult } = useHistory();
@@ -88,14 +105,20 @@ function App() {
 
     return {
       model: { valid: hasModel && !errors.model, error: errors.model },
-      systemPrompt: { valid: hasSystemPrompt && !errors.systemPrompt, error: errors.systemPrompt },
-      userPrompt: { valid: hasUserPrompt && !errors.userPrompt, error: errors.userPrompt },
+      systemPrompt: {
+        valid: hasSystemPrompt && !errors.systemPrompt,
+        error: errors.systemPrompt,
+      },
+      userPrompt: {
+        valid: hasUserPrompt && !errors.userPrompt,
+        error: errors.userPrompt,
+      },
       dataset: { valid: hasDataset && !errors.dataset, error: errors.dataset },
       overall: isFormValid()
     };
   };
 
-  // Clear error when user makes changes
+  // Clear error and streaming state when user makes changes
   useEffect(() => {
     if (error) {
       setError(null);
@@ -147,7 +170,7 @@ function App() {
       }
 
       // Escape: Clear current selection or close modals
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         if (selectedForComparison.length > 0) {
           setSelectedForComparison([]);
         }
@@ -232,7 +255,7 @@ function App() {
     setProgressValue(10);
 
     try {
-      console.log('Running test with:', {
+      console.log("Running test with:", {
         model: selectedModel,
         dataset: selectedDataset,
         systemPrompt: systemPrompt,
@@ -256,13 +279,64 @@ function App() {
           setProgressStatus('Sending request to model...');
           setProgressValue(50);
 
-          // Use BedrockService to invoke the model
-          const response = await bedrockService.invokeModel(
-            selectedModel,
-            systemPrompt,
-            userPrompt,
-            selectedDataset.content
-          );
+          let response;
+          let streamingMetrics = null;
+
+          if (streamingEnabled) {
+            // Use streaming mode
+            setIsStreaming(true);
+            setStreamingContent('');
+            setStreamingError(null);
+
+            const startTime = Date.now();
+            let tokensReceived = 0;
+            let firstTokenTime = null;
+
+            response = await bedrockService.invokeModelStream(
+              selectedModel,
+              systemPrompt,
+              userPrompt,
+              selectedDataset.content,
+              // onToken callback
+              (token) => {
+                if (!firstTokenTime) {
+                  firstTokenTime = Date.now();
+                }
+                tokensReceived++;
+                setStreamingContent(prev => prev + token);
+                setStreamingProgress({
+                  tokensReceived,
+                  startTime,
+                  firstTokenLatency: firstTokenTime - startTime,
+                  duration: Date.now() - startTime
+                });
+              },
+              // onComplete callback
+              (finalResponse) => {
+                const endTime = Date.now();
+                streamingMetrics = {
+                  streamDuration: endTime - startTime,
+                  firstTokenLatency: firstTokenTime - startTime,
+                  totalTokens: tokensReceived,
+                  averageTokensPerSecond: tokensReceived / ((endTime - startTime) / 1000)
+                };
+                setIsStreaming(false);
+              },
+              // onError callback
+              (error) => {
+                setStreamingError(error.message);
+                setIsStreaming(false);
+              }
+            );
+          } else {
+            // Use standard non-streaming mode
+            response = await bedrockService.invokeModel(
+              selectedModel,
+              systemPrompt,
+              userPrompt,
+              selectedDataset.content
+            );
+          }
 
           setProgressStatus('Processing response...');
           setProgressValue(75);
@@ -275,9 +349,10 @@ function App() {
             prompt: userPrompt, // Legacy field for backward compatibility
             datasetType: selectedDataset.type,
             datasetOption: selectedDataset.option,
-            datasetContent: selectedDataset.content, // Add dataset content for determinism evaluation
             response: response.text,
             usage: response.usage,
+            isStreamed: streamingEnabled,
+            streamingMetrics: streamingMetrics,
             timestamp: new Date().toISOString()
           };
         },
@@ -303,13 +378,19 @@ function App() {
       setProgressStatus('Complete!');
       setProgressValue(100);
 
+      // Reset streaming state
+      setIsStreaming(false);
+      setStreamingContent('');
+      setStreamingProgress(null);
+      setStreamingError(null);
+
     } catch (err) {
       console.error('Test execution failed:', err);
 
-      // Use enhanced error handling
+      // Use enhanced error handling with streaming context
       const errorInfo = handleError(err, {
-        component: 'App',
-        action: 'runTest',
+        component: "App",
+        action: "runTest",
         model: selectedModel,
         datasetType: selectedDataset.type,
         systemPromptLength: systemPrompt.length,
@@ -322,6 +403,12 @@ function App() {
       setIsLoading(false);
       setProgressStatus('');
       setProgressValue(0);
+
+      // Reset streaming state in all cases
+      setIsStreaming(false);
+      setStreamingContent('');
+      setStreamingProgress(null);
+      setStreamingError(null);
     }
   };
 
@@ -334,7 +421,10 @@ function App() {
     });
 
     // Load dual prompt format with backward compatibility
-    if (historyItem.systemPrompt !== undefined || historyItem.userPrompt !== undefined) {
+    if (
+      historyItem.systemPrompt !== undefined ||
+      historyItem.userPrompt !== undefined
+    ) {
       // New dual prompt format
       setSystemPrompt(historyItem.systemPrompt || '');
       setUserPrompt(historyItem.userPrompt || '');
@@ -370,19 +460,19 @@ function App() {
   const themeConfig = {
     colors: {
       primary: {
-        50: '#f0f9f0',
-        100: '#e6f3d5',
-        500: '#5c8c5a',
-        600: '#5c8c5a',
-        700: '#4a7348'
+        50: "#f0f9f0",
+        100: "#e6f3d5",
+        500: "#5c8c5a",
+        600: "#5c8c5a",
+        700: "#4a7348",
       },
       secondary: {
-        100: '#e6f3d5',
-        200: '#d4ecc8',
-        300: '#b8d8b4',
-        500: '#9ecc8c',
-        700: '#739965',
-        800: '#5e7d53'
+        100: "#e6f3d5",
+        200: "#d4ecc8",
+        300: "#b8d8b4",
+        500: "#9ecc8c",
+        700: "#739965",
+        800: "#5e7d53",
       },
       tertiary: {
         50: '#e6f3d5',
@@ -397,360 +487,421 @@ function App() {
       <ThemeProvider theme={themeConfig}>
         <BrowserCompatibility>
           <div className="min-h-screen bg-gradient-to-br from-tertiary-50 to-secondary-100">
-            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-              {/* Header */}
-              <div className="text-center mb-6 lg:mb-8">
-                <h1 className="text-3xl md:text-4xl font-bold text-primary-700 mb-2">
-                  Promptatron 3000
-                </h1>
-                <p className="text-base md:text-lg text-secondary-700 px-4">
-                  Building enterprise-grade AI agents before it was cool
-                </p>
-              </div>
-
-              {/* Navigation Tabs */}
-              <div className="flex justify-center mb-6 lg:mb-8 px-4">
-                <div className="bg-white rounded-lg p-1 shadow-sm border border-gray-200 flex flex-wrap sm:flex-nowrap">
-                  <button
-                    onClick={() => setActiveTab('test')}
-                    className={`px-4 sm:px-6 py-2 rounded-md font-medium transition-colors duration-200 text-sm sm:text-base ${activeTab === 'test'
-                        ? 'bg-primary-600 text-white'
-                        : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                  >
-                    Test Harness
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('history')}
-                    className={`px-4 sm:px-6 py-2 rounded-md font-medium transition-colors duration-200 text-sm sm:text-base ${activeTab === 'history'
-                        ? 'bg-primary-600 text-white'
-                        : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                  >
-                    History
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('comparison')}
-                    className={`px-4 sm:px-6 py-2 rounded-md font-medium transition-colors duration-200 relative text-sm sm:text-base ${activeTab === 'comparison'
-                        ? 'bg-primary-600 text-white'
-                        : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                  >
-                    Comparison
-                    {selectedForComparison.length > 0 && (
-                      <span className="absolute -top-1 -right-1 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-600 rounded-full">
-                        {selectedForComparison.length}
-                      </span>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Error Display */}
-              {error && (
-                <div className="max-w-4xl mx-auto mb-6 animate-fade-in">
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 transform transition-all duration-300 hover:shadow-md">
-                    <div className="flex">
-                      <div className="flex-shrink-0">
-                        <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="ml-3 flex-1">
-                        <p className="text-sm text-red-800">{error}</p>
-                        {retryCount > 0 && (
-                          <p className="text-xs text-red-600 mt-1">
-                            Retried {retryCount} time{retryCount !== 1 ? 's' : ''}
-                          </p>
-                        )}
-                      </div>
-                      <div className="ml-3 flex-shrink-0">
-                        <button
-                          onClick={() => setError(null)}
-                          className="inline-flex text-red-400 hover:text-red-600"
-                        >
-                          <span className="sr-only">Dismiss</span>
-                          <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Main Content */}
-              {activeTab === 'test' && (
-                <div className="max-w-7xl mx-auto animate-fade-in">
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8">
-                    {/* Left Column - Configuration */}
-                    <div className="space-y-6 animate-slide-up">
-                      <ModelSelector
-                        selectedModel={selectedModel}
-                        onModelSelect={setSelectedModel}
-                        validationError={validationErrors.model}
-                      />
-
-                      <DatasetSelector
-                        selectedDataset={selectedDataset}
-                        onDatasetSelect={setSelectedDataset}
-                        validationError={validationErrors.dataset}
-                      />
-
-                      <PromptEditor
-                        systemPrompt={systemPrompt}
-                        userPrompt={userPrompt}
-                        onSystemPromptChange={setSystemPrompt}
-                        onUserPromptChange={setUserPrompt}
-                        systemPromptError={validationErrors.systemPrompt}
-                        userPromptError={validationErrors.userPrompt}
-                      />
-
-                      {/* Determinism Evaluation Toggle */}
-                      <div className="bg-white border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                            </svg>
-                            <div>
-                              <h4 className="text-sm font-medium text-gray-900">Determinism Evaluation</h4>
-                              <p className="text-xs text-gray-600">Automatically evaluate response consistency</p>
-                            </div>
-                          </div>
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={determinismEnabled}
-                              onChange={(e) => setDeterminismEnabled(e.target.checked)}
-                              className="sr-only peer"
-                            />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                          </label>
-                        </div>
-                      </div>
-
-
-
-                      {/* Enhanced Validation Summary with Dual Prompt Guidance */}
-                      {Object.keys(validationErrors).length > 0 && (
-                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                          <div className="flex">
-                            <div className="flex-shrink-0">
-                              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                              </svg>
-                            </div>
-                            <div className="ml-3 flex-1">
-                              <h3 className="text-sm font-medium text-yellow-800">
-                                Please complete the following to run your test:
-                              </h3>
-                              <div className="mt-2 space-y-2">
-                                {/* Specific validation errors with enhanced messaging */}
-                                <ul className="text-sm text-yellow-700 space-y-1">
-                                  {validationErrors.model && (
-                                    <li className="flex items-start space-x-2">
-                                      <span className="text-yellow-500 mt-0.5">•</span>
-                                      <span><strong>Model:</strong> {validationErrors.model}</span>
-                                    </li>
-                                  )}
-                                  {validationErrors.systemPrompt && (
-                                    <li className="flex items-start space-x-2">
-                                      <span className="text-blue-500 mt-0.5">•</span>
-                                      <span><strong>System Prompt:</strong> {validationErrors.systemPrompt}</span>
-                                    </li>
-                                  )}
-                                  {validationErrors.userPrompt && (
-                                    <li className="flex items-start space-x-2">
-                                      <span className="text-green-500 mt-0.5">•</span>
-                                      <span><strong>User Prompt:</strong> {validationErrors.userPrompt}</span>
-                                    </li>
-                                  )}
-                                  {validationErrors.dataset && (
-                                    <li className="flex items-start space-x-2">
-                                      <span className="text-purple-500 mt-0.5">•</span>
-                                      <span><strong>Dataset:</strong> {validationErrors.dataset}</span>
-                                    </li>
-                                  )}
-                                </ul>
-
-                                {/* Enhanced user guidance for dual prompt requirements */}
-                                {(validationErrors.systemPrompt || validationErrors.userPrompt) && (
-                                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                                    <h4 className="text-sm font-medium text-blue-800 mb-2 flex items-center space-x-1">
-                                      <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                      </svg>
-                                      <span>Dual Prompt Guide</span>
-                                    </h4>
-                                    <div className="text-xs text-blue-700 space-y-2">
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                        <div className="p-2 bg-blue-100 rounded border border-blue-200">
-                                          <p className="font-medium text-blue-800">System Prompt</p>
-                                          <p className="text-blue-600">Defines the AI's role, expertise, and behavior</p>
-                                          <p className="text-blue-500 italic">Example: "You are a data analyst..."</p>
-                                        </div>
-                                        <div className="p-2 bg-green-100 rounded border border-green-200">
-                                          <p className="font-medium text-green-800">User Prompt</p>
-                                          <p className="text-green-600">Contains your specific request or question</p>
-                                          <p className="text-green-500 italic">Example: "Analyze this data for patterns..."</p>
-                                        </div>
-                                      </div>
-                                      <p className="text-blue-600 font-medium">
-                                        💡 Both prompts work together: System prompt sets the context, user prompt provides the task.
-                                      </p>
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Additional guidance for missing prompts */}
-                                {validationErrors.systemPrompt && !validationErrors.userPrompt && (
-                                  <div className="mt-2 p-2 bg-blue-50 border-l-4 border-blue-400 rounded">
-                                    <p className="text-xs text-blue-700">
-                                      <strong>Tip:</strong> Try templates like "Data Analyst" or "Classification Expert" to get started with your system prompt.
-                                    </p>
-                                  </div>
-                                )}
-
-                                {validationErrors.userPrompt && !validationErrors.systemPrompt && (
-                                  <div className="mt-2 p-2 bg-green-50 border-l-4 border-green-400 rounded">
-                                    <p className="text-xs text-green-700">
-                                      <strong>Tip:</strong> Try templates like "Analyze Data" or "Detect Fraud" to get started with your user prompt.
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Progress Bar */}
-                      {isLoading && progressStatus && (
-                        <div className="mb-6">
-                          <ProgressBar
-                            progress={progressValue}
-                            status={progressStatus}
-                            color="primary"
-                          />
-                        </div>
-                      )}
-
-                      {/* Enhanced Form Validation Status Indicator */}
-                      {(() => {
-                        const status = getValidationStatus();
-                        const completedFields = Object.values(status).filter(field => field !== status.overall && field.valid).length;
-                        const totalFields = 4; // model, systemPrompt, userPrompt, dataset
-
-                        if (status.overall) {
-                          return (
-                            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                              <div className="flex items-center space-x-2">
-                                <svg className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <span className="text-sm font-medium text-green-800">
-                                  All requirements met! Ready to run your test.
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        } else if (completedFields > 0) {
-                          return (
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                  <svg className="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  <span className="text-sm font-medium text-blue-800">
-                                    Progress: {completedFields} of {totalFields} requirements completed
-                                  </span>
-                                </div>
-                                <div className="flex space-x-1">
-                                  {[status.model, status.systemPrompt, status.userPrompt, status.dataset].map((field, index) => (
-                                    <div
-                                      key={index}
-                                      className={`w-2 h-2 rounded-full ${field.valid ? 'bg-green-400' : 'bg-gray-300'
-                                        }`}
-                                      title={field.valid ? 'Complete' : 'Incomplete'}
-                                    />
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })()}
-
-
-
-                      <div className="flex justify-center">
-                        <button
-                          onClick={handleRunTest}
-                          disabled={isLoading || !isFormValid()}
-                          className={`btn-primary px-8 py-3 text-lg transition-all duration-200 ${isLoading || !isFormValid() ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-lg'
-                            }`}
-                        >
-                          {isLoading ? (
-                            <LoadingSpinner size="sm" color="white" text="Running Test..." inline />
-                          ) : (
-                            'Run Test'
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Right Column - Results */}
-                    <div className="animate-slide-up" style={{ animationDelay: '0.1s' }}>
-                      <TestResults
-                        results={testResults}
-                        isLoading={isLoading}
-                        determinismEnabled={determinismEnabled}
-                        onEvaluationComplete={(grade) => {
-                          // Update test result with determinism grade for history
-                          if (testResults && grade) {
-                            const updatedResult = {
-                              ...testResults,
-                              determinismGrade: grade
-                            };
-                            setTestResults(updatedResult);
-                            // Update in history as well
-                            saveTestResult(updatedResult);
-                          }
+            {/* Sticky Header */}
+            <div className="sticky top-0 z-50 bg-gradient-to-br from-tertiary-50 to-secondary-100 border-b border-secondary-200 shadow-sm">
+              <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+                {/* Header with Robot */}
+                <div className="text-center mb-4 lg:mb-6 relative">
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
+                    <div className="flex-shrink-0 order-2 sm:order-1">
+                      <RobotGraphicContainer
+                        appState={{
+                          isLoading,
+                          error,
+                          progressStatus,
+                          progressValue,
+                          testResults,
+                          isStreaming,
+                          streamingContent,
+                          streamingProgress,
+                          isRequestPending,
+                          streamingError,
+                        }}
+                        size="lg"
+                        className="mx-auto"
+                        enableDebug={isRobotDebugEnabled}
+                        options={{
+                          talkingDuration: 2000,
+                          debounceDelay: 100,
+                          enableTransitions: true,
                         }}
                       />
                     </div>
+                    <div className="order-1 sm:order-2">
+                      <h1 className="text-3xl md:text-4xl font-bold text-primary-700 mb-2">
+                        Promptatron 3000
+                      </h1>
+                      <p className="text-base md:text-lg text-secondary-700 px-4">
+                        Building enterprise-grade AI agents before it was cool
+                      </p>
+                    </div>
                   </div>
                 </div>
-              )}
 
-              {activeTab === 'history' && (
-                <div className="max-w-6xl mx-auto animate-fade-in">
-                  <History
-                    onLoadFromHistory={handleLoadFromHistory}
-                    onCompareTests={handleCompareTests}
-                    selectedForComparison={selectedForComparison}
-                  />
+                {/* Navigation Tabs */}
+                <div className="flex justify-center mb-6 lg:mb-8 px-4">
+                  <div className="bg-white rounded-lg p-1 shadow-sm border border-gray-200 flex flex-wrap sm:flex-nowrap">
+                    <button
+                      onClick={() => setActiveTab('test')}
+                      className={`px-4 sm:px-6 py-2 rounded-md font-medium transition-colors duration-200 text-sm sm:text-base ${activeTab === 'test'
+                        ? 'bg-primary-600 text-white'
+                        : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                    >
+                      Test Harness
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('history')}
+                      className={`px-4 sm:px-6 py-2 rounded-md font-medium transition-colors duration-200 text-sm sm:text-base ${activeTab === 'history'
+                        ? 'bg-primary-600 text-white'
+                        : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                    >
+                      History
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('comparison')}
+                      className={`px-4 sm:px-6 py-2 rounded-md font-medium transition-colors duration-200 relative text-sm sm:text-base ${activeTab === 'comparison'
+                        ? 'bg-primary-600 text-white'
+                        : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                    >
+                      Comparison
+                      {selectedForComparison.length > 0 && (
+                        <span className="absolute -top-1 -right-1 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-600 rounded-full">
+                          {selectedForComparison.length}
+                        </span>
+                      )}
+                    </button>
+                  </div>
                 </div>
-              )}
 
-              {activeTab === 'comparison' && (
-                <div className="max-w-6xl mx-auto animate-fade-in">
-                  <Comparison
-                    selectedTests={selectedForComparison}
-                    onRemoveTest={handleRemoveFromComparison}
-                    onClearComparison={handleClearComparison}
-                  />
+                {/* Main Content Area */}
+                <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+                  {/* Error Display */}
+                  {error && (
+                    <div className="max-w-4xl mx-auto mb-6 animate-fade-in">
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4 transform transition-all duration-300 hover:shadow-md">
+                        <div className="flex">
+                          <div className="flex-shrink-0">
+                            <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                          <div className="ml-3 flex-1">
+                            <p className="text-sm text-red-800">{error}</p>
+                            {retryCount > 0 && (
+                              <p className="text-xs text-red-600 mt-1">
+                                Retried {retryCount} time{retryCount !== 1 ? 's' : ''}
+                              </p>
+                            )}
+                          </div>
+                          <div className="ml-3 flex-shrink-0">
+                            <button
+                              onClick={() => setError(null)}
+                              className="inline-flex text-red-400 hover:text-red-600"
+                            >
+                              <span className="sr-only">Dismiss</span>
+                              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Main Content */}
+                  {activeTab === 'test' && (
+                    <div className="max-w-7xl mx-auto animate-fade-in">
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8">
+                        {/* Left Column - Configuration */}
+                        <div className="space-y-6 animate-slide-up">
+                          <ModelSelector
+                            selectedModel={selectedModel}
+                            onModelSelect={setSelectedModel}
+                            validationError={validationErrors.model}
+                          />
+
+                          <DatasetSelector
+                            selectedDataset={selectedDataset}
+                            onDatasetSelect={setSelectedDataset}
+                            validationError={validationErrors.dataset}
+                          />
+
+                          <PromptEditor
+                            systemPrompt={systemPrompt}
+                            userPrompt={userPrompt}
+                            onSystemPromptChange={setSystemPrompt}
+                            onUserPromptChange={setUserPrompt}
+                            systemPromptError={validationErrors.systemPrompt}
+                            userPromptError={validationErrors.userPrompt}
+                          />
+
+                          {/* Advanced Options */}
+                          <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4">
+                            {/* Determinism Evaluation Toggle */}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-3">
+                                <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                                <div>
+                                  <h3 className="text-sm font-medium text-gray-900">Determinism Evaluation</h3>
+                                  <p className="text-xs text-gray-500">Analyze response consistency across multiple runs</p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => setDeterminismEnabled(!determinismEnabled)}
+                                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${determinismEnabled ? 'bg-primary-600' : 'bg-gray-200'
+                                  }`}
+                              >
+                                <span
+                                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${determinismEnabled ? 'translate-x-5' : 'translate-x-0'
+                                    }`}
+                                />
+                              </button>
+                            </div>
+
+                            {/* Streaming Toggle */}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-3">
+                                <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                </svg>
+                                <div>
+                                  <h3 className="text-sm font-medium text-gray-900">Streaming Response</h3>
+                                  <p className="text-xs text-gray-500">Show response as it's generated in real-time</p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => setStreamingEnabled(!streamingEnabled)}
+                                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${streamingEnabled ? 'bg-primary-600' : 'bg-gray-200'
+                                  }`}
+                              >
+                                <span
+                                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${streamingEnabled ? 'translate-x-5' : 'translate-x-0'
+                                    }`}
+                                />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Enhanced Validation Summary with Dual Prompt Guidance */}
+                          {Object.keys(validationErrors).length > 0 && (
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                              <div className="flex">
+                                <div className="flex-shrink-0">
+                                  <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                  </svg>
+                                </div>
+                                <div className="ml-3 flex-1">
+                                  <h3 className="text-sm font-medium text-yellow-800">
+                                    Please complete the following to run your test:
+                                  </h3>
+                                  <div className="mt-2 space-y-2">
+                                    {/* Specific validation errors with enhanced messaging */}
+                                    <ul className="text-sm text-yellow-700 space-y-1">
+                                      {validationErrors.model && (
+                                        <li className="flex items-start space-x-2">
+                                          <span className="text-yellow-500 mt-0.5">•</span>
+                                          <span><strong>Model:</strong> {validationErrors.model}</span>
+                                        </li>
+                                      )}
+                                      {validationErrors.systemPrompt && (
+                                        <li className="flex items-start space-x-2">
+                                          <span className="text-blue-500 mt-0.5">•</span>
+                                          <span><strong>System Prompt:</strong> {validationErrors.systemPrompt}</span>
+                                        </li>
+                                      )}
+                                      {validationErrors.userPrompt && (
+                                        <li className="flex items-start space-x-2">
+                                          <span className="text-green-500 mt-0.5">•</span>
+                                          <span><strong>User Prompt:</strong> {validationErrors.userPrompt}</span>
+                                        </li>
+                                      )}
+                                      {validationErrors.dataset && (
+                                        <li className="flex items-start space-x-2">
+                                          <span className="text-purple-500 mt-0.5">•</span>
+                                          <span><strong>Dataset:</strong> {validationErrors.dataset}</span>
+                                        </li>
+                                      )}
+                                    </ul>
+
+                                    {/* Enhanced user guidance for dual prompt requirements */}
+                                    {(validationErrors.systemPrompt || validationErrors.userPrompt) && (
+                                      <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                                        <h4 className="text-sm font-medium text-blue-800 mb-2 flex items-center space-x-1">
+                                          <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                          </svg>
+                                          <span>Dual Prompt Guide</span>
+                                        </h4>
+                                        <div className="text-xs text-blue-700 space-y-2">
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            <div className="p-2 bg-blue-100 rounded border border-blue-200">
+                                              <p className="font-medium text-blue-800">System Prompt</p>
+                                              <p className="text-blue-600">Defines the AI's role, expertise, and behavior</p>
+                                              <p className="text-blue-500 italic">Example: "You are a data analyst..."</p>
+                                            </div>
+                                            <div className="p-2 bg-green-100 rounded border border-green-200">
+                                              <p className="font-medium text-green-800">User Prompt</p>
+                                              <p className="text-green-600">Contains your specific request or question</p>
+                                              <p className="text-green-500 italic">Example: "Analyze this data for patterns..."</p>
+                                            </div>
+                                          </div>
+                                          <p className="text-blue-600 font-medium">
+                                            💡 Both prompts work together: System prompt sets the context, user prompt provides the task.
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Additional guidance for missing prompts */}
+                                    {validationErrors.systemPrompt && !validationErrors.userPrompt && (
+                                      <div className="mt-2 p-2 bg-blue-50 border-l-4 border-blue-400 rounded">
+                                        <p className="text-xs text-blue-700">
+                                          <strong>Tip:</strong> Try templates like "Data Analyst" or "Classification Expert" to get started with your system prompt.
+                                        </p>
+                                      </div>
+                                    )}
+
+                                    {validationErrors.userPrompt && !validationErrors.systemPrompt && (
+                                      <div className="mt-2 p-2 bg-green-50 border-l-4 border-green-400 rounded">
+                                        <p className="text-xs text-green-700">
+                                          <strong>Tip:</strong> Try templates like "Analyze Data" or "Detect Fraud" to get started with your user prompt.
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Progress Bar */}
+                          {isLoading && progressStatus && (
+                            <div className="mb-6">
+                              <ProgressBar
+                                progress={progressValue}
+                                status={progressStatus}
+                                color="primary"
+                              />
+                            </div>
+                          )}
+
+                          {/* Enhanced Form Validation Status Indicator */}
+                          {(() => {
+                            const status = getValidationStatus();
+                            const completedFields = Object.values(status).filter(field => field !== status.overall && field.valid).length;
+                            const totalFields = 4; // model, systemPrompt, userPrompt, dataset
+
+                            if (status.overall) {
+                              return (
+                                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                                  <div className="flex items-center space-x-2">
+                                    <svg className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <span className="text-sm font-medium text-green-800">
+                                      All requirements met! Ready to run your test.
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            } else if (completedFields > 0) {
+                              return (
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center space-x-2">
+                                      <svg className="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <span className="text-sm font-medium text-blue-800">
+                                        Progress: {completedFields} of {totalFields} requirements completed
+                                      </span>
+                                    </div>
+                                    <div className="flex space-x-1">
+                                      {[status.model, status.systemPrompt, status.userPrompt, status.dataset].map((field, index) => (
+                                        <div
+                                          key={index}
+                                          className={`w-2 h-2 rounded-full ${field.valid ? 'bg-green-400' : 'bg-gray-300'
+                                            }`}
+                                          title={field.valid ? 'Complete' : 'Incomplete'}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+
+                          <div className="flex justify-center">
+                            <button
+                              onClick={handleRunTest}
+                              disabled={isLoading || !isFormValid()}
+                              className={`btn-primary px-8 py-3 text-lg transition-all duration-200 ${isLoading || !isFormValid() ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-lg'
+                                }`}
+                            >
+                              {isLoading ? (
+                                <LoadingSpinner size="sm" color="white" text="Running Test..." inline />
+                              ) : (
+                                'Run Test'
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Right Column - Results */}
+                        <div className="animate-slide-up" style={{ animationDelay: '0.1s' }}>
+                          <TestResults
+                            results={testResults}
+                            isLoading={isLoading}
+                            determinismEnabled={determinismEnabled}
+                            onEvaluationComplete={(grade) => {
+                              // Handle determinism evaluation completion
+                              console.log('Determinism evaluation completed:', grade);
+                            }}
+                            isStreaming={isStreaming}
+                            streamingContent={streamingContent}
+                            streamingProgress={streamingProgress}
+                            streamingError={streamingError}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === 'history' && (
+                    <div className="max-w-6xl mx-auto animate-fade-in">
+                      <History
+                        onLoadFromHistory={handleLoadFromHistory}
+                        onCompareTests={handleCompareTests}
+                        selectedForComparison={selectedForComparison}
+                      />
+                    </div>
+                  )}
+
+                  {activeTab === 'comparison' && (
+                    <div className="max-w-6xl mx-auto animate-fade-in">
+                      <Comparison
+                        selectedTests={selectedForComparison}
+                        onRemoveTest={handleRemoveFromComparison}
+                        onClearComparison={handleClearComparison}
+                      />
+                    </div>
+                  )}
+
+                  {/* Help Guide */}
+                  <HelpGuide />
+
+                  {/* Streaming Performance Monitor - Debug Mode */}
+                  {isStreamingDebugEnabled && (
+                    <div className="fixed bottom-4 right-4 w-80 z-40">
+                      <StreamingPerformanceMonitor
+                        isVisible={true}
+                        refreshInterval={3000}
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
-
-          {/* Help Guide */}
-          <HelpGuide />
         </BrowserCompatibility>
       </ThemeProvider>
     </ErrorBoundary>

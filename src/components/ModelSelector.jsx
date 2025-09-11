@@ -150,6 +150,7 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
           {models.map((model) => (
             <option key={model.id} value={model.id}>
               {model.name} {model.provider && `(${model.provider})`}
+              {bedrockService.isStreamingSupported(model.id) ? ' ⚡' : ''}
             </option>
           ))}
         </select>
@@ -162,9 +163,19 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
 
       {/* Model Count Info */}
       {!isLoading && models.length > 0 && (
-        <div className="mt-2 text-xs text-gray-500">
-          {models.length} model{models.length !== 1 ? 's' : ''} available
-          {credentialStatus === 'invalid' && ' (using fallback list)'}
+        <div className="mt-2 space-y-1">
+          <div className="text-xs text-gray-500">
+            {models.length} model{models.length !== 1 ? 's' : ''} available
+            {credentialStatus === 'invalid' && ' (using fallback list)'}
+          </div>
+          <div className="text-xs text-gray-500 flex items-center space-x-4">
+            <span className="flex items-center space-x-1">
+              <span>⚡</span>
+              <span>Streaming supported</span>
+            </span>
+            <span className="text-gray-400">•</span>
+            <span>{models.filter(m => bedrockService.isStreamingSupported(m.id)).length} of {models.length} models support streaming</span>
+          </div>
         </div>
       )}
 
@@ -179,6 +190,17 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
               Provider: {models.find(m => m.id === selectedModel)?.provider}
             </p>
           )}
+          {/* Streaming Support Indicator */}
+          <div className="mt-2 flex items-center space-x-2">
+            <div className={`w-2 h-2 rounded-full ${
+              bedrockService.isStreamingSupported(selectedModel) ? 'bg-green-500' : 'bg-gray-400'
+            }`}></div>
+            <span className="text-xs text-blue-700">
+              {bedrockService.isStreamingSupported(selectedModel)
+                ? 'Streaming supported'
+                : 'Standard mode only'}
+            </span>
+          </div>
         </div>
       )}
     </div>

@@ -313,7 +313,7 @@ export function validateModelId(modelId) {
 }
 
 /**
- * Validate dual prompt configuration (both system and user prompts)
+ * Validate prompt configuration (both system and user prompts)
  * @param {string} systemPrompt - The system prompt text
  * @param {string} userPrompt - The user prompt text
  * @returns {Object} Validation result with specific errors for each prompt type

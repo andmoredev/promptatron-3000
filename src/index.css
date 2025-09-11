@@ -66,6 +66,46 @@
   .validation-success-text {
     @apply text-sm text-green-600 mt-1 flex items-start space-x-1;
   }
+
+  /* Streaming Output Component Styles */
+  .streaming-output {
+    @apply w-full;
+  }
+
+  .streaming-content {
+    @apply relative;
+  }
+
+  .streaming-content::-webkit-scrollbar {
+    @apply w-2;
+  }
+
+  .streaming-content::-webkit-scrollbar-track {
+    @apply bg-gray-100 rounded;
+  }
+
+  .streaming-content::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded hover:bg-gray-400;
+  }
+
+  /* Streaming animation for typing cursor */
+  .streaming-cursor {
+    @apply inline-block w-0.5 h-5 bg-primary-500 ml-1;
+    animation: blink 1s infinite;
+  }
+
+  /* Copy button states */
+  .copy-button-success {
+    @apply bg-green-100 text-green-700 hover:bg-green-200;
+  }
+
+  .copy-button-error {
+    @apply bg-red-100 text-red-700 hover:bg-red-200;
+  }
+
+  .copy-button-default {
+    @apply bg-gray-100 text-gray-700 hover:bg-gray-200;
+  }
 }
 
 @layer utilities {
@@ -87,6 +127,47 @@
 
   .animate-bounce-in {
     animation: bounceIn 0.5s ease-out;
+  }
+
+  /* Robot integration styles */
+  .robot-graphic-container {
+    @apply transition-all duration-300 ease-in-out;
+  }
+
+  .robot-transitioning {
+    @apply transform scale-105;
+  }
+
+  /* Responsive robot positioning */
+  @media (max-width: 640px) {
+    .robot-graphic-container {
+      @apply mb-4;
+    }
+
+    /* Smaller robot on mobile */
+    .robot-size-lg {
+      width: 80px !important;
+      height: 80px !important;
+    }
+  }
+
+  @media (min-width: 641px) {
+    .robot-graphic-container {
+      @apply mr-4;
+    }
+  }
+
+  /* Robot state-specific styling */
+  .robot-container-thinking {
+    @apply animate-pulse;
+  }
+
+  .robot-container-talking {
+    @apply animate-bounce;
+  }
+
+  .robot-container-error {
+    @apply animate-pulse;
   }
 }
 
@@ -147,5 +228,14 @@
   100% {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
   }
 }
