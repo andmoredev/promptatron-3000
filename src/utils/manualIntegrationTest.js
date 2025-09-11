@@ -18,7 +18,7 @@ export function testDualPromptValidation() {
     systemPrompt: 'You are an expert data analyst specializing in fraud detection.',
     userPrompt: 'Please analyze the following transaction data for suspicious patterns.',
     selectedDataset: {
-      type: 'enterprise-fraud',
+      type: 'fraud-detection',
       option: 'retail',
       content: 'transaction_id,amount,merchant\n1,100.00,Store A\n2,5000.00,Store B'
     }
@@ -132,7 +132,7 @@ export function testHistoryFunctionality() {
     systemPrompt: 'You are a data analyst.',
     userPrompt: 'Analyze this data.',
     prompt: 'Analyze this data.', // Legacy field
-    datasetType: 'enterprise-fraud',
+    datasetType: 'fraud-detection',
     datasetOption: 'retail',
     response: 'Analysis complete.',
     usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
@@ -143,7 +143,7 @@ export function testHistoryFunctionality() {
     id: 'legacy-456',
     modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
     prompt: 'Legacy single prompt',
-    datasetType: 'enterprise-fraud',
+    datasetType: 'fraud-detection',
     datasetOption: 'retail',
     response: 'Legacy analysis.',
     usage: { input_tokens: 80, output_tokens: 40, total_tokens: 120 },

@@ -4,8 +4,10 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
+import DeterminismEvaluator from './DeterminismEvaluator'
 
-const TestResults = ({ results, isLoading }) => {
+
+const TestResults = ({ results, isLoading, determinismEnabled, onEvaluationComplete }) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const [viewMode, setViewMode] = useState('formatted') // 'formatted', 'raw', 'markdown'
   const [isDarkMode, setIsDarkMode] = useState(false)
@@ -572,13 +574,19 @@ const TestResults = ({ results, isLoading }) => {
           )}
         </div>
 
-        {/* Reading time estimate */}
-        <div className="mt-3 text-center">
-          <span className="text-xs text-gray-500">
-            Estimated reading time: {Math.ceil(results.response.split(/\s+/).length / 200)} min
-          </span>
-        </div>
+        {/* Determinism Evaluation */}
+        {determinismEnabled && (
+          <div className="mt-4 border-t border-gray-200 pt-4">
+            <DeterminismEvaluator
+              testResult={results}
+              enabled={determinismEnabled}
+              onEvaluationComplete={onEvaluationComplete}
+            />
+          </div>
+        )}
       </div>
+
+
     </div>
   )
 }

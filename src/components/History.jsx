@@ -19,6 +19,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
   const [showManagement, setShowManagement] = useState(false)
   const [rerunDialog, setRerunDialog] = useState(null)
   const [comparisonMode, setComparisonMode] = useState(false)
+  const [determinismModal, setDeterminismModal] = useState(null)
   const fileInputRef = useRef(null)
 
   // Get unique models for filtering
@@ -104,12 +105,21 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
     if (file) {
       try {
         const importedCount = await importHistory(file)
-        alert(`Successfully imported ${importedCount} test records.`)
+        alert(`Successfully imported ${importedCount} records.`)
       } catch (err) {
         alert(`Failed to import history: ${err.message}`)
       }
       // Reset file input
       event.target.value = ''
+    }
+  }
+
+  const handleDeterminismGradeClick = (item) => {
+    if (item.determinismGrade) {
+      setDeterminismModal({
+        testItem: item,
+        grade: item.determinismGrade
+      })
     }
   }
 
@@ -341,6 +351,12 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                     {item.modelId?.split('.')[0] || 'Unknown'}
                   </span>
+                  {item.determinismGrade && (
+                    <DeterminismGradeBadge
+                      grade={item.determinismGrade}
+                      onClick={() => handleDeterminismGradeClick(item)}
+                    />
+                  )}
                   <span className="text-sm text-gray-500">
                     {formatTimestamp(item.timestamp)}
                   </span>
@@ -535,6 +551,15 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
         onChange={handleImportHistory}
         className="hidden"
       />
+
+      {/* Determinism Grade Modal */}
+      {determinismModal && (
+        <DeterminismGradeModal
+          testItem={determinismModal.testItem}
+          grade={determinismModal.grade}
+          onClose={() => setDeterminismModal(null)}
+        />
+      )}
 
       {/* Rerun Dialog */}
       {rerunDialog && (
@@ -762,6 +787,222 @@ const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
         </div>
       </div>
     </div>
+  )
+}
+
+// Determinism Grade Modal Component
+const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
+  const formatTimestamp = (timestamp) => {
+    return new Date(timestamp).toLocaleString()
+  }
+
+  const getGradeDescription = (gradeValue) => {
+    switch (gradeValue) {
+      case 'A': return 'Highly deterministic (>90% consistency)'
+      case 'B': return 'Good determinism (70-90% consistency)'
+      case 'C': return 'Moderate determinism (50-70% consistency)'
+      case 'D': return 'Low determinism (30-50% consistency)'
+      case 'F': return 'Non-deterministic (<30% consistency)'
+      default: return 'Unknown grade'
+    }
+  }
+
+  const getGradeColor = (gradeValue) => {
+    switch (gradeValue) {
+      case 'A': return 'text-primary-700'
+      case 'B': return 'text-secondary-800'
+      case 'C': return 'text-yellow-600'
+      case 'D': return 'text-orange-600'
+      case 'F': return 'text-red-600'
+      default: return 'text-gray-600'
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Determinism Evaluation Details
+            </h3>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            {/* Grade Summary */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-medium text-gray-900">Overall Grade</h4>
+                {grade.fallbackAnalysis && (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    Statistical Analysis
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center space-x-4">
+                <div className={`text-4xl font-bold ${getGradeColor(grade.grade)}`}>
+                  {grade.grade}
+                </div>
+                <div>
+                  <div className="text-2xl font-semibold text-gray-900">{grade.score}%</div>
+                  <div className="text-sm text-gray-600">{getGradeDescription(grade.grade)}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Test Information */}
+            <div>
+              <h4 className="font-medium text-gray-900 mb-3">Test Information</h4>
+              <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium text-gray-700">Model:</span>
+                    <span className="ml-2 text-gray-600">{testItem.modelId}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Test Date:</span>
+                    <span className="ml-2 text-gray-600">{formatTimestamp(testItem.timestamp)}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Evaluation Date:</span>
+                    <span className="ml-2 text-gray-600">{formatTimestamp(grade.timestamp)}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Evaluation ID:</span>
+                    <span className="ml-2 text-gray-600 font-mono text-xs">{grade.evaluationId}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Variance Analysis */}
+            {grade.variance && (
+              <div>
+                <h4 className="font-medium text-gray-900 mb-3">Variance Analysis</h4>
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-600">{grade.variance.responseCount}</div>
+                      <div className="text-gray-600">Total Responses</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-purple-600">{grade.variance.uniqueResponses}</div>
+                      <div className="text-gray-600">Unique Responses</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">{grade.variance.averageLength}</div>
+                      <div className="text-gray-600">Avg Length (chars)</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-orange-600">{grade.variance.lengthVariance}</div>
+                      <div className="text-gray-600">Length Variance</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-teal-600">{Math.round(grade.variance.semanticSimilarity * 100)}%</div>
+                      <div className="text-gray-600">Semantic Similarity</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-indigo-600">{Math.round(grade.variance.actionConsistency * 100)}%</div>
+                      <div className="text-gray-600">Action Consistency</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Reasoning */}
+            <div>
+              <h4 className="font-medium text-gray-900 mb-3">Analysis Reasoning</h4>
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <p className="text-sm text-gray-700 leading-relaxed">
+                  {grade.reasoning}
+                </p>
+              </div>
+            </div>
+
+            {/* Additional Information */}
+            {grade.fallbackAnalysis && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h5 className="text-sm font-medium text-yellow-800">Statistical Analysis</h5>
+                    <p className="text-sm text-yellow-700 mt-1">
+                      This evaluation was performed using statistical analysis because the grader LLM was unavailable.
+                      The results are based on response uniqueness and length variance patterns.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Determinism Grade Badge Component
+const DeterminismGradeBadge = ({ grade, onClick }) => {
+  if (!grade) return null
+
+  const getGradeColor = (gradeValue) => {
+    switch (gradeValue) {
+      case 'A': return 'bg-primary-100 text-primary-800 border-primary-200'
+      case 'B': return 'bg-secondary-100 text-secondary-800 border-secondary-200'
+      case 'C': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
+      case 'D': return 'bg-orange-100 text-orange-800 border-orange-200'
+      case 'F': return 'bg-red-100 text-red-800 border-red-200'
+      default: return 'bg-gray-100 text-gray-800 border-gray-200'
+    }
+  }
+
+  const getGradeTitle = (gradeValue, score) => {
+    const baseTitle = `Determinism Grade: ${gradeValue} (${score}%)`
+    switch (gradeValue) {
+      case 'A': return `${baseTitle} - Highly deterministic`
+      case 'B': return `${baseTitle} - Good determinism`
+      case 'C': return `${baseTitle} - Moderate determinism`
+      case 'D': return `${baseTitle} - Low determinism`
+      case 'F': return `${baseTitle} - Non-deterministic`
+      default: return baseTitle
+    }
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${getGradeColor(grade.grade)}`}
+      title={getGradeTitle(grade.grade, grade.score)}
+    >
+      <span className="mr-1">🎯</span>
+      <span className="font-bold">{grade.grade}</span>
+      <span className="ml-1 text-xs">({grade.score}%)</span>
+      {grade.fallbackAnalysis && (
+        <span className="ml-1" title="Statistical analysis (grader LLM unavailable)">*</span>
+      )}
+    </button>
   )
 }
 

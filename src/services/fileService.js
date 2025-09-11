@@ -1,3 +1,5 @@
+import { determinismStorageService } from './determinismStorageService.js'
+
 /**
  * Service class for local file operations
  * Handles reading and writing test history to JSON files
@@ -49,7 +51,10 @@ export class FileService {
               // Save the cleaned history back
               await this.saveCleanedHistory(validRecords);
             }
-            return validRecords;
+
+            // Enrich with determinism grades
+            const enrichedRecords = await this.enrichWithDeterminismGrades(validRecords);
+            return enrichedRecords;
           } else {
             console.warn('History data is not an array, resetting to empty array');
             localStorage.removeItem('bedrock-test-history');
@@ -68,6 +73,45 @@ export class FileService {
       console.error('Failed to load history from localStorage:', error);
       // Fallback to in-memory storage
       return this.getInMemoryHistory();
+    }
+  }
+
+  /**
+   * Enrich test history records with determinism grades
+   * @param {Array} records - Test history records
+   * @returns {Promise<Array>} Records enriched with determinism grades
+   */
+  async enrichWithDeterminismGrades(records) {
+    try {
+      const enrichedRecords = []
+
+      for (const record of records) {
+        const enrichedRecord = { ...record }
+
+        // Try to get determinism evaluation for this test
+        if (record.id) {
+          const evaluation = await this.getDeterminismEvaluation(record.id)
+          if (evaluation && evaluation.grade) {
+            enrichedRecord.determinismGrade = {
+              grade: evaluation.grade.grade,
+              score: evaluation.grade.score,
+              reasoning: evaluation.grade.reasoning,
+              variance: evaluation.grade.variance,
+              timestamp: evaluation.timestamp,
+              evaluationId: evaluation.evaluationId,
+              fallbackAnalysis: evaluation.grade.fallbackAnalysis || false
+            }
+          }
+        }
+
+        enrichedRecords.push(enrichedRecord)
+      }
+
+      return enrichedRecords
+    } catch (error) {
+      console.error('Failed to enrich records with determinism grades:', error)
+      // Return original records if enrichment fails
+      return records
     }
   }
 
@@ -197,6 +241,66 @@ export class FileService {
   }
 
   /**
+   * Save determinism evaluation result and associate it with test result
+   * @param {string} testId - Test ID to associate evaluation with
+   * @param {Object} evaluationResult - Determinism evaluation result
+   * @returns {Promise<boolean>} True if saved successfully
+   */
+  async saveDeterminismEvaluation(testId, evaluationResult) {
+    try {
+      // Prepare evaluation data for storage
+      const evaluationData = {
+        evaluationId: evaluationResult.id || `eval_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        testId,
+        timestamp: evaluationResult.timestamp || Date.now(),
+        modelId: evaluationResult.modelId,
+        grade: evaluationResult.result || evaluationResult.grade,
+        responses: evaluationResult.responses || [],
+        metadata: {
+          evaluationDuration: evaluationResult.evaluationDuration,
+          concurrencyUsed: evaluationResult.concurrencyUsed,
+          throttleEvents: evaluationResult.throttleEvents || 0,
+          graderModel: evaluationResult.result?.graderModel || evaluationResult.grade?.graderModel,
+          fallbackAnalysis: evaluationResult.result?.fallbackAnalysis || evaluationResult.grade?.fallbackAnalysis || false
+        },
+        config: evaluationResult.config || {
+          modelId: evaluationResult.modelId,
+          systemPrompt: evaluationResult.systemPrompt,
+          userPrompt: evaluationResult.userPrompt,
+          datasetType: evaluationResult.datasetType,
+          datasetOption: evaluationResult.datasetOption
+        }
+      }
+
+      // Save to determinism storage
+      const saved = await determinismStorageService.saveEvaluationResult(evaluationData)
+
+      if (saved) {
+        console.log('Determinism evaluation saved for test:', testId)
+      }
+
+      return saved
+    } catch (error) {
+      console.error('Failed to save determinism evaluation:', error)
+      return false
+    }
+  }
+
+  /**
+   * Get determinism evaluation for a test
+   * @param {string} testId - Test ID to get evaluation for
+   * @returns {Promise<Object|null>} Evaluation result or null if not found
+   */
+  async getDeterminismEvaluation(testId) {
+    try {
+      return await determinismStorageService.getEvaluationByTestId(testId)
+    } catch (error) {
+      console.error('Failed to get determinism evaluation:', error)
+      return null
+    }
+  }
+
+  /**
    * Get detailed validation errors for a test result
    * @param {Object} testResult - The test result to validate
    * @returns {Array} Array of validation error messages
@@ -286,7 +390,15 @@ export class FileService {
         throw new Error('No history to export');
       }
 
-      const dataStr = JSON.stringify(history, null, 2);
+      // Include determinism evaluations in export
+      const exportData = {
+        version: '1.1', // Version to track export format
+        exportDate: new Date().toISOString(),
+        testHistory: history,
+        determinismEvaluations: await determinismStorageService.getAllEvaluations()
+      }
+
+      const dataStr = JSON.stringify(exportData, null, 2);
       const dataBlob = new Blob([dataStr], { type: 'application/json' });
 
       // Create download link
@@ -322,23 +434,34 @@ export class FileService {
       }
 
       const text = await file.text();
-      const importedHistory = JSON.parse(text);
+      const importedData = JSON.parse(text);
 
-      if (!Array.isArray(importedHistory)) {
-        throw new Error('Invalid history file format - expected an array');
+      let importedHistory = []
+      let importedEvaluations = []
+
+      // Handle both old format (array) and new format (object with version)
+      if (Array.isArray(importedData)) {
+        // Old format - just test history
+        importedHistory = importedData
+      } else if (importedData.version && importedData.testHistory) {
+        // New format - includes determinism evaluations
+        importedHistory = importedData.testHistory || []
+        importedEvaluations = importedData.determinismEvaluations || []
+      } else {
+        throw new Error('Invalid history file format')
       }
 
-      // Validate each record
+      // Validate test history records
       const validRecords = importedHistory.filter(record => this.validateTestResult(record));
 
-      if (validRecords.length === 0) {
-        throw new Error('No valid test results found in the file');
+      if (validRecords.length === 0 && importedEvaluations.length === 0) {
+        throw new Error('No valid test results or evaluations found in the file');
       }
 
       // Load existing history
       const existingHistory = await this.loadHistory();
 
-      // Merge histories, avoiding duplicates based on ID
+      // Merge test histories, avoiding duplicates based on ID
       const existingIds = new Set(existingHistory.map(record => record.id));
       const newRecords = validRecords.filter(record => !existingIds.has(record.id));
 
@@ -350,7 +473,25 @@ export class FileService {
       // Save merged history
       localStorage.setItem('bedrock-test-history', JSON.stringify(mergedHistory));
 
-      return newRecords.length;
+      // Import determinism evaluations
+      let importedEvaluationCount = 0
+      if (importedEvaluations.length > 0) {
+        for (const evaluation of importedEvaluations) {
+          try {
+            const saved = await determinismStorageService.saveEvaluationResult(evaluation)
+            if (saved) {
+              importedEvaluationCount++
+            }
+          } catch (evalError) {
+            console.warn('Failed to import evaluation:', evaluation.evaluationId, evalError.message)
+          }
+        }
+      }
+
+      const totalImported = newRecords.length + importedEvaluationCount
+      console.log(`Imported ${newRecords.length} test records and ${importedEvaluationCount} evaluations`)
+
+      return totalImported;
     } catch (error) {
       console.error('Failed to import history:', error);
       throw new Error(`Failed to import history: ${error.message}`);

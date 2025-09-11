@@ -1,72 +1,84 @@
-import React, { useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
+import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 
 const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
-  const [viewMode, setViewMode] = useState('side-by-side') // 'side-by-side', 'stacked'
-  const [compareMode, setCompareMode] = useState('responses') // 'responses', 'metadata', 'all'
-  const [isDarkMode, setIsDarkMode] = useState(false)
-  const [highlightDifferences, setHighlightDifferences] = useState(true)
+  const [viewMode, setViewMode] = useState('side-by-side'); // 'side-by-side', 'stacked'
+  const [compareMode, setCompareMode] = useState('responses'); // 'responses', 'metadata', 'all'
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [highlightDifferences, setHighlightDifferences] = useState(true);
+
+  // Helper function for determinism grade colors
+  const getDeterminismGradeColor = (grade) => {
+    switch (grade) {
+      case 'A': return 'text-primary-700';
+      case 'B': return 'text-secondary-800';
+      case 'C': return 'text-yellow-600';
+      case 'D': return 'text-orange-600';
+      case 'F': return 'text-red-600';
+      default: return 'text-gray-600';
+    }
+  };
 
   // Detect content type for formatting
   const detectContentType = (text) => {
-    const trimmed = text.trim()
+    const trimmed = text.trim();
 
     if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-        (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
       try {
-        JSON.parse(trimmed)
-        return 'json'
+        JSON.parse(trimmed);
+        return 'json';
       } catch (e) {
         // Not valid JSON
       }
     }
 
     if (trimmed.startsWith('<') && trimmed.includes('>')) {
-      return 'xml'
+      return 'xml';
     }
 
     if (trimmed.includes('```') || trimmed.includes('##') || trimmed.includes('**')) {
-      return 'markdown'
+      return 'markdown';
     }
 
-    return 'text'
-  }
+    return 'text';
+  };
 
   // Format JSON with proper indentation
   const formatJSON = (text) => {
     try {
-      const parsed = JSON.parse(text.trim())
-      return JSON.stringify(parsed, null, 2)
+      const parsed = JSON.parse(text.trim());
+      return JSON.stringify(parsed, null, 2);
     } catch (e) {
-      return text
+      return text;
     }
-  }
+  };
 
   // Calculate similarity between two texts
   const calculateSimilarity = (text1, text2) => {
-    const words1 = text1.toLowerCase().split(/\s+/)
-    const words2 = text2.toLowerCase().split(/\s+/)
-    const allWords = new Set([...words1, ...words2])
+    const words1 = text1.toLowerCase().split(/\s+/);
+    const words2 = text2.toLowerCase().split(/\s+/);
+    const allWords = new Set([...words1, ...words2]);
 
-    let commonWords = 0
+    let commonWords = 0;
     allWords.forEach(word => {
       if (words1.includes(word) && words2.includes(word)) {
-        commonWords++
+        commonWords++;
       }
-    })
+    });
 
-    return Math.round((commonWords / allWords.size) * 100)
-  }
+    return Math.round((commonWords / allWords.size) * 100);
+  };
 
   // Custom components for ReactMarkdown
   const markdownComponents = {
     code({ node, inline, className, children, ...props }) {
-      const match = /language-(\w+)/.exec(className || '')
-      const language = match ? match[1] : 'text'
+      const match = /language-(\w+)/.exec(className || '');
+      const language = match ? match[1] : 'text';
 
       return !inline ? (
         <SyntaxHighlighter
@@ -82,9 +94,9 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
         <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono" {...props}>
           {children}
         </code>
-      )
+      );
     }
-  }
+  };
 
   // Render formatted content
   const renderContent = (text, contentType) => {
@@ -99,7 +111,7 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
           >
             {formatJSON(text)}
           </SyntaxHighlighter>
-        )
+        );
 
       case 'xml':
         return (
@@ -111,7 +123,7 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
           >
             {text}
           </SyntaxHighlighter>
-        )
+        );
 
       case 'markdown':
         return (
@@ -124,7 +136,7 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
               {text}
             </ReactMarkdown>
           </div>
-        )
+        );
 
       default:
         return (
@@ -140,9 +152,9 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
               </p>
             ))}
           </div>
-        )
+        );
     }
-  }
+  };
 
   if (!selectedTests || selectedTests.length === 0) {
     return (
@@ -158,7 +170,7 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
           <p className="text-sm text-gray-500 mt-1">Select tests from the history to compare them side by side</p>
         </div>
       </div>
-    )
+    );
   }
 
   if (selectedTests.length === 1) {
@@ -181,12 +193,12 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
           </button>
         </div>
       </div>
-    )
+    );
   }
 
   const similarity = selectedTests.length === 2
     ? calculateSimilarity(selectedTests[0].response, selectedTests[1].response)
-    : null
+    : null;
 
   return (
     <div className="space-y-6">
@@ -210,21 +222,19 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
           <div className="flex bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => setViewMode('side-by-side')}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                viewMode === 'side-by-side'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${viewMode === 'side-by-side'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+                }`}
             >
               Side by Side
             </button>
             <button
               onClick={() => setViewMode('stacked')}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                viewMode === 'stacked'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${viewMode === 'stacked'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+                }`}
             >
               Stacked
             </button>
@@ -234,31 +244,28 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
           <div className="flex bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => setCompareMode('responses')}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                compareMode === 'responses'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${compareMode === 'responses'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+                }`}
             >
               Responses
             </button>
             <button
               onClick={() => setCompareMode('metadata')}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                compareMode === 'metadata'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${compareMode === 'metadata'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+                }`}
             >
               Metadata
             </button>
             <button
               onClick={() => setCompareMode('all')}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                compareMode === 'all'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${compareMode === 'all'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+                }`}
             >
               All
             </button>
@@ -294,11 +301,10 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
               <div className="flex items-center space-x-2">
                 <div className="w-32 bg-gray-200 rounded-full h-2">
                   <div
-                    className={`h-2 rounded-full ${
-                      similarity >= 80 ? 'bg-green-500' :
+                    className={`h-2 rounded-full ${similarity >= 80 ? 'bg-green-500' :
                       similarity >= 60 ? 'bg-yellow-500' :
-                      similarity >= 40 ? 'bg-orange-500' : 'bg-red-500'
-                    }`}
+                        similarity >= 40 ? 'bg-orange-500' : 'bg-red-500'
+                      }`}
                     style={{ width: `${similarity}%` }}
                   />
                 </div>
@@ -316,11 +322,10 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
             {/* Test Header */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
-                <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium text-white ${
-                  index === 0 ? 'bg-blue-500' :
+                <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium text-white ${index === 0 ? 'bg-blue-500' :
                   index === 1 ? 'bg-green-500' :
-                  index === 2 ? 'bg-purple-500' : 'bg-gray-500'
-                }`}>
+                    index === 2 ? 'bg-purple-500' : 'bg-gray-500'
+                  }`}>
                   {String.fromCharCode(65 + index)}
                 </span>
                 <h4 className="font-medium text-gray-900">
@@ -358,6 +363,17 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
                     <span className="font-medium text-gray-700">Response Length:</span>
                     <span className="ml-2 text-gray-600">{test.response.length} chars</span>
                   </div>
+                  {test.determinismGrade && (
+                    <div>
+                      <span className="font-medium text-gray-700">Determinism Grade:</span>
+                      <span className={`ml-2 font-bold ${getDeterminismGradeColor(test.determinismGrade.grade)}`}>
+                        {test.determinismGrade.grade} ({test.determinismGrade.score}%)
+                      </span>
+                      {test.determinismGrade.fallbackAnalysis && (
+                        <span className="ml-1 text-xs text-yellow-600" title="Statistical analysis">*</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -413,7 +429,7 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
         ))}
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Comparison
+export default Comparison;

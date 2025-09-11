@@ -49,7 +49,7 @@ bedrock-llm-analyzer/
 │   ├── main.jsx            # React entry point
 │   └── index.css           # Tailwind CSS styles
 ├── datasets/               # Dataset files organized by use case
-│   └── enterprise-fraud/
+│   └── fraud-detection/
 │       ├── international.csv
 │       ├── mixed.csv
 │       └── retail.csv
@@ -64,7 +64,7 @@ Datasets are organized in the `public/datasets/` directory by use case. The appl
 ```
 public/datasets/
 ├── manifest.json           # Optional: Global dataset metadata
-├── [use-case-name]/        # Use case folder (e.g., "enterprise-fraud")
+├── [use-case-name]/        # Use case folder (e.g., "fraud-detection")
 │   ├── manifest.json       # Optional: Use case metadata
 │   ├── dataset1.csv        # Dataset files (CSV format)
 │   ├── dataset2.csv

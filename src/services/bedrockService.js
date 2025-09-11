@@ -300,6 +300,409 @@ export class BedrockService {
   }
 
   /**
+   * Execute multiple identical requests with the same configuration
+   * Used for determinism evaluation - runs the same prompt multiple times
+   * @param {string} modelId - The model ID to invoke
+   * @param {string} systemPrompt - The system prompt to send to the model
+   * @param {string} userPrompt - The user prompt to send to the model
+   * @param {string} content - Additional content/context for the model
+   * @param {number} count - Number of requests to execute (default: 29)
+   * @param {Object} options - Additional options for batch execution
+   * @returns {Promise<Array>} Array of response objects
+   */
+  async executeBatchRequests(modelId, systemPrompt, userPrompt, content = '', count = 29, options = {}) {
+    if (!this.isInitialized || !this.credentialsValid) {
+      const initResult = await this.initialize();
+      if (!initResult.success) {
+        throw new Error(initResult.message);
+      }
+    }
+
+    const {
+      concurrency = 5, // Default concurrency limit
+      onProgress = null, // Progress callback function
+      onError = null, // Error callback function
+      retryAttempts = 2, // Number of retry attempts per request (reduced to avoid hammering)
+      retryDelay = 1000, // Base delay between retries (ms)
+      maxRetryDelay = 30000, // Maximum delay between retries
+      requestDelay = 0, // Delay between individual requests (ms)
+      onNetworkError = null, // Network error callback
+      pauseOnNetworkError = false // Whether to pause on network errors
+    } = options;
+
+    const responses = [];
+    const errors = [];
+    let completed = 0;
+    let networkErrorCount = 0;
+    let consecutiveNetworkErrors = 0;
+
+    // Create request configuration for deduplication
+    const requestConfig = {
+      modelId,
+      systemPrompt,
+      userPrompt,
+      content,
+      timestamp: Date.now()
+    };
+
+    // Execute requests in batches to respect concurrency limits
+    const batches = [];
+    for (let i = 0; i < count; i += concurrency) {
+      const batchSize = Math.min(concurrency, count - i);
+      const batch = Array.from({ length: batchSize }, (_, index) => i + index);
+      batches.push(batch);
+    }
+
+    for (const batch of batches) {
+      // Check for too many consecutive network errors
+      if (consecutiveNetworkErrors >= 3) {
+        const error = new Error('Too many consecutive network errors. Please check your connection and try again.');
+        if (onNetworkError) {
+          onNetworkError(error, networkErrorCount);
+        }
+        throw error;
+      }
+
+      const batchPromises = batch.map(async (requestIndex) => {
+        // Add delay between requests if specified
+        if (requestDelay > 0 && requestIndex > 0) {
+          await new Promise(resolve => setTimeout(resolve, requestDelay));
+        }
+
+        let lastError = null;
+
+        // Retry logic for individual requests
+        for (let attempt = 0; attempt <= retryAttempts; attempt++) {
+          try {
+            const response = await this.invokeModel(modelId, systemPrompt, userPrompt, content);
+
+            // Reset consecutive network error count on success
+            consecutiveNetworkErrors = 0;
+
+            // Add metadata to response
+            const enrichedResponse = {
+              ...response,
+              requestIndex,
+              requestConfig,
+              timestamp: Date.now(),
+              attempt: attempt + 1
+            };
+
+            responses[requestIndex] = enrichedResponse;
+            completed++;
+
+            // Call progress callback if provided
+            if (onProgress) {
+              onProgress({
+                completed,
+                total: count,
+                progress: (completed / count) * 100,
+                currentBatch: batch,
+                requestIndex,
+                networkErrors: networkErrorCount
+              });
+            }
+
+            return enrichedResponse;
+          } catch (error) {
+            lastError = error;
+
+            // Check if this is a network error
+            const isNetworkErr = this.isNetworkError(error);
+            if (isNetworkErr) {
+              networkErrorCount++;
+              consecutiveNetworkErrors++;
+
+              if (onNetworkError) {
+                onNetworkError(error, networkErrorCount);
+              }
+
+              // If configured to pause on network errors and we have multiple failures
+              if (pauseOnNetworkError && consecutiveNetworkErrors >= 2) {
+                throw new Error('Network connectivity issues detected. Evaluation paused.');
+              }
+            } else {
+              // Reset consecutive network errors for non-network errors
+              consecutiveNetworkErrors = 0;
+            }
+
+            // If this isn't the last attempt, wait before retrying
+            if (attempt < retryAttempts) {
+              let delay = retryDelay * Math.pow(2, attempt); // Exponential backoff
+
+              // Special handling for rate limiting errors - use much longer delays
+              if (this.isRateLimitError(error)) {
+                const baseRateLimitDelay = 30000; // Start with 30 seconds
+                delay = baseRateLimitDelay * Math.pow(2, attempt); // 30s, 60s, 120s
+                console.log(`Rate limit hit on request ${requestIndex + 1}, waiting ${delay}ms before retry ${attempt + 2}`);
+              } else if (isNetworkErr) {
+                // Increase delay for network errors
+                delay = Math.min(delay * 2, maxRetryDelay);
+              } else {
+                // Cap the delay for other errors
+                delay = Math.min(delay, maxRetryDelay);
+              }
+
+              // Final cap on delay
+              delay = Math.min(delay, 300000); // Max 5 minutes
+
+              if (!this.isRateLimitError(error)) {
+                console.log(`Retrying request ${requestIndex + 1} (attempt ${attempt + 2}) after ${delay}ms`);
+              }
+              await new Promise(resolve => setTimeout(resolve, delay));
+            }
+          }
+        }
+
+        // If we get here, all retry attempts failed
+        const errorInfo = {
+          requestIndex,
+          error: lastError,
+          requestConfig,
+          timestamp: Date.now(),
+          isNetworkError: this.isNetworkError(lastError),
+          isThrottlingError: this.isRateLimitError(lastError)
+        };
+
+        errors.push(errorInfo);
+
+        if (onError) {
+          onError(errorInfo);
+        }
+
+        // Return null for failed requests to maintain array indexing
+        return null;
+      });
+
+      // Wait for current batch to complete before starting next batch
+      await Promise.all(batchPromises);
+
+      // Add delay between batches if we've had network errors
+      if (networkErrorCount > 0 && batch !== batches[batches.length - 1]) {
+        const batchDelay = Math.min(1000 + (networkErrorCount * 500), 5000);
+        console.log(`Adding ${batchDelay}ms delay between batches due to network errors`);
+        await new Promise(resolve => setTimeout(resolve, batchDelay));
+      }
+    }
+
+    // Filter out null responses (failed requests) and return results
+    const successfulResponses = responses.filter(response => response !== null);
+
+    // Check if we have too few successful responses
+    const successRate = (successfulResponses.length / count) * 100;
+    if (successRate < 50) {
+      console.warn(`Low success rate: ${successRate.toFixed(1)}% (${successfulResponses.length}/${count})`);
+    }
+
+    return {
+      responses: successfulResponses,
+      errors,
+      summary: {
+        total: count,
+        successful: successfulResponses.length,
+        failed: errors.length,
+        successRate,
+        networkErrors: networkErrorCount,
+        requestConfig
+      }
+    };
+  }
+
+  /**
+   * Check if an error is network-related
+   * @private
+   */
+  isNetworkError(error) {
+    const errorMessage = error.message?.toLowerCase() || '';
+    const errorCode = error.code || error.name || '';
+
+    return (
+      errorMessage.includes('network') ||
+      errorMessage.includes('fetch') ||
+      errorMessage.includes('enotfound') ||
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('connection') ||
+      errorCode === 'NetworkError' ||
+      errorCode === 'TimeoutError'
+    );
+  }
+
+  /**
+   * Execute a single request with retry logic and error handling
+   * Used internally by batch execution but can also be used standalone
+   * @param {Object} config - Request configuration
+   * @param {Object} options - Execution options
+   * @returns {Promise<Object>} Response object with metadata
+   */
+  async executeRequestWithRetry(config, options = {}) {
+    const {
+      retryAttempts = 3,
+      retryDelay = 1000,
+      requestIndex = 0
+    } = options;
+
+    const { modelId, systemPrompt, userPrompt, content } = config;
+    let lastError = null;
+
+    for (let attempt = 0; attempt <= retryAttempts; attempt++) {
+      try {
+        const response = await this.invokeModel(modelId, systemPrompt, userPrompt, content);
+
+        return {
+          ...response,
+          requestIndex,
+          requestConfig: config,
+          timestamp: Date.now(),
+          attempt: attempt + 1,
+          success: true
+        };
+      } catch (error) {
+        lastError = error;
+
+        // Check if this is a rate limiting error
+        if (this.isRateLimitError(error) && attempt < retryAttempts) {
+          // Use much longer delays for rate limit errors to avoid hammering
+          const baseRateLimitDelay = 30000; // Start with 30 seconds
+          const delay = baseRateLimitDelay * Math.pow(2, attempt); // 30s, 60s, 120s
+          console.log(`Rate limit hit, waiting ${delay}ms before retry ${attempt + 1}`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else if (attempt < retryAttempts) {
+          // Use linear backoff for other errors
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+      }
+    }
+
+    // All attempts failed
+    throw new Error(`Request failed after ${retryAttempts + 1} attempts: ${lastError.message}`);
+  }
+
+  /**
+   * Check if an error is related to rate limiting
+   * @private
+   */
+  isRateLimitError(error) {
+    const errorMessage = error.message?.toLowerCase() || '';
+    const errorCode = error.code || error.name || '';
+
+    return (
+      errorCode === 'ThrottlingException' ||
+      errorCode === 'TooManyRequestsException' ||
+      errorMessage.includes('throttl') ||
+      errorMessage.includes('rate limit') ||
+      errorMessage.includes('too many requests')
+    );
+  }
+
+  /**
+   * Deduplicate requests based on configuration
+   * Returns cached response if identical request was made recently
+   * @param {Object} requestConfig - Request configuration to check
+   * @param {number} cacheTimeMs - Cache validity time in milliseconds (default: 5 minutes)
+   * @returns {Object|null} Cached response or null if not found/expired
+   */
+  deduplicateRequest(requestConfig, cacheTimeMs = 5 * 60 * 1000) {
+    // Simple in-memory cache for request deduplication
+    if (!this.requestCache) {
+      this.requestCache = new Map();
+    }
+
+    const requestKey = this.generateRequestKey(requestConfig);
+    const cached = this.requestCache.get(requestKey);
+
+    if (cached && (Date.now() - cached.timestamp) < cacheTimeMs) {
+      return {
+        ...cached.response,
+        fromCache: true,
+        cacheAge: Date.now() - cached.timestamp
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Cache a request response for deduplication
+   * @param {Object} requestConfig - Request configuration
+   * @param {Object} response - Response to cache
+   */
+  cacheRequest(requestConfig, response) {
+    if (!this.requestCache) {
+      this.requestCache = new Map();
+    }
+
+    const requestKey = this.generateRequestKey(requestConfig);
+    this.requestCache.set(requestKey, {
+      response: { ...response },
+      timestamp: Date.now()
+    });
+
+    // Clean up old cache entries (keep last 100 entries)
+    if (this.requestCache.size > 100) {
+      const entries = Array.from(this.requestCache.entries());
+      entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
+
+      this.requestCache.clear();
+      entries.slice(0, 100).forEach(([key, value]) => {
+        this.requestCache.set(key, value);
+      });
+    }
+  }
+
+  /**
+   * Generate a unique key for request configuration
+   * @private
+   */
+  generateRequestKey(config) {
+    const { modelId, systemPrompt, userPrompt, content } = config;
+    const keyData = JSON.stringify({
+      modelId,
+      systemPrompt: systemPrompt?.trim() || '',
+      userPrompt: userPrompt?.trim() || '',
+      content: content?.trim() || ''
+    });
+
+    // Simple hash function for the key
+    let hash = 0;
+    for (let i = 0; i < keyData.length; i++) {
+      const char = keyData.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+
+    return `req_${Math.abs(hash).toString(36)}`;
+  }
+
+  /**
+   * Clear the request cache
+   */
+  clearRequestCache() {
+    if (this.requestCache) {
+      this.requestCache.clear();
+    }
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats() {
+    if (!this.requestCache) {
+      return { size: 0, entries: [] };
+    }
+
+    const entries = Array.from(this.requestCache.entries()).map(([key, value]) => ({
+      key,
+      timestamp: value.timestamp,
+      age: Date.now() - value.timestamp
+    }));
+
+    return {
+      size: this.requestCache.size,
+      entries: entries.sort((a, b) => b.timestamp - a.timestamp)
+    };
+  }
+
+  /**
    * Check if the service is properly initialized and credentials are valid
    */
   isReady() {
