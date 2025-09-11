@@ -34,6 +34,7 @@ function App() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('test');
   const [validationErrors, setValidationErrors] = useState({});
+  const [touchedFields, setTouchedFields] = useState({});
   const [selectedForComparison, setSelectedForComparison] = useState([]);
   const [retryCount, setRetryCount] = useState(0);
   const [progressStatus, setProgressStatus] = useState('');
@@ -95,36 +96,13 @@ function App() {
     return !hasValidationErrors && hasRequiredFields;
   };
 
-  // Helper function to get validation status for UI feedback
-  const getValidationStatus = () => {
-    const errors = validationErrors;
-    const hasModel = !!selectedModel;
-    const hasSystemPrompt = !!systemPrompt.trim();
-    const hasUserPrompt = !!userPrompt.trim();
-    const hasDataset = !!(selectedDataset.type && selectedDataset.option && selectedDataset.content);
 
-    return {
-      model: { valid: hasModel && !errors.model, error: errors.model },
-      systemPrompt: {
-        valid: hasSystemPrompt && !errors.systemPrompt,
-        error: errors.systemPrompt,
-      },
-      userPrompt: {
-        valid: hasUserPrompt && !errors.userPrompt,
-        error: errors.userPrompt,
-      },
-      dataset: { valid: hasDataset && !errors.dataset, error: errors.dataset },
-      overall: isFormValid()
-    };
-  };
 
   // Clear error and streaming state when user makes changes
   useEffect(() => {
     if (error) {
       setError(null);
     }
-    // Clear validation errors when user makes changes
-    setValidationErrors({});
   }, [selectedModel, selectedDataset, systemPrompt, userPrompt]);
 
   // Real-time validation using enhanced validation utility
@@ -137,8 +115,17 @@ function App() {
     };
 
     const validationResult = validateForm(formData);
-    setValidationErrors(validationResult.errors);
-  }, [selectedModel, systemPrompt, userPrompt, selectedDataset]);
+
+    // Only show validation errors for fields that have been touched
+    const filteredErrors = {};
+    Object.keys(validationResult.errors).forEach(field => {
+      if (touchedFields[field]) {
+        filteredErrors[field] = validationResult.errors[field];
+      }
+    });
+
+    setValidationErrors(filteredErrors);
+  }, [selectedModel, systemPrompt, userPrompt, selectedDataset, touchedFields]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -438,6 +425,14 @@ function App() {
       setUserPrompt('');
     }
 
+    // Mark all fields as touched when loading from history
+    setTouchedFields({
+      model: true,
+      dataset: true,
+      systemPrompt: true,
+      userPrompt: true
+    });
+
     setActiveTab('test');
   };
 
@@ -454,6 +449,35 @@ function App() {
 
   const handleClearComparison = () => {
     setSelectedForComparison([]);
+  };
+
+  // Mark fields as touched when user interacts with them
+  const markFieldAsTouched = (fieldName) => {
+    setTouchedFields(prev => ({
+      ...prev,
+      [fieldName]: true
+    }));
+  };
+
+  // Enhanced handlers that mark fields as touched
+  const handleModelSelect = (modelId) => {
+    setSelectedModel(modelId);
+    markFieldAsTouched('model');
+  };
+
+  const handleDatasetSelect = (dataset) => {
+    setSelectedDataset(dataset);
+    markFieldAsTouched('dataset');
+  };
+
+  const handleSystemPromptChange = (prompt) => {
+    setSystemPrompt(prompt);
+    markFieldAsTouched('systemPrompt');
+  };
+
+  const handleUserPromptChange = (prompt) => {
+    setUserPrompt(prompt);
+    markFieldAsTouched('userPrompt');
   };
 
   // Theme configuration with null-checking
@@ -538,7 +562,7 @@ function App() {
                         : 'text-gray-600 hover:text-gray-900'
                         }`}
                     >
-                      Test Harness
+                      Test
                     </button>
                     <button
                       onClick={() => setActiveTab('history')}
@@ -568,39 +592,7 @@ function App() {
 
                 {/* Main Content Area */}
                 <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-                  {/* Error Display */}
-                  {error && (
-                    <div className="max-w-4xl mx-auto mb-6 animate-fade-in">
-                      <div className="bg-red-50 border border-red-200 rounded-lg p-4 transform transition-all duration-300 hover:shadow-md">
-                        <div className="flex">
-                          <div className="flex-shrink-0">
-                            <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                            </svg>
-                          </div>
-                          <div className="ml-3 flex-1">
-                            <p className="text-sm text-red-800">{error}</p>
-                            {retryCount > 0 && (
-                              <p className="text-xs text-red-600 mt-1">
-                                Retried {retryCount} time{retryCount !== 1 ? 's' : ''}
-                              </p>
-                            )}
-                          </div>
-                          <div className="ml-3 flex-shrink-0">
-                            <button
-                              onClick={() => setError(null)}
-                              className="inline-flex text-red-400 hover:text-red-600"
-                            >
-                              <span className="sr-only">Dismiss</span>
-                              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+
 
                   {/* Main Content */}
                   {activeTab === 'test' && (
@@ -610,21 +602,22 @@ function App() {
                         <div className="space-y-6 animate-slide-up">
                           <ModelSelector
                             selectedModel={selectedModel}
-                            onModelSelect={setSelectedModel}
+                            onModelSelect={handleModelSelect}
                             validationError={validationErrors.model}
+                            externalError={error}
                           />
 
                           <DatasetSelector
                             selectedDataset={selectedDataset}
-                            onDatasetSelect={setSelectedDataset}
+                            onDatasetSelect={handleDatasetSelect}
                             validationError={validationErrors.dataset}
                           />
 
                           <PromptEditor
                             systemPrompt={systemPrompt}
                             userPrompt={userPrompt}
-                            onSystemPromptChange={setSystemPrompt}
-                            onUserPromptChange={setUserPrompt}
+                            onSystemPromptChange={handleSystemPromptChange}
+                            onUserPromptChange={handleUserPromptChange}
                             systemPromptError={validationErrors.systemPrompt}
                             userPromptError={validationErrors.userPrompt}
                           />
@@ -782,53 +775,7 @@ function App() {
                             </div>
                           )}
 
-                          {/* Enhanced Form Validation Status Indicator */}
-                          {(() => {
-                            const status = getValidationStatus();
-                            const completedFields = Object.values(status).filter(field => field !== status.overall && field.valid).length;
-                            const totalFields = 4; // model, systemPrompt, userPrompt, dataset
 
-                            if (status.overall) {
-                              return (
-                                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                                  <div className="flex items-center space-x-2">
-                                    <svg className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <span className="text-sm font-medium text-green-800">
-                                      All requirements met! Ready to run your test.
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            } else if (completedFields > 0) {
-                              return (
-                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center space-x-2">
-                                      <svg className="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                      </svg>
-                                      <span className="text-sm font-medium text-blue-800">
-                                        Progress: {completedFields} of {totalFields} requirements completed
-                                      </span>
-                                    </div>
-                                    <div className="flex space-x-1">
-                                      {[status.model, status.systemPrompt, status.userPrompt, status.dataset].map((field, index) => (
-                                        <div
-                                          key={index}
-                                          className={`w-2 h-2 rounded-full ${field.valid ? 'bg-green-400' : 'bg-gray-300'
-                                            }`}
-                                          title={field.valid ? 'Complete' : 'Incomplete'}
-                                        />
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            }
-                            return null;
-                          })()}
 
                           <div className="flex justify-center">
                             <button
@@ -852,9 +799,33 @@ function App() {
                             results={testResults}
                             isLoading={isLoading}
                             determinismEnabled={determinismEnabled}
-                            onEvaluationComplete={(grade) => {
+                            onEvaluationComplete={async (grade) => {
                               // Handle determinism evaluation completion
                               console.log('Determinism evaluation completed:', grade);
+                              console.log('Current testResults:', testResults);
+
+                              // Save the evaluation result to storage
+                              if (testResults && grade) {
+                                try {
+                                  const { fileService } = await import('./services/fileService.js');
+                                  console.log('Saving determinism evaluation for test ID:', testResults.id);
+                                  const saved = await fileService.saveDeterminismEvaluation(testResults.id, grade);
+                                  console.log('Determinism evaluation save result:', saved);
+
+                                  if (saved) {
+                                    // Update the current test results to include the grade
+                                    setTestResults(prev => ({
+                                      ...prev,
+                                      determinismGrade: grade
+                                    }));
+                                    console.log('Updated test results with determinism grade');
+                                  }
+                                } catch (error) {
+                                  console.error('Failed to save determinism evaluation:', error);
+                                }
+                              } else {
+                                console.warn('Cannot save determinism evaluation - missing testResults or grade:', { testResults: !!testResults, grade: !!grade });
+                              }
                             }}
                             isStreaming={isStreaming}
                             streamingContent={streamingContent}

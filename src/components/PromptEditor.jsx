@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import HelpTooltip from './HelpTooltip'
 
@@ -16,9 +16,43 @@ const PromptEditor = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const [activeTab, setActiveTab] = useState('system')
+  const systemPromptRef = useRef(null)
+  const userPromptRef = useRef(null)
 
   // Determine if we're in legacy single prompt mode
   const isLegacyMode = prompt !== undefined && onPromptChange && !onSystemPromptChange && !onUserPromptChange
+
+  // Auto-resize textarea function
+  const autoResize = (textarea) => {
+    if (textarea) {
+      textarea.style.height = 'auto'
+      textarea.style.height = Math.max(128, textarea.scrollHeight) + 'px' // Minimum height of 128px (h-32)
+    }
+  }
+
+  // Auto-resize system prompt when content changes
+  useEffect(() => {
+    autoResize(systemPromptRef.current)
+  }, [systemPrompt])
+
+  // Auto-resize user prompt when content changes
+  useEffect(() => {
+    autoResize(userPromptRef.current)
+  }, [userPrompt])
+
+  // Handle system prompt change with auto-resize
+  const handleSystemPromptChange = (e) => {
+    onSystemPromptChange?.(e.target.value)
+    // Small delay to ensure the value is updated before resizing
+    setTimeout(() => autoResize(e.target), 0)
+  }
+
+  // Handle user prompt change with auto-resize
+  const handleUserPromptChange = (e) => {
+    onUserPromptChange?.(e.target.value)
+    // Small delay to ensure the value is updated before resizing
+    setTimeout(() => autoResize(e.target), 0)
+  }
 
   const systemPromptTemplates = [
     {
@@ -85,12 +119,16 @@ const PromptEditor = ({
   const handleSystemTemplateSelect = (template) => {
     if (onSystemPromptChange && typeof onSystemPromptChange === 'function') {
       onSystemPromptChange(template)
+      // Trigger auto-resize after template is applied
+      setTimeout(() => autoResize(systemPromptRef.current), 0)
     }
   }
 
   const handleUserTemplateSelect = (template) => {
     if (onUserPromptChange && typeof onUserPromptChange === 'function') {
       onUserPromptChange(template)
+      // Trigger auto-resize after template is applied
+      setTimeout(() => autoResize(userPromptRef.current), 0)
     }
   }
 
@@ -103,12 +141,16 @@ const PromptEditor = ({
   const handleClearSystem = () => {
     if (onSystemPromptChange && typeof onSystemPromptChange === 'function') {
       onSystemPromptChange('')
+      // Trigger auto-resize after clearing
+      setTimeout(() => autoResize(systemPromptRef.current), 0)
     }
   }
 
   const handleClearUser = () => {
     if (onUserPromptChange && typeof onUserPromptChange === 'function') {
       onUserPromptChange('')
+      // Trigger auto-resize after clearing
+      setTimeout(() => autoResize(userPromptRef.current), 0)
     }
   }
 
@@ -311,15 +353,15 @@ const PromptEditor = ({
               )}
             </div>
             <textarea
+              ref={systemPromptRef}
               id="system-prompt-input"
               value={systemPrompt}
-              onChange={(e) => onSystemPromptChange && typeof onSystemPromptChange === 'function' && onSystemPromptChange(e.target.value)}
+              onChange={handleSystemPromptChange}
               placeholder="Define the AI's role and expertise. For example: 'You are an expert data analyst specializing in fraud detection...'"
-              className={`input-field resize-none ${
-                isExpanded ? 'h-48' : 'h-32'
-              } transition-all duration-200 ${
+              className={`input-field resize-none transition-all duration-200 ${
                 systemPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-blue-200 focus:border-blue-500 focus:ring-blue-500'
               }`}
+              style={{ overflow: 'hidden', minHeight: '128px' }}
             />
             {systemPromptError && (
               <p className="mt-1 text-sm text-red-600">{systemPromptError}</p>
@@ -381,15 +423,15 @@ const PromptEditor = ({
               )}
             </div>
             <textarea
+              ref={userPromptRef}
               id="user-prompt-input"
               value={userPrompt}
-              onChange={(e) => onUserPromptChange && typeof onUserPromptChange === 'function' && onUserPromptChange(e.target.value)}
+              onChange={handleUserPromptChange}
               placeholder="Enter your specific request or question. For example: 'Please analyze the following data for fraud patterns...'"
-              className={`input-field resize-none ${
-                isExpanded ? 'h-48' : 'h-32'
-              } transition-all duration-200 ${
+              className={`input-field resize-none transition-all duration-200 ${
                 userPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-green-200 focus:border-green-500 focus:ring-green-500'
               }`}
+              style={{ overflow: 'hidden', minHeight: '128px' }}
             />
             {userPromptError && (
               <p className="mt-1 text-sm text-red-600">{userPromptError}</p>

@@ -246,29 +246,32 @@ export class FileService {
    * @param {Object} evaluationResult - Determinism evaluation result
    * @returns {Promise<boolean>} True if saved successfully
    */
-  async saveDeterminismEvaluation(testId, evaluationResult) {
+  async saveDeterminismEvaluation(testId, gradeResult) {
     try {
+      console.log('Saving determinism evaluation - testId:', testId, 'gradeResult:', gradeResult);
+
       // Prepare evaluation data for storage
+      // gradeResult is the direct result from the grader service
       const evaluationData = {
-        evaluationId: evaluationResult.id || `eval_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        evaluationId: `eval_${testId}_${Date.now()}`,
         testId,
-        timestamp: evaluationResult.timestamp || Date.now(),
-        modelId: evaluationResult.modelId,
-        grade: evaluationResult.result || evaluationResult.grade,
-        responses: evaluationResult.responses || [],
+        timestamp: gradeResult.timestamp || Date.now(),
+        modelId: gradeResult.modelId,
+        grade: gradeResult, // The entire gradeResult is the grade
+        responses: gradeResult.responses || [],
         metadata: {
-          evaluationDuration: evaluationResult.evaluationDuration,
-          concurrencyUsed: evaluationResult.concurrencyUsed,
-          throttleEvents: evaluationResult.throttleEvents || 0,
-          graderModel: evaluationResult.result?.graderModel || evaluationResult.grade?.graderModel,
-          fallbackAnalysis: evaluationResult.result?.fallbackAnalysis || evaluationResult.grade?.fallbackAnalysis || false
+          evaluationDuration: gradeResult.evaluationDuration,
+          concurrencyUsed: gradeResult.concurrencyUsed,
+          throttleEvents: gradeResult.throttleEvents || 0,
+          graderModel: gradeResult.graderModel,
+          fallbackAnalysis: gradeResult.fallbackAnalysis || false
         },
-        config: evaluationResult.config || {
-          modelId: evaluationResult.modelId,
-          systemPrompt: evaluationResult.systemPrompt,
-          userPrompt: evaluationResult.userPrompt,
-          datasetType: evaluationResult.datasetType,
-          datasetOption: evaluationResult.datasetOption
+        config: gradeResult.config || {
+          modelId: gradeResult.modelId,
+          systemPrompt: gradeResult.systemPrompt,
+          userPrompt: gradeResult.userPrompt,
+          datasetType: gradeResult.datasetType,
+          datasetOption: gradeResult.datasetOption
         }
       }
 

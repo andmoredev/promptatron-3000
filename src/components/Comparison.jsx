@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 
 const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
   const [viewMode, setViewMode] = useState('side-by-side'); // 'side-by-side', 'stacked'
   const [compareMode, setCompareMode] = useState('responses'); // 'responses', 'metadata', 'all'
-  const [isDarkMode, setIsDarkMode] = useState(false);
+
   const [highlightDifferences, setHighlightDifferences] = useState(true);
 
   // Helper function for determinism grade colors
@@ -82,7 +82,7 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
 
       return !inline ? (
         <SyntaxHighlighter
-          style={isDarkMode ? oneDark : oneLight}
+          style={oneLight}
           language={language}
           PreTag="div"
           className="rounded-md text-sm"
@@ -105,7 +105,7 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
         return (
           <SyntaxHighlighter
             language="json"
-            style={isDarkMode ? oneDark : oneLight}
+            style={oneLight}
             className="rounded-md text-sm"
             customStyle={{ margin: 0, fontSize: '12px', lineHeight: '1.4' }}
           >
@@ -117,7 +117,7 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
         return (
           <SyntaxHighlighter
             language="xml"
-            style={isDarkMode ? oneDark : oneLight}
+            style={oneLight}
             className="rounded-md text-sm"
             customStyle={{ margin: 0, fontSize: '12px', lineHeight: '1.4' }}
           >
@@ -283,13 +283,7 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
               <span className="text-sm text-gray-700">Highlight differences</span>
             </label>
 
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-1 text-gray-500 hover:text-gray-700 rounded"
-              title={isDarkMode ? 'Switch to light theme' : 'Switch to dark theme'}
-            >
-              {isDarkMode ? '☀️' : '🌙'}
-            </button>
+
           </div>
         </div>
 
@@ -437,7 +431,7 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
                     <div>
                       <span className="font-medium text-gray-700">Determinism Grade:</span>
                       <span className={`ml-2 font-bold ${getDeterminismGradeColor(test.determinismGrade.grade)}`}>
-                        {test.determinismGrade.grade} ({test.determinismGrade.score}%)
+                        {test.determinismGrade.grade}
                       </span>
                       {test.determinismGrade.fallbackAnalysis && (
                         <span className="ml-1 text-xs text-yellow-600" title="Statistical analysis">*</span>

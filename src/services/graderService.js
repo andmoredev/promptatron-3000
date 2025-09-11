@@ -219,17 +219,20 @@ export class GraderService {
 
     try {
       // Try to extract JSON from the response
-      console.log(graderResponse);
+      console.log('Raw grader response:', graderResponse);
       const jsonMatch = this.extractJsonFromResponse(graderResponse);
+      console.log('Extracted JSON:', jsonMatch);
 
       if (!jsonMatch) {
         throw new Error('No valid JSON found in grader response');
       }
 
       const parsed = JSON.parse(jsonMatch);
+      console.log('Parsed grader JSON:', parsed);
 
       // Validate required fields
       const validatedResult = this.validateGraderResult(parsed, responses, config);
+      console.log('Validated grader result:', validatedResult);
 
       return {
         ...validatedResult,
@@ -357,7 +360,7 @@ export class GraderService {
       validated.score = this.calculateStatisticalScore(responses);
     }
 
-    // Validate reasoning
+    // Validate reasoning (keep for backward compatibility)
     if (result.reasoning && typeof result.reasoning === 'string' && result.reasoning.trim().length > 0) {
       validated.reasoning = result.reasoning.trim();
     } else {
@@ -369,6 +372,30 @@ export class GraderService {
       validated.variance = this.validateVarianceObject(result.variance, responses);
     } else {
       validated.variance = this.calculateStatisticalVariance(responses);
+    }
+
+    // Validate metrics object (new grader format)
+    if (result.metrics && typeof result.metrics === 'object') {
+      validated.metrics = {
+        decision_consistency_rate: typeof result.metrics.decision_consistency_rate === 'number' ? result.metrics.decision_consistency_rate : 0,
+        structure_consistency_rate: typeof result.metrics.structure_consistency_rate === 'number' ? result.metrics.structure_consistency_rate : 0,
+        semantic_equivalence_rate: typeof result.metrics.semantic_equivalence_rate === 'number' ? result.metrics.semantic_equivalence_rate : 0,
+        exact_text_rate: typeof result.metrics.exact_text_rate === 'number' ? result.metrics.exact_text_rate : 0,
+        n_runs: typeof result.metrics.n_runs === 'number' ? result.metrics.n_runs : responses.length
+      };
+    }
+
+    // Validate notable variations
+    if (result.notable_variations && Array.isArray(result.notable_variations)) {
+      validated.notable_variations = result.notable_variations.filter(v => typeof v === 'string' && v.trim().length > 0);
+    }
+
+    // Validate notes - prioritize 'notes' field, fallback to 'reasoning' for important LLM analysis
+    if (result.notes && typeof result.notes === 'string' && result.notes.trim().length > 0) {
+      validated.notes = result.notes.trim();
+    } else if (result.reasoning && typeof result.reasoning === 'string' && result.reasoning.trim().length > 0) {
+      // Map reasoning to notes since that's where the important LLM analysis is
+      validated.notes = result.reasoning.trim();
     }
 
     return validated;

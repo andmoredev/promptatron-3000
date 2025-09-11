@@ -383,15 +383,7 @@ function DeterminismEvaluator({
         </div>
       )}
 
-      {status === 'completed' && grade && (
-        <button
-          onClick={handleGradeClick}
-          className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold transition-all duration-200 hover:scale-105 hover:shadow-md ${getGradeColor(grade.grade)}`}
-          title={`Click for details - ${getGradeDescription(grade.grade)}`}
-        >
-          Grade: {grade.grade}
-        </button>
-      )}
+
 
       {/* Detailed Breakdown Modal */}
       {showModal && grade && (
@@ -410,6 +402,9 @@ function DeterminismEvaluator({
 function DeterminismModal({ grade, onClose }) {
   useEffect(() => {
     console.log('DeterminismModal received grade object:', grade)
+    console.log('Grade has metrics:', !!grade?.metrics)
+    console.log('Grade has notes:', !!grade?.notes)
+    console.log('Grade has notable_variations:', !!grade?.notable_variations)
     const handleEscape = (e) => {
       if (e.key === 'Escape') {
         onClose()
@@ -477,7 +472,7 @@ function DeterminismModal({ grade, onClose }) {
           </div>
 
           {/* Consistency Metrics */}
-          {grade.metrics && (
+          {grade.metrics ? (
             <div className="mb-6">
               <h4 className="text-lg font-semibold text-gray-900 mb-4">Detailed Analysis</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -526,6 +521,33 @@ function DeterminismModal({ grade, onClose }) {
                 <div className="text-sm text-gray-600">Analyzed Responses</div>
                 <div className="text-xl font-bold text-gray-900">{grade.metrics.n_runs}</div>
               </div>
+            </div>
+          ) : (
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Analysis Summary</h4>
+              <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+                <div className="text-sm text-blue-800">
+                  <p className="mb-2"><strong>Grade:</strong> {grade.grade}</p>
+                  <p className="mb-2"><strong>Score:</strong> {grade.score}%</p>
+                  {grade.reasoning && <p><strong>Analysis:</strong> {grade.reasoning}</p>}
+                </div>
+              </div>
+              {grade.variance && (
+                <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-50 border border-gray-200 p-3 rounded-lg text-center">
+                    <div className="text-sm text-gray-600">Responses</div>
+                    <div className="text-lg font-bold text-gray-900">{grade.variance.responseCount}</div>
+                  </div>
+                  <div className="bg-gray-50 border border-gray-200 p-3 rounded-lg text-center">
+                    <div className="text-sm text-gray-600">Unique</div>
+                    <div className="text-lg font-bold text-gray-900">{grade.variance.uniqueResponses}</div>
+                  </div>
+                  <div className="bg-gray-50 border border-gray-200 p-3 rounded-lg text-center">
+                    <div className="text-sm text-gray-600">Avg Length</div>
+                    <div className="text-lg font-bold text-gray-900">{grade.variance.averageLength}</div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

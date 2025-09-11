@@ -14,12 +14,14 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
   }, [])
 
   useEffect(() => {
-    if (selectedDataset.type) {
+    // Only load options if we don't already have them and type is set
+    // This prevents duplicate loading when handleTypeChange already loaded them
+    if (selectedDataset.type && datasetOptions.length === 0) {
       loadDatasetOptions(selectedDataset.type)
-    } else {
+    } else if (!selectedDataset.type) {
       setDatasetOptions([])
     }
-  }, [selectedDataset.type])
+  }, [selectedDataset.type, datasetOptions.length])
 
   // Auto-load content when dataset is set from history (type and option exist but content is null)
   useEffect(() => {
@@ -97,12 +99,58 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
     }
   }
 
-  const handleTypeChange = (type) => {
+  const handleTypeChange = async (type) => {
+    // First, clear the current selection
     onDatasetSelect({
       type: type,
       option: '',
       content: null
     })
+
+    // If a type is selected, load its options and auto-select the first one
+    if (type) {
+      setIsLoadingOptions(true)
+      setError(null)
+
+      try {
+        const manifestResponse = await fetch(`/datasets/${type}/manifest.json`)
+        if (!manifestResponse.ok) {
+          throw new Error(`Failed to load dataset manifest: ${manifestResponse.status}. Please ensure /datasets/${type}/manifest.json exists.`)
+        }
+
+        const manifest = await manifestResponse.json()
+        if (!manifest.files || !Array.isArray(manifest.files)) {
+          throw new Error(`Invalid manifest format: expected "files" array in /datasets/${type}/manifest.json`)
+        }
+
+        if (manifest.files.length === 0) {
+          throw new Error(`No dataset files found in ${type}/manifest.json`)
+        }
+
+        // Filter for supported file types and sort
+        const supportedOptions = manifest.files.filter(file =>
+          file.endsWith('.json') || file.endsWith('.csv')
+        )
+
+        if (supportedOptions.length === 0) {
+          throw new Error(`No supported dataset files (.json, .csv) found in ${type}/manifest.json`)
+        }
+
+        const sortedOptions = [...supportedOptions].sort((a, b) => a.localeCompare(b))
+        setDatasetOptions(sortedOptions)
+
+        // Auto-select the first option and load its content
+        const firstOption = sortedOptions[0]
+        await loadDatasetContent(type, firstOption)
+
+      } catch (err) {
+        console.error('Error loading dataset options:', err)
+        setError(`Failed to load dataset options: ${err.message}`)
+        setDatasetOptions([])
+      } finally {
+        setIsLoadingOptions(false)
+      }
+    }
   }
 
   const loadDatasetContent = async (type, option) => {
@@ -255,24 +303,7 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
         <p className="mt-1 text-sm text-red-600">{validationError}</p>
       )}
 
-      {/* Dataset Preview */}
-      {selectedDataset.type && selectedDataset.option && (
-        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-          <p className="text-sm text-green-800">
-            <span className="font-medium">Selected:</span> {selectedDataset.type}/{selectedDataset.option}
-          </p>
-          {selectedDataset.content && (
-            <div className="mt-2">
-              <p className="text-xs text-green-700 font-medium">Preview:</p>
-              <div className="text-xs text-green-700 mt-1 font-mono bg-green-100 p-2 rounded overflow-hidden">
-                <pre className="whitespace-pre-wrap break-words overflow-hidden text-xs">
-                  {selectedDataset.content.substring(0, 200)}...
-                </pre>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+
     </div>
   )
 }

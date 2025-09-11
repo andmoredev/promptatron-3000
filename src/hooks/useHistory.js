@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fileService } from '../services/fileService.js';
+import { determinismStorageService } from '../services/determinismStorageService.js';
 
 /**
  * Custom React hook for managing test history
@@ -11,7 +12,7 @@ export function useHistory() {
   const [error, setError] = useState(null);
 
   /**
-   * Load history from storage
+   * Load history from storage and merge with determinism grades
    */
   const loadHistory = useCallback(async () => {
     setLoading(true);
@@ -19,7 +20,30 @@ export function useHistory() {
 
     try {
       const historyData = await fileService.loadHistory();
-      setHistory(historyData);
+
+      // Initialize determinism storage service
+      await determinismStorageService.initialize();
+
+      // Load determinism grades and merge with history
+      const historyWithGrades = await Promise.all(
+        historyData.map(async (testResult) => {
+          try {
+            const evaluation = await determinismStorageService.getEvaluationByTestId(testResult.id);
+            if (evaluation && evaluation.grade) {
+              return {
+                ...testResult,
+                determinismGrade: evaluation.grade
+              };
+            }
+            return testResult;
+          } catch (err) {
+            console.warn(`Failed to load determinism grade for test ${testResult.id}:`, err);
+            return testResult;
+          }
+        })
+      );
+
+      setHistory(historyWithGrades);
     } catch (err) {
       setError(`Failed to load history: ${err.message}`);
       console.error('Error loading history:', err);
