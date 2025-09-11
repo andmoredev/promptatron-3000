@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
+import DeterminismEvaluator from './DeterminismEvaluator'
 import StreamingOutput from './StreamingOutput'
 import PropTypes from 'prop-types'
 
@@ -99,6 +100,8 @@ CopyButton.propTypes = {
 const TestResults = ({
   results,
   isLoading,
+  determinismEnabled,
+  onEvaluationComplete,
   isStreaming = false,
   streamingContent = '',
   streamingProgress = null,
@@ -106,7 +109,7 @@ const TestResults = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const [viewMode, setViewMode] = useState('formatted') // 'formatted', 'raw', 'markdown'
-  const [isDarkMode, setIsDarkMode] = useState(false)
+
 
   // Handle copy functionality for streaming output
   const handleStreamingCopy = (content) => {
@@ -251,7 +254,7 @@ const TestResults = ({
 
       return !inline ? (
         <SyntaxHighlighter
-          style={isDarkMode ? oneDark : oneLight}
+          style={oneLight}
           language={language}
           PreTag="div"
           className="rounded-md"
@@ -335,11 +338,6 @@ const TestResults = ({
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
           <h3 className="text-lg font-semibold text-gray-900">Test Results</h3>
-          <div className="hidden xl:flex items-center space-x-1 px-2 py-1 bg-primary-50 text-primary-600 text-xs rounded-full" title="This panel follows as you scroll">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13l-3 3m0 0l-3-3m3 3V8m0 13a9 9 0 110-18 9 9 0 010 18z" />
-            </svg>
-          </div>
         </div>
         <div className="flex items-center space-x-3">
           {/* View Mode Toggle */}
@@ -376,22 +374,7 @@ const TestResults = ({
             </button>
           </div>
 
-          {/* Theme Toggle */}
-          <button
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
-            title={isDarkMode ? 'Switch to light theme' : 'Switch to dark theme'}
-          >
-            {isDarkMode ? (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
-            ) : (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-              </svg>
-            )}
-          </button>
+
 
           {/* Expand/Collapse */}
           <button
@@ -403,44 +386,7 @@ const TestResults = ({
         </div>
       </div>
 
-      {/* Test Metadata */}
-      <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          <div>
-            <span className="font-medium text-gray-700">Model:</span>
-            <span className="ml-2 text-gray-600">{results.modelId}</span>
-          </div>
-          <div>
-            <span className="font-medium text-gray-700">Timestamp:</span>
-            <span className="ml-2 text-gray-600">{formatTimestamp(results.timestamp)}</span>
-          </div>
-          <div>
-            <span className="font-medium text-gray-700">Dataset:</span>
-            <span className="ml-2 text-gray-600">{results.datasetType}/{results.datasetOption}</span>
-          </div>
-          <div>
-            <span className="font-medium text-gray-700">Test ID:</span>
-            <span className="ml-2 text-gray-600 font-mono">{results.id}</span>
-          </div>
-          {/* Show streaming indicator if response was streamed */}
-          {results.isStreamed && (
-            <div className="md:col-span-2">
-              <span className="font-medium text-gray-700">Response Type:</span>
-              <span className="ml-2 inline-flex items-center space-x-1">
-                <span className="text-primary-600">Streamed</span>
-                <svg className="h-3 w-3 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              </span>
-              {results.streamingMetrics && (
-                <span className="ml-2 text-xs text-gray-500">
-                  ({results.streamingMetrics.averageTokensPerSecond?.toFixed(1)} tokens/sec)
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+
 
       {/* Prompt Display */}
       <div className="mb-4">
@@ -519,7 +465,7 @@ const TestResults = ({
                       return (
                         <SyntaxHighlighter
                           language="json"
-                          style={isDarkMode ? oneDark : oneLight}
+                          style={oneLight}
                           className="rounded-md"
                           customStyle={{
                             margin: 0,
@@ -535,7 +481,7 @@ const TestResults = ({
                       return (
                         <SyntaxHighlighter
                           language="xml"
-                          style={isDarkMode ? oneDark : oneLight}
+                          style={oneLight}
                           className="rounded-md"
                           customStyle={{
                             margin: 0,
@@ -551,7 +497,7 @@ const TestResults = ({
                       return (
                         <SyntaxHighlighter
                           language="python"
-                          style={isDarkMode ? oneDark : oneLight}
+                          style={oneLight}
                           className="rounded-md"
                           customStyle={{
                             margin: 0,
@@ -567,7 +513,7 @@ const TestResults = ({
                       return (
                         <SyntaxHighlighter
                           language="javascript"
-                          style={isDarkMode ? oneDark : oneLight}
+                          style={oneLight}
                           className="rounded-md"
                           customStyle={{
                             margin: 0,
@@ -583,7 +529,7 @@ const TestResults = ({
                       return (
                         <SyntaxHighlighter
                           language="sql"
-                          style={isDarkMode ? oneDark : oneLight}
+                          style={oneLight}
                           className="rounded-md"
                           customStyle={{
                             margin: 0,
@@ -750,13 +696,19 @@ const TestResults = ({
           )}
         </div>
 
-        {/* Reading time estimate */}
-        <div className="mt-3 text-center">
-          <span className="text-xs text-gray-500">
-            Estimated reading time: {Math.ceil(results.response.split(/\s+/).length / 200)} min
-          </span>
-        </div>
+        {/* Determinism Evaluation */}
+        {determinismEnabled && (
+          <div className="mt-4 border-t border-gray-200 pt-4">
+            <DeterminismEvaluator
+              testResult={results}
+              enabled={determinismEnabled}
+              onEvaluationComplete={onEvaluationComplete}
+            />
+          </div>
+        )}
       </div>
+
+
     </div>
   )
 }
@@ -776,6 +728,8 @@ TestResults.propTypes = {
     timestamp: PropTypes.string
   }),
   isLoading: PropTypes.bool,
+  determinismEnabled: PropTypes.bool,
+  onEvaluationComplete: PropTypes.func,
   isStreaming: PropTypes.bool,
   streamingContent: PropTypes.string,
   streamingProgress: PropTypes.shape({
@@ -791,6 +745,8 @@ TestResults.propTypes = {
 TestResults.defaultProps = {
   results: null,
   isLoading: false,
+  determinismEnabled: false,
+  onEvaluationComplete: null,
   isStreaming: false,
   streamingContent: '',
   streamingProgress: null,

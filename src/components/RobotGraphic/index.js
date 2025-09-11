@@ -57,7 +57,6 @@ export {
 
 export {
   default as RobotGraphicContainer,
-  UnoptimizedRobotGraphicContainer,
   useRobotIntegration
 } from './RobotGraphicContainer.jsx';
 

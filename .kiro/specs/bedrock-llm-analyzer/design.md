@@ -63,7 +63,7 @@ graph TB
 const testConfig = {
   modelId: "amazon.nova-pro-v1:0",
   prompt: "You are a helpful assistant. Please analyze the following data:",
-  datasetType: "enterprise-fraud",
+  datasetType: "fraud-detection",
   datasetOption: "dataset1.json",
   datasetContent: "loaded dataset content"
 };
@@ -73,7 +73,7 @@ const testResult = {
   id: "uuid-string",
   modelId: "amazon.nova-pro-v1:0",
   prompt: "user-prompt",
-  datasetType: "enterprise-fraud",
+  datasetType: "fraud-detection",
   datasetOption: "dataset1.json",
   response: "llm-response",
   timestamp: "2025-01-09T10:30:00Z"
@@ -104,7 +104,7 @@ bedrock-test-harness/
 ├── data/
 │   └── history.json
 └── datasets/
-    └── enterprise-fraud/
+    └── fraud-detection/
         ├── dataset1.json
         ├── dataset2.json
         └── dataset3.json
@@ -144,7 +144,7 @@ bedrock-test-harness/
     "id": "uuid-string",
     "modelId": "amazon.nova-pro-v1:0",
     "prompt": "user-prompt",
-    "datasetType": "enterprise-fraud",
+    "datasetType": "fraud-detection",
     "datasetOption": "dataset1.json",
     "response": "llm-response",
     "timestamp": "2025-01-09T10:30:00Z"
@@ -157,7 +157,7 @@ bedrock-test-harness/
 ### Dataset Structure
 ```
 datasets/
-├── enterprise-fraud/          # Use case folder
+├── fraud-detection/          # Use case folder
 │   ├── dataset1.json         # Dataset option 1
 │   ├── dataset2.json         # Dataset option 2
 │   └── dataset3.json         # Dataset option 3
@@ -186,7 +186,7 @@ function App() {
   const [prompt, setPrompt] = useState('');
   const [testResults, setTestResults] = useState(null);
   const [history, setHistory] = useState([]);
-  
+
   // Component logic and AWS integration
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -202,15 +202,15 @@ export class BedrockService {
   constructor() {
     this.client = null;
   }
-  
+
   async initialize() {
     // Initialize AWS client
   }
-  
+
   async listModels() {
     // Get available models
   }
-  
+
   async invokeModel(modelId, prompt, datasetContent) {
     // Execute test
   }

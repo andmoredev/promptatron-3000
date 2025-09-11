@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import { bedrockService } from '../services/bedrockService'
-import HelpTooltip from './HelpTooltip'
 import LoadingSpinner from './LoadingSpinner'
+import Tooltip from './Tooltip'
 
-const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
+const ModelSelector = ({ selectedModel, onModelSelect, validationError, externalError }) => {
   const [models, setModels] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -27,7 +27,7 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
   const loadModels = async () => {
     setIsLoading(true)
     setError(null)
-    setCredentialStatus(null)
+    setCredentialStatus('checking')
 
     try {
       console.log('Attempting to initialize Bedrock service...')
@@ -72,10 +72,55 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
           <h3 className="text-lg font-semibold text-gray-900">Select Model</h3>
-          <HelpTooltip
-            content="Choose from available AWS Bedrock foundation models. Different models excel at different tasks - Claude for reasoning, Nova for general tasks, and Llama for open-source alternatives."
-            position="right"
-          />
+          {/* AWS Credential Status Icon */}
+          {credentialStatus === 'valid' && !externalError ? (
+            <Tooltip
+              content="AWS Credentials: ✅ Connected and validated
+
+Your AWS credentials are working correctly and you have access to Bedrock foundation models."
+              position="bottom"
+            >
+              <div className="w-3 h-3 rounded-full bg-green-500 cursor-help"></div>
+            </Tooltip>
+          ) : credentialStatus === 'invalid' || externalError ? (
+            <Tooltip
+              content={`AWS Credentials: ❌ Error
+
+${externalError || error || 'Invalid or missing credentials'}
+
+Please check your AWS configuration:
+• Run 'aws configure' to set up credentials
+• Ensure you have Bedrock permissions
+• Verify your region supports Bedrock`}
+              position="bottom"
+            >
+              <svg
+                className="w-3 h-3 text-red-500 cursor-help"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </Tooltip>
+          ) : credentialStatus === 'checking' ? (
+            <Tooltip
+              content="AWS Credentials: ⏳ Checking connection
+
+Validating your AWS credentials and Bedrock access..."
+              position="bottom"
+            >
+              <div className="w-3 h-3 rounded-full bg-yellow-500 animate-pulse cursor-help"></div>
+            </Tooltip>
+          ) : (
+            <Tooltip
+              content="AWS Credentials: ⚪ Not checked yet
+
+Credential validation will occur when loading models."
+              position="bottom"
+            >
+              <div className="w-3 h-3 rounded-full bg-gray-400 cursor-help"></div>
+            </Tooltip>
+          )}
         </div>
         <button
           onClick={loadModels}
@@ -86,45 +131,7 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
         </button>
       </div>
 
-      {/* Credential Status Indicator */}
-      {credentialStatus && (
-        <div className={`mb-4 p-3 rounded-lg border ${
-          credentialStatus === 'valid'
-            ? 'bg-green-50 border-green-200'
-            : 'bg-red-50 border-red-200'
-        }`}>
-          <div className="flex items-center">
-            <div className={`w-2 h-2 rounded-full mr-2 ${
-              credentialStatus === 'valid' ? 'bg-green-500' : 'bg-red-500'
-            }`}></div>
-            <p className={`text-sm ${
-              credentialStatus === 'valid' ? 'text-green-800' : 'text-red-800'
-            }`}>
-              {credentialStatus === 'valid'
-                ? 'AWS credentials validated successfully'
-                : 'AWS credentials validation failed'}
-            </p>
-          </div>
-        </div>
-      )}
 
-      {/* Error Message */}
-      {error && (
-        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <p className="text-sm text-yellow-800">{error}</p>
-          {credentialStatus === 'invalid' && (
-            <div className="mt-2 text-xs text-yellow-700">
-              <p className="font-medium">To fix this issue:</p>
-              <ul className="mt-1 list-disc list-inside space-y-1">
-                <li>Configure AWS CLI: <code className="bg-yellow-100 px-1 rounded">aws configure</code></li>
-                <li>Set environment variables: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY</li>
-                <li>Ensure your credentials have Bedrock permissions</li>
-                <li>Check that Bedrock is available in your region</li>
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Loading State */}
       {isLoading && (
@@ -166,7 +173,6 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
         <div className="mt-2 space-y-1">
           <div className="text-xs text-gray-500">
             {models.length} model{models.length !== 1 ? 's' : ''} available
-            {credentialStatus === 'invalid' && ' (using fallback list)'}
           </div>
           <div className="text-xs text-gray-500 flex items-center space-x-4">
             <span className="flex items-center space-x-1">
@@ -179,30 +185,7 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
         </div>
       )}
 
-      {/* Selected Model Info */}
-      {selectedModel && (
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-800">
-            <span className="font-medium">Selected:</span> {models.find(m => m.id === selectedModel)?.name || selectedModel}
-          </p>
-          {models.find(m => m.id === selectedModel)?.provider && (
-            <p className="text-xs text-blue-600 mt-1">
-              Provider: {models.find(m => m.id === selectedModel)?.provider}
-            </p>
-          )}
-          {/* Streaming Support Indicator */}
-          <div className="mt-2 flex items-center space-x-2">
-            <div className={`w-2 h-2 rounded-full ${
-              bedrockService.isStreamingSupported(selectedModel) ? 'bg-green-500' : 'bg-gray-400'
-            }`}></div>
-            <span className="text-xs text-blue-700">
-              {bedrockService.isStreamingSupported(selectedModel)
-                ? 'Streaming supported'
-                : 'Standard mode only'}
-            </span>
-          </div>
-        </div>
-      )}
+
     </div>
   )
 }
@@ -210,7 +193,8 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError }) => {
 ModelSelector.propTypes = {
   selectedModel: PropTypes.string.isRequired,
   onModelSelect: PropTypes.func.isRequired,
-  validationError: PropTypes.string
+  validationError: PropTypes.string,
+  externalError: PropTypes.string
 }
 
 export default ModelSelector
