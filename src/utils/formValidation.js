@@ -11,8 +11,8 @@ export const validationRules = {
     message: 'Model selection is required'
   },
   systemPrompt: {
-    required: true,
-    minLength: 1,
+    required: false,
+    minLength: 0,
     maxLength: 10000,
     messages: {
       required: 'System prompt is required',
@@ -88,18 +88,22 @@ function validateModel(value, rules) {
  * @returns {Object} Validation result
  */
 function validateSystemPrompt(value, rules) {
+  // System prompt is now optional - empty is allowed
   if (rules.required && (!value || value.trim() === '')) {
     return { isValid: false, error: rules.messages.required }
   }
 
   const trimmedValue = value ? value.trim() : ''
 
-  if (rules.minLength && trimmedValue.length < rules.minLength) {
-    return { isValid: false, error: rules.messages.minLength }
-  }
+  // Only validate length if there's content
+  if (trimmedValue.length > 0) {
+    if (rules.minLength && trimmedValue.length < rules.minLength) {
+      return { isValid: false, error: rules.messages.minLength }
+    }
 
-  if (rules.maxLength && trimmedValue.length > rules.maxLength) {
-    return { isValid: false, error: rules.messages.maxLength }
+    if (rules.maxLength && trimmedValue.length > rules.maxLength) {
+      return { isValid: false, error: rules.messages.maxLength }
+    }
   }
 
   return { isValid: true, error: null }
@@ -314,22 +318,22 @@ export function validateModelId(modelId) {
 
 /**
  * Validate prompt configuration (both system and user prompts)
- * @param {string} systemPrompt - The system prompt text
- * @param {string} userPrompt - The user prompt text
+ * @param {string} systemPrompt - The system prompt text (optional)
+ * @param {string} userPrompt - The user prompt text (required)
  * @returns {Object} Validation result with specific errors for each prompt type
  */
 export function validateDualPrompts(systemPrompt, userPrompt) {
   const errors = {}
   let isValid = true
 
-  // Validate system prompt
+  // Validate system prompt (now optional)
   const systemResult = validateField('systemPrompt', systemPrompt)
   if (!systemResult.isValid) {
     errors.systemPrompt = systemResult.error
     isValid = false
   }
 
-  // Validate user prompt
+  // Validate user prompt (still required)
   const userResult = validateField('userPrompt', userPrompt)
   if (!userResult.isValid) {
     errors.userPrompt = userResult.error

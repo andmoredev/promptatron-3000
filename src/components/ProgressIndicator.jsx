@@ -52,7 +52,8 @@ function ProgressIndicator({
       'Executing model requests': { order: 2, color: 'green', icon: '🤖' },
       'Analyzing responses': { order: 3, color: 'green', icon: '🔍' },
       'Grading responses': { order: 3, color: 'green', icon: '📊' },
-      'Evaluation complete': { order: 4, color: 'green', icon: '✅' }
+      'Evaluating tool usage consistency': { order: 4, color: 'purple', icon: '🛠️' },
+      'Evaluation complete': { order: 5, color: 'green', icon: '✅' }
     }
 
     // Find matching phase (case insensitive, partial match)
@@ -99,6 +100,7 @@ function ProgressIndicator({
             className={`h-2.5 rounded-full transition-all duration-500 ease-out ${
               phaseInfo.color === 'blue' ? 'bg-primary-500' :
               phaseInfo.color === 'green' ? 'bg-secondary-700' :
+              phaseInfo.color === 'purple' ? 'bg-purple-600' :
               'bg-gray-500'
             }`}
             style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
@@ -126,7 +128,8 @@ function ProgressIndicator({
               { name: 'Initialize', order: 1 },
               { name: 'Execute', order: 2 },
               { name: 'Analyze', order: 3 },
-              { name: 'Complete', order: 4 }
+              { name: 'Tool Usage', order: 4 },
+              { name: 'Complete', order: 5 }
             ].map((phase) => {
               const isActive = phaseInfo.order === phase.order
               const isCompleted = phaseInfo.order > phase.order
@@ -141,6 +144,7 @@ function ProgressIndicator({
                       : isActive
                       ? (phaseInfo.color === 'blue' ? 'bg-primary-500' :
                          phaseInfo.color === 'green' ? 'bg-secondary-700' :
+                         phaseInfo.color === 'purple' ? 'bg-purple-600' :
                          'bg-gray-500')
                       : 'bg-gray-200'
                   }`}

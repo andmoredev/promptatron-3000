@@ -5,5 +5,9 @@
     "international.csv",
     "mixed.csv",
     "retail.csv"
-  ]
+  ],
+  "toolConfiguration": {
+    "enabled": true,
+    "configFile": "fraud-tools.json"
+  }
 }

@@ -145,7 +145,12 @@ export function useHistory() {
         record.prompt?.toLowerCase().includes(term) || // Legacy prompt field for backward compatibility
         record.datasetType?.toLowerCase().includes(term) ||
         record.datasetOption?.toLowerCase().includes(term) ||
-        record.response?.toLowerCase().includes(term)
+        record.response?.toLowerCase().includes(term) ||
+        // Include tool usage in search
+        (record.toolUsage?.toolCalls?.some(call =>
+          call.toolName?.toLowerCase().includes(term) ||
+          JSON.stringify(call.input)?.toLowerCase().includes(term)
+        ))
       );
     });
   }, [history]);
@@ -189,6 +194,12 @@ export function useHistory() {
         totalTests: 0,
         uniqueModels: 0,
         uniqueDatasets: 0,
+        toolUsageStats: {
+          testsWithTools: 0,
+          testsWithoutTools: 0,
+          totalToolCalls: 0,
+          uniqueTools: 0
+        },
         dateRange: null
       };
     }
@@ -200,6 +211,18 @@ export function useHistory() {
         .map(record => `${record.datasetType}/${record.datasetOption}`)
     ).size;
 
+    // Calculate tool usage statistics
+    const testsWithTools = history.filter(record => record.toolUsage?.hasToolUsage).length;
+    const testsWithoutTools = history.length - testsWithTools;
+    const totalToolCalls = history.reduce((sum, record) =>
+      sum + (record.toolUsage?.toolCallCount || 0), 0
+    );
+    const uniqueTools = new Set(
+      history
+        .filter(record => record.toolUsage?.toolCalls)
+        .flatMap(record => record.toolUsage.toolCalls.map(call => call.toolName))
+    ).size;
+
     const timestamps = history
       .map(record => new Date(record.timestamp))
       .sort((a, b) => a - b);
@@ -208,6 +231,12 @@ export function useHistory() {
       totalTests: history.length,
       uniqueModels,
       uniqueDatasets,
+      toolUsageStats: {
+        testsWithTools,
+        testsWithoutTools,
+        totalToolCalls,
+        uniqueTools
+      },
       dateRange: {
         earliest: timestamps[0],
         latest: timestamps[timestamps.length - 1]

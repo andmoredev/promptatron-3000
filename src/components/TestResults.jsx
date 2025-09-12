@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -6,6 +6,8 @@ import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import DeterminismEvaluator from './DeterminismEvaluator'
 import StreamingOutput from './StreamingOutput'
+import ToolUsageDisplay from './ToolUsageDisplay'
+import ToolConfigurationStatus from './ToolConfigurationStatus'
 import PropTypes from 'prop-types'
 
 // Reusable copy button component with feedback
@@ -105,7 +107,8 @@ const TestResults = ({
   isStreaming = false,
   streamingContent = '',
   streamingProgress = null,
-  streamingError = null
+  streamingError = null,
+  streamingToolUsage = { detected: false, activeTools: [], completedTools: [] }
 }) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const [viewMode, setViewMode] = useState('formatted') // 'formatted', 'raw', 'markdown'
@@ -144,6 +147,7 @@ const TestResults = ({
           isComplete={!isStreaming && streamingContent}
           onCopy={handleStreamingCopy}
           streamingProgress={streamingProgress}
+          streamingToolUsage={streamingToolUsage}
           performanceMetrics={{
             renderCount: 0, // This will be tracked internally by StreamingOutput
             averageLatency: streamingProgress?.firstTokenLatency || 0,
@@ -613,6 +617,12 @@ const TestResults = ({
         </div>
       </div>
 
+      {/* Tool Usage Section */}
+      <div className="mt-4 pt-3 border-t border-gray-200">
+        <h4 className="font-medium text-gray-700 mb-3">Tool Usage:</h4>
+        <ToolUsageDisplay toolUsage={results.toolUsage} />
+      </div>
+
       {/* Response Stats */}
       <div className="mt-4 pt-3 border-t border-gray-200">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -725,7 +735,29 @@ TestResults.propTypes = {
     usage: PropTypes.object,
     isStreamed: PropTypes.bool,
     streamingMetrics: PropTypes.object,
-    timestamp: PropTypes.string
+    timestamp: PropTypes.string,
+    toolUsage: PropTypes.shape({
+      hasToolUsage: PropTypes.bool,
+      toolCalls: PropTypes.arrayOf(PropTypes.shape({
+        toolName: PropTypes.string,
+        toolUseId: PropTypes.string,
+        input: PropTypes.oneOfType([PropTypes.object, PropTypes.string]),
+        attempted: PropTypes.bool,
+        timestamp: PropTypes.string
+      })),
+      toolCallCount: PropTypes.number,
+      availableTools: PropTypes.arrayOf(PropTypes.string)
+    }),
+    toolConfigurationStatus: PropTypes.shape({
+      hasToolConfig: PropTypes.bool,
+      fallbackMode: PropTypes.bool,
+      message: PropTypes.string,
+      errors: PropTypes.arrayOf(PropTypes.string),
+      warnings: PropTypes.arrayOf(PropTypes.string),
+      gracefulDegradation: PropTypes.bool,
+      validationResult: PropTypes.object,
+      toolsAvailable: PropTypes.arrayOf(PropTypes.string)
+    })
   }),
   isLoading: PropTypes.bool,
   determinismEnabled: PropTypes.bool,
@@ -739,7 +771,24 @@ TestResults.propTypes = {
     tokensPerSecond: PropTypes.number,
     duration: PropTypes.number
   }),
-  streamingError: PropTypes.string
+  streamingError: PropTypes.string,
+  streamingToolUsage: PropTypes.shape({
+    detected: PropTypes.bool,
+    activeTools: PropTypes.arrayOf(PropTypes.shape({
+      name: PropTypes.string,
+      toolUseId: PropTypes.string,
+      status: PropTypes.string,
+      currentInput: PropTypes.object,
+      timestamp: PropTypes.string
+    })),
+    completedTools: PropTypes.arrayOf(PropTypes.shape({
+      name: PropTypes.string,
+      toolUseId: PropTypes.string,
+      input: PropTypes.object,
+      status: PropTypes.string,
+      timestamp: PropTypes.string
+    }))
+  })
 }
 
 TestResults.defaultProps = {

@@ -15,6 +15,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
   const [selectedItem, setSelectedItem] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterModel, setFilterModel] = useState('')
+  const [filterToolUsage, setFilterToolUsage] = useState('')
   const [showStats, setShowStats] = useState(false)
   const [showManagement, setShowManagement] = useState(false)
   const [rerunDialog, setRerunDialog] = useState(null)
@@ -25,7 +26,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
   // Get unique models for filtering
   const uniqueModels = [...new Set(history.map(item => item.modelId))].sort()
 
-  // Filter history based on search and model filter
+  // Filter history based on search, model filter, and tool usage filter
   const filteredHistory = history.filter(item => {
     const matchesSearch = !searchTerm ||
       item.systemPrompt?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -33,11 +34,20 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
       item.prompt?.toLowerCase().includes(searchTerm.toLowerCase()) || // Legacy prompt field for backward compatibility
       item.datasetType?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.datasetOption?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.response?.toLowerCase().includes(searchTerm.toLowerCase())
+      item.response?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      // Include tool usage in search
+      (item.toolUsage?.toolCalls?.some(call =>
+        call.toolName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        JSON.stringify(call.input)?.toLowerCase().includes(searchTerm.toLowerCase())
+      ))
 
     const matchesModel = !filterModel || item.modelId === filterModel
 
-    return matchesSearch && matchesModel
+    const matchesToolUsage = !filterToolUsage ||
+      (filterToolUsage === 'used' && item.toolUsage?.hasToolUsage) ||
+      (filterToolUsage === 'not-used' && !item.toolUsage?.hasToolUsage)
+
+    return matchesSearch && matchesModel && matchesToolUsage
   })
 
   const formatTimestamp = (timestamp) => {
@@ -226,26 +236,54 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
         {/* Statistics */}
         {showStats && (
           <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-            <h4 className="font-medium text-gray-900 mb-2">Statistics</h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-gray-600">Total Tests:</span>
-                <span className="ml-2 font-medium">{stats.totalTests}</span>
-              </div>
-              <div>
-                <span className="text-gray-600">Unique Models:</span>
-                <span className="ml-2 font-medium">{stats.uniqueModels}</span>
-              </div>
-              <div>
-                <span className="text-gray-600">Unique Datasets:</span>
-                <span className="ml-2 font-medium">{stats.uniqueDatasets}</span>
-              </div>
-              {stats.dateRange && (
+            <h4 className="font-medium text-gray-900 mb-3">Statistics</h4>
+            <div className="space-y-4">
+              {/* General Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
-                  <span className="text-gray-600">Date Range:</span>
-                  <span className="ml-2 font-medium text-xs">
-                    {stats.dateRange.earliest.toLocaleDateString()} - {stats.dateRange.latest.toLocaleDateString()}
-                  </span>
+                  <span className="text-gray-600">Total Tests:</span>
+                  <span className="ml-2 font-medium">{stats.totalTests}</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">Unique Models:</span>
+                  <span className="ml-2 font-medium">{stats.uniqueModels}</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">Unique Datasets:</span>
+                  <span className="ml-2 font-medium">{stats.uniqueDatasets}</span>
+                </div>
+                {stats.dateRange && (
+                  <div>
+                    <span className="text-gray-600">Date Range:</span>
+                    <span className="ml-2 font-medium text-xs">
+                      {stats.dateRange.earliest.toLocaleDateString()} - {stats.dateRange.latest.toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Tool Usage Stats */}
+              {stats.toolUsageStats && (
+                <div className="border-t border-gray-200 pt-3">
+                  <h5 className="font-medium text-gray-800 mb-2">Tool Usage Statistics</h5>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Tests with Tools:</span>
+                      <span className="ml-2 font-medium text-orange-600">{stats.toolUsageStats.testsWithTools}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Tests without Tools:</span>
+                      <span className="ml-2 font-medium">{stats.toolUsageStats.testsWithoutTools}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Total Tool Calls:</span>
+                      <span className="ml-2 font-medium text-orange-600">{stats.toolUsageStats.totalToolCalls}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Unique Tools:</span>
+                      <span className="ml-2 font-medium">{stats.toolUsageStats.uniqueTools}</span>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -280,7 +318,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
         )}
 
         {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
             <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-2">
               Search
@@ -290,7 +328,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search system prompts, user prompts, datasets, or responses..."
+              placeholder="Search prompts, datasets, responses, or tool usage..."
               className="input-field"
             />
           </div>
@@ -308,6 +346,21 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
               {uniqueModels.map(model => (
                 <option key={model} value={model}>{model}</option>
               ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="tool-usage-filter" className="block text-sm font-medium text-gray-700 mb-2">
+              Filter by Tool Usage
+            </label>
+            <select
+              id="tool-usage-filter"
+              value={filterToolUsage}
+              onChange={(e) => setFilterToolUsage(e.target.value)}
+              className="select-field"
+            >
+              <option value="">All tests</option>
+              <option value="used">Used tools</option>
+              <option value="not-used">No tools used</option>
             </select>
           </div>
         </div>
@@ -415,6 +468,12 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                   {item.isStreamed && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                       ⚡ Streamed
+                    </span>
+                  )}
+                  {/* Tool usage indicator */}
+                  {item.toolUsage?.hasToolUsage && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                      🔧 Used {item.toolUsage.toolCallCount} tool{item.toolUsage.toolCallCount !== 1 ? 's' : ''}
                     </span>
                   )}
                   <span className="text-sm text-gray-500">
@@ -575,6 +634,54 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                         </div>
                       </div>
                     </div>
+
+                    {/* Tool Usage Section */}
+                    <div>
+                      <h5 className="font-medium text-gray-700 mb-1">Tool Usage:</h5>
+                      <div className="bg-orange-50 border border-orange-200 rounded p-3">
+                        {item.toolUsage?.hasToolUsage ? (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-orange-800">
+                                {item.toolUsage.toolCallCount} tool call{item.toolUsage.toolCallCount !== 1 ? 's' : ''} attempted
+                              </span>
+                              {item.toolUsage.availableTools && (
+                                <span className="text-xs text-orange-600">
+                                  Available: {item.toolUsage.availableTools.join(', ')}
+                                </span>
+                              )}
+                            </div>
+                            {item.toolUsage.toolCalls?.map((toolCall, index) => (
+                              <div key={index} className="border border-orange-300 rounded p-2 bg-white">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-medium text-orange-900">{toolCall.toolName}</span>
+                                  <span className="text-xs text-orange-600">
+                                    {toolCall.attempted ? 'Attempted' : 'Called'}
+                                  </span>
+                                </div>
+                                {toolCall.input && (
+                                  <div className="text-xs text-gray-700">
+                                    <div className="font-medium mb-1">Parameters:</div>
+                                    <pre className="bg-gray-100 p-2 rounded text-xs overflow-x-auto">
+                                      {JSON.stringify(toolCall.input, null, 2)}
+                                    </pre>
+                                  </div>
+                                )}
+                                {toolCall.timestamp && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    {new Date(toolCall.timestamp).toLocaleTimeString()}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-600 italic">
+                            No tools were used in this test
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -629,6 +736,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
             onClick={() => {
               setSearchTerm('')
               setFilterModel('')
+              setFilterToolUsage('')
             }}
             className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-2"
           >
@@ -1050,6 +1158,40 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
               )}
             </div>
           )}
+
+          {/* Tool Usage Consistency Section */}
+          {grade.metrics && grade.metrics.tool_consistency_rate !== undefined && (
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+                <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>Tool Usage Consistency</span>
+              </h4>
+
+              {/* Tool Usage Score from Grader */}
+              <div className="bg-gradient-to-r from-primary-50 to-secondary-50 border border-primary-200 p-4 rounded-lg mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium text-primary-800">Tool Usage Consistency</div>
+                  <div className="text-2xl font-bold text-primary-900">
+                    {formatPercentage(grade.metrics.tool_consistency_rate)}
+                  </div>
+                </div>
+                <div className="text-xs text-primary-700">
+                  Evaluated by grader LLM as part of overall determinism assessment
+                </div>
+                <div className="w-full bg-primary-200 rounded-full h-2 mt-2">
+                  <div
+                    className="h-2 bg-primary-600 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.max(0, grade.metrics.tool_consistency_rate * 100))}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+
 
           {/* Notable Variations */}
           {grade.notable_variations && grade.notable_variations.length > 0 && (

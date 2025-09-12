@@ -14,21 +14,22 @@ import ThemeProvider from './components/ThemeProvider';
 import { RobotGraphicContainer } from './components/RobotGraphic';
 import StreamingPerformanceMonitor from './components/StreamingPerformanceMonitor';
 import { bedrockService } from './services/bedrockService';
+import { datasetToolIntegrationService } from './services/datasetToolIntegrationService';
 import { useHistory } from './hooks/useHistory';
 import { validateForm } from './utils/formValidation';
 import { handleError, retryWithBackoff } from './utils/errorHandling';
+import { loadFormState, saveFormState, createDebouncedSave, clearFormState, hasFormState } from './utils/formStateStorage';
 
 
 function App() {
-  // Core state management for the test harness
-  const [selectedModel, setSelectedModel] = useState('');
-  const [selectedDataset, setSelectedDataset] = useState({
-    type: '',
-    option: '',
-    content: null
-  });
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [userPrompt, setUserPrompt] = useState('');
+  // Load saved form state on initialization
+  const savedFormState = useMemo(() => loadFormState(), []);
+
+  // Core state management for the test harness (initialized from saved state)
+  const [selectedModel, setSelectedModel] = useState(savedFormState.selectedModel);
+  const [selectedDataset, setSelectedDataset] = useState(savedFormState.selectedDataset);
+  const [systemPrompt, setSystemPrompt] = useState(savedFormState.systemPrompt);
+  const [userPrompt, setUserPrompt] = useState(savedFormState.userPrompt);
   const [testResults, setTestResults] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -47,15 +48,24 @@ function App() {
   const [isRequestPending, setIsRequestPending] = useState(false);
   const [streamingError, setStreamingError] = useState(null);
 
+  // Tool usage detection during streaming
+  const [streamingToolUsage, setStreamingToolUsage] = useState({
+    detected: false,
+    activeTools: [],
+    completedTools: []
+  });
+
   // Debug flags
   const [isRobotDebugEnabled, setIsRobotDebugEnabled] = useState(false);
   const [isStreamingDebugEnabled, setIsStreamingDebugEnabled] = useState(false);
 
-  // Determinism evaluation state
-  const [determinismEnabled, setDeterminismEnabled] = useState(true);
 
-  // Streaming preference state
-  const [streamingEnabled, setStreamingEnabled] = useState(true);
+
+  // Determinism evaluation state (initialized from saved state)
+  const [determinismEnabled, setDeterminismEnabled] = useState(savedFormState.determinismEnabled);
+
+  // Streaming preference state (initialized from saved state)
+  const [streamingEnabled, setStreamingEnabled] = useState(savedFormState.streamingEnabled);
 
   // Use the history hook for managing test history
   const { saveTestResult } = useHistory();
@@ -126,6 +136,41 @@ function App() {
 
     setValidationErrors(filteredErrors);
   }, [selectedModel, systemPrompt, userPrompt, selectedDataset, touchedFields]);
+
+  // Create debounced save function for form state persistence (silent background saving)
+  const debouncedSave = useMemo(() => createDebouncedSave(1500), []);
+
+  // Auto-save form state when key fields change
+  useEffect(() => {
+    const formState = {
+      selectedModel,
+      selectedDataset,
+      systemPrompt,
+      userPrompt,
+      determinismEnabled,
+      streamingEnabled
+    };
+
+    // Only save if we have some meaningful data (avoid saving empty initial state)
+    if (selectedModel || systemPrompt || userPrompt || selectedDataset.type) {
+      debouncedSave(formState);
+    }
+  }, [selectedModel, selectedDataset, systemPrompt, userPrompt, determinismEnabled, streamingEnabled, debouncedSave]);
+
+  // Auto-reload dataset content when form is restored from localStorage
+  useEffect(() => {
+    // Only trigger on initial load if we have a saved dataset selection but no content
+    if (savedFormState.selectedDataset.type &&
+        savedFormState.selectedDataset.option &&
+        !selectedDataset.content &&
+        selectedDataset.type === savedFormState.selectedDataset.type &&
+        selectedDataset.option === savedFormState.selectedDataset.option) {
+
+      // The DatasetSelector component will handle reloading the content
+      // We just need to ensure the selection is properly set
+      console.log('Dataset selection restored from localStorage, content will be reloaded by DatasetSelector');
+    }
+  }, []); // Only run on mount
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -263,6 +308,56 @@ function App() {
             }
           }
 
+          // Get tool configuration for the selected dataset with enhanced error handling
+          setProgressStatus('Loading tool configuration...');
+          setProgressValue(40);
+
+          let toolConfig = null;
+          let toolConfigurationStatus = null;
+
+          try {
+            const toolConfigResult = await datasetToolIntegrationService.getToolConfigurationForDataset(selectedDataset);
+            toolConfigurationStatus = toolConfigResult;
+
+            if (toolConfigResult.hasToolConfig) {
+              toolConfig = toolConfigResult.toolConfig;
+              console.log(`Tool configuration loaded for ${selectedDataset.type}:`, {
+                toolCount: toolConfig.tools?.length || 0,
+                toolNames: toolConfig.tools?.map(t => t.toolSpec.name) || [],
+                hasWarnings: toolConfigResult.warnings?.length > 0,
+                gracefulDegradation: toolConfigResult.gracefulDegradation
+              });
+
+              // Show warnings if any
+              if (toolConfigResult.warnings?.length > 0) {
+                console.warn('Tool configuration warnings:', toolConfigResult.warnings);
+              }
+            } else {
+              console.log(`No tool configuration for ${selectedDataset.type}: ${toolConfigResult.message}`);
+
+              // Check if this is an error condition or expected behavior
+              if (toolConfigResult.errors?.length > 0) {
+                console.warn('Tool configuration errors:', toolConfigResult.errors);
+              }
+
+              if (toolConfigResult.gracefulDegradation) {
+                console.info('Using graceful degradation - analysis will proceed without tools');
+              }
+            }
+          } catch (toolError) {
+            console.warn('Failed to load tool configuration, proceeding without tools:', toolError.message);
+
+            // Create a fallback status for error display
+            toolConfigurationStatus = {
+              hasToolConfig: false,
+              fallbackMode: true,
+              message: `Tool configuration failed: ${toolError.message}`,
+              errors: [toolError.message],
+              warnings: [],
+              gracefulDegradation: true
+            };
+          }
+
           setProgressStatus('Sending request to model...');
           setProgressValue(50);
 
@@ -274,6 +369,11 @@ function App() {
             setIsStreaming(true);
             setStreamingContent('');
             setStreamingError(null);
+            setStreamingToolUsage({
+              detected: false,
+              activeTools: [],
+              completedTools: []
+            });
 
             const startTime = Date.now();
             let tokensReceived = 0;
@@ -285,7 +385,7 @@ function App() {
               userPrompt,
               selectedDataset.content,
               // onToken callback
-              (token) => {
+              (token, fullText, metadata = {}) => {
                 if (!firstTokenTime) {
                   firstTokenTime = Date.now();
                 }
@@ -297,6 +397,42 @@ function App() {
                   firstTokenLatency: firstTokenTime - startTime,
                   duration: Date.now() - startTime
                 });
+
+                // Handle tool usage detection during streaming
+                if (metadata.toolUsageDetected) {
+                  setStreamingToolUsage(prev => {
+                    const updated = { ...prev, detected: true };
+
+                    if (metadata.toolUseStarted) {
+                      updated.activeTools = [...prev.activeTools, {
+                        ...metadata.toolUseStarted,
+                        status: 'started',
+                        timestamp: new Date().toISOString()
+                      }];
+                    }
+
+                    if (metadata.toolUseProgress) {
+                      updated.activeTools = prev.activeTools.map(tool =>
+                        tool.toolUseId === metadata.toolUseProgress.toolUseId
+                          ? { ...tool, currentInput: metadata.toolUseProgress.currentInput, status: 'in_progress' }
+                          : tool
+                      );
+                    }
+
+                    if (metadata.toolUseCompleted) {
+                      updated.activeTools = prev.activeTools.filter(
+                        tool => tool.toolUseId !== metadata.toolUseCompleted.toolUseId
+                      );
+                      updated.completedTools = [...prev.completedTools, {
+                        ...metadata.toolUseCompleted,
+                        status: 'completed',
+                        timestamp: new Date().toISOString()
+                      }];
+                    }
+
+                    return updated;
+                  });
+                }
               },
               // onComplete callback
               (finalResponse) => {
@@ -313,7 +449,8 @@ function App() {
               (error) => {
                 setStreamingError(error.message);
                 setIsStreaming(false);
-              }
+              },
+              toolConfig // Pass tool configuration to streaming method
             );
           } else {
             // Use standard non-streaming mode
@@ -321,7 +458,8 @@ function App() {
               selectedModel,
               systemPrompt,
               userPrompt,
-              selectedDataset.content
+              selectedDataset.content,
+              toolConfig // Pass tool configuration to standard method
             );
           }
 
@@ -340,6 +478,8 @@ function App() {
             usage: response.usage,
             isStreamed: streamingEnabled,
             streamingMetrics: streamingMetrics,
+            toolUsage: response.toolUsage || null, // Include tool usage data from response
+            toolConfigurationStatus: toolConfigurationStatus, // Include tool configuration status
             timestamp: new Date().toISOString()
           };
         },
@@ -370,6 +510,11 @@ function App() {
       setStreamingContent('');
       setStreamingProgress(null);
       setStreamingError(null);
+      setStreamingToolUsage({
+        detected: false,
+        activeTools: [],
+        completedTools: []
+      });
 
     } catch (err) {
       console.error('Test execution failed:', err);
@@ -396,6 +541,11 @@ function App() {
       setStreamingContent('');
       setStreamingProgress(null);
       setStreamingError(null);
+      setStreamingToolUsage({
+        detected: false,
+        activeTools: [],
+        completedTools: []
+      });
     }
   };
 
@@ -478,6 +628,22 @@ function App() {
   const handleUserPromptChange = (prompt) => {
     setUserPrompt(prompt);
     markFieldAsTouched('userPrompt');
+  };
+
+  const handleClearSavedSettings = () => {
+    if (confirm('Are you sure you want to clear all saved settings? This will reset the form to default values.')) {
+      clearFormState();
+      // Reset form to default values
+      setSelectedModel('');
+      setSelectedDataset({ type: '', option: '', content: null });
+      setSystemPrompt('');
+      setUserPrompt('');
+      setDeterminismEnabled(true);
+      setStreamingEnabled(true);
+      // Clear touched fields
+      setTouchedFields({});
+      setValidationErrors({});
+    }
   };
 
   // Theme configuration with null-checking
@@ -600,6 +766,8 @@ function App() {
                       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8">
                         {/* Left Column - Configuration */}
                         <div className="space-y-6 animate-slide-up">
+
+
                           <ModelSelector
                             selectedModel={selectedModel}
                             onModelSelect={handleModelSelect}
@@ -669,6 +837,21 @@ function App() {
                                 />
                               </button>
                             </div>
+
+                            {/* Clear Saved Settings */}
+                            {hasFormState() && (
+                              <div className="pt-4 border-t border-gray-200">
+                                <button
+                                  onClick={handleClearSavedSettings}
+                                  className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1-1H8a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                  <span>Clear saved settings</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
 
                           {/* Enhanced Validation Summary with Dual Prompt Guidance */}
@@ -831,6 +1014,7 @@ function App() {
                             streamingContent={streamingContent}
                             streamingProgress={streamingProgress}
                             streamingError={streamingError}
+                            streamingToolUsage={streamingToolUsage}
                           />
                         </div>
                       </div>

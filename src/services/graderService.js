@@ -18,7 +18,7 @@ Do not use outside knowledge. Judge only with the data provided.
 INPUTS
 ---
 * context: optional task/ground-truth notes (what success means).
-* runs[]: array of runs in random order
+* runs[]: array of runs in random order (may include tool usage data)
 
 NORMALIZATION
 ---
@@ -29,13 +29,17 @@ NORMALIZATION
 
 COMPARISON RULES IN ORDER OF IMPORTANCE
 ---
-1. Action/Decision Consistency
-   * Same tools called? Same order? Same arguments after normalization?
-   * If no tools: same structured decisions (e.g., same "freeze account: yes/no").
-2. Semantic Equivalence
+1. Tool Usage Consistency (HIGHEST PRIORITY - if tools are available)
+   * Same tools called across runs? Same order? Same arguments after normalization?
+   * Tool usage patterns must be identical for high determinism scores
+   * Mixed tool usage (some runs use tools, others don't) = major inconsistency
+2. Action/Decision Consistency
+   * Same structured decisions (e.g., same "freeze account: yes/no")
+   * Consistent reasoning patterns and conclusions
+3. Semantic Equivalence
    * Are the answers meaning-equivalent given context?
    * Treat paraphrases and rephrasings as equivalent if they preserve all task-relevant facts and directives.
-3. Schema/Structure Consistency
+4. Schema/Structure Consistency
    * JSON/object shape identical? All required fields present? Types stable?
 
 SCORING METHOD
@@ -54,16 +58,16 @@ GRADE DEFINITIONS
 ---
 
 * A (Very High):
-  decision_consistency_rate ≥ 0.98 AND structure_consistency_rate ≥ 0.98 AND semantic_equivalence_rate ≥ 0.98.
-  Text may vary slightly; numbers may differ within tolerances in <2%
+  tool_consistency_rate ≥ 0.98 AND decision_consistency_rate ≥ 0.98 AND structure_consistency_rate ≥ 0.98 AND semantic_equivalence_rate ≥ 0.98.
+  Tool usage must be identical across runs. Text may vary slightly; numbers may differ within tolerances in <2%
 * B (High):
-  All three rates ≥ 0.95, no contradictory decisions; variations are paraphrases or harmless ordering.
+  tool_consistency_rate ≥ 0.95 AND all other rates ≥ 0.95, no contradictory decisions; variations are paraphrases or harmless ordering.
 * C (Moderate):
-  All three rates ≥ 0.85; occasional minor structural drift (optional fields), no harmful decision flips.
+  tool_consistency_rate ≥ 0.85 AND all other rates ≥ 0.85; occasional minor structural drift (optional fields), no harmful decision flips.
 * D (Low):
-  Any of the three rates ≥ 0.60 and < 0.85; noticeable decision or structure drift, intermittent schema failures.
+  tool_consistency_rate ≥ 0.60 OR any other rate ≥ 0.60 and < 0.85; noticeable decision or structure drift, intermittent schema failures.
 * F (Unstable):
-  Any rate < 0.60 or any harmful decision flip (e.g., tool call yes/no toggles), missing critical fields, or contradictions.
+  tool_consistency_rate < 0.60 OR any other rate < 0.60 or any harmful decision flip (e.g., tool call yes/no toggles), missing critical fields, or contradictions.
 
 OUTPUT FORMAT - STRICT JSON
 ---
@@ -73,6 +77,7 @@ Return **only** this JSON object:
 {
   "grade": "A|B|C|D|F",
   "metrics": {
+    "tool_consistency_rate": 0.0,
     "decision_consistency_rate": 0.0,
     "structure_consistency_rate": 0.0,
     "semantic_equivalence_rate": 0.0,
@@ -91,6 +96,7 @@ PROCEDURE
 1. Normalize all runs (apply rules above).
 2. For each run, compute:
 
+   * same tool usage pattern? (boolean) - HIGHEST PRIORITY
    * same decision signature? (boolean)
    * same structure? (boolean)
    * meaning-equivalent given context? (boolean)
@@ -119,7 +125,7 @@ export class GraderService {
 
   /**
    * Grade responses using grader LLM
-   * @param {Array<string>} responses - Array of responses to grade
+   * @param {Array<string|Object>} responses - Array of responses to grade (strings or response objects with tool usage)
    * @param {Object} config - Evaluation configuration
    * @param {string} customGraderPrompt - Optional custom grader prompt
    * @returns {Promise<Object>} Grading result with grade, score, reasoning, and variance
@@ -132,7 +138,7 @@ export class GraderService {
     }
 
     try {
-      // Prepare grader prompt
+      // Prepare grader prompt with tool usage data
       const graderPrompt = this.buildGraderPrompt(responses);
 
       // Use Nova Pro only (reliable and good for reasoning)
@@ -155,15 +161,37 @@ export class GraderService {
   }
 
   /**
-   * Build the complete grader prompt with responses
-   * @param {Array<string>} responses - Responses to analyze
+   * Build the complete grader prompt with responses including tool usage data
+   * @param {Array<string|Object>} responses - Responses to analyze (strings or response objects)
    * @param {Object} config - Evaluation configuration
    * @param {string} customGraderPrompt - Custom grader prompt
    * @returns {string} Complete grader prompt
    */
   buildGraderPrompt(responses) {
     const prompt = `Determine the level of determinism in these ${responses.length} responses: ${responses.map((r, index) => {
-      return `\n--- Response ${index + 1} --- \n${r}`;
+      // Handle both string responses and response objects with tool usage
+      if (typeof r === 'string') {
+        return `\n--- Response ${index + 1} --- \n${r}`;
+      } else {
+        // Response object with potential tool usage data
+        let responseText = `\n--- Response ${index + 1} --- \n${r.text || ''}`;
+
+        // Add tool usage information if available
+        if (r.toolUsage && r.toolUsage.hasToolUsage && r.toolUsage.toolCalls && r.toolUsage.toolCalls.length > 0) {
+          responseText += `\n\nTOOL USAGE:\n`;
+          r.toolUsage.toolCalls.forEach((call, callIndex) => {
+            responseText += `Tool ${callIndex + 1}: ${call.toolName}\n`;
+            responseText += `Input: ${JSON.stringify(call.input)}\n`;
+            if (call.output) {
+              responseText += `Output: ${JSON.stringify(call.output)}\n`;
+            }
+          });
+        } else {
+          responseText += `\n\nTOOL USAGE: None`;
+        }
+
+        return responseText;
+      }
     }).join('\n')}`;
 
     // Check total prompt length and truncate if necessary
@@ -377,6 +405,7 @@ export class GraderService {
     // Validate metrics object (new grader format)
     if (result.metrics && typeof result.metrics === 'object') {
       validated.metrics = {
+        tool_consistency_rate: typeof result.metrics.tool_consistency_rate === 'number' ? result.metrics.tool_consistency_rate : 1.0,
         decision_consistency_rate: typeof result.metrics.decision_consistency_rate === 'number' ? result.metrics.decision_consistency_rate : 0,
         structure_consistency_rate: typeof result.metrics.structure_consistency_rate === 'number' ? result.metrics.structure_consistency_rate : 0,
         semantic_equivalence_rate: typeof result.metrics.semantic_equivalence_rate === 'number' ? result.metrics.semantic_equivalence_rate : 0,
@@ -458,14 +487,20 @@ export class GraderService {
 
   /**
    * Calculate statistical variance metrics
-   * @param {Array<string>} responses - Responses to analyze
+   * @param {Array<string|Object>} responses - Responses to analyze
    * @returns {Object} Variance metrics
    */
   calculateStatisticalVariance(responses) {
     const responseCount = responses.length;
-    const uniqueResponses = new Set(responses.map(r => r.trim())).size;
 
-    const lengths = responses.map(r => r.length);
+    // Extract text from responses (handle both strings and objects)
+    const responseTexts = responses.map(r =>
+      typeof r === 'string' ? r.trim() : (r.text || '').trim()
+    );
+
+    const uniqueResponses = new Set(responseTexts).size;
+
+    const lengths = responseTexts.map(r => r.length);
     const averageLength = Math.round(lengths.reduce((sum, len) => sum + len, 0) / lengths.length);
 
     const lengthVariance = Math.round(Math.sqrt(
@@ -489,18 +524,23 @@ export class GraderService {
 
   /**
    * Calculate statistical score based on response consistency
-   * @param {Array<string>} responses - Responses to analyze
+   * @param {Array<string|Object>} responses - Responses to analyze
    * @returns {number} Consistency score (0-100)
    */
   calculateStatisticalScore(responses) {
-    const uniqueResponses = new Set(responses.map(r => r.trim())).size;
+    // Extract text from responses (handle both strings and objects)
+    const responseTexts = responses.map(r =>
+      typeof r === 'string' ? r.trim() : (r.text || '').trim()
+    );
+
+    const uniqueResponses = new Set(responseTexts).size;
     const consistencyRatio = 1 - ((uniqueResponses - 1) / responses.length);
     return Math.round(Math.max(0, Math.min(100, consistencyRatio * 100)));
   }
 
   /**
    * Calculate statistical grade based on score
-   * @param {Array<string>} responses - Responses to analyze
+   * @param {Array<string|Object>} responses - Responses to analyze
    * @returns {string} Letter grade (A-F)
    */
   calculateStatisticalGrade(responses) {
