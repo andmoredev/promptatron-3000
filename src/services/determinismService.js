@@ -107,8 +107,12 @@ export class DeterminismService {
         progress: 10
       });
 
-      // Add original response
-      evaluation.responses.push(testConfig.originalResponse);
+      // Add original response (ensure it has the proper structure for tool usage evaluation)
+      const originalResponse = typeof testConfig.originalResponse === 'string'
+        ? { text: testConfig.originalResponse, toolUsage: { hasToolUsage: false, toolCalls: [] } }
+        : testConfig.originalResponse;
+
+      evaluation.responses.push(originalResponse);
       evaluation.completedRequests = 1;
 
       // Execute batch requests with very conservative settings
@@ -124,11 +128,23 @@ export class DeterminismService {
           retryDelay: 5000,
           maxRetryDelay: 600000,
           requestDelay: 2000,
+          toolConfig: testConfig.toolConfig,
           onProgress: (progress) => {
+            // Enhanced progress reporting with tool use detection status
+            const phaseMessage = progress.toolUsageStats && progress.toolUsageStats.totalRequestsWithTools > 0
+              ? `Collecting responses... (${progress.toolUsageStats.totalRequestsWithTools} with tool usage)`
+              : 'Collecting additional responses...';
+
             this.updateEvaluationStatus(evaluationId, {
               completedRequests: progress.completed + 1,
               progress: 10 + (progress.progress * 0.7),
-              currentPhase: 'Collecting additional responses...'
+              currentPhase: phaseMessage,
+              toolUsageProgress: {
+                detectionRate: progress.toolUsageDetectionRate || 0,
+                requestsWithTools: progress.toolUsageStats?.totalRequestsWithTools || 0,
+                totalToolCalls: progress.toolUsageStats?.totalToolCalls || 0,
+                uniqueToolsUsed: progress.toolUsageStats?.uniqueToolsUsed || []
+              }
             });
           },
           onError: (error, requestIndex) => {
@@ -140,24 +156,49 @@ export class DeterminismService {
         }
       );
 
-      // Add successful responses
+      // Add successful responses (preserve full response objects for tool usage evaluation)
       console.log('Batch result:', batchResult);
       if (batchResult.responses) {
         batchResult.responses.forEach(response => {
-          if (response && response.text) {
-            evaluation.responses.push(response.text);
+          if (response) {
+            // Ensure tool usage data is properly structured for determinism evaluation
+            if (!response.toolUsage) {
+              response.toolUsage = {
+                hasToolUsage: false,
+                toolCalls: [],
+                toolCallCount: 0,
+                availableTools: testConfig.toolConfig ? testConfig.toolConfig.tools.map(tool => tool.toolSpec.name) : []
+              };
+            }
+
+            // Store the full response object to preserve tool usage data
+            evaluation.responses.push(response);
           }
         });
       }
+
+      // Log tool usage statistics from batch processing
+      if (batchResult.toolUsageStats) {
+        console.log('Tool usage statistics:', {
+          requestsWithTools: batchResult.toolUsageStats.totalRequestsWithTools,
+          totalToolCalls: batchResult.toolUsageStats.totalToolCalls,
+          uniqueToolsUsed: batchResult.toolUsageStats.uniqueToolsUsed,
+          detectionSuccesses: batchResult.toolUsageStats.toolUsageDetectionSuccesses,
+          detectionErrors: batchResult.toolUsageStats.toolUsageDetectionErrors
+        });
+      }
+
       console.log('Total responses collected:', evaluation.responses.length);
 
-      // Phase 3: Grade responses
+      // Phase 3: Grade responses including tool usage evaluation
       this.updateEvaluationStatus(evaluationId, {
         currentPhase: 'Analyzing response consistency...',
         progress: 85
       });
 
       console.log('Starting grading for evaluation:', evaluationId, 'with', evaluation.responses.length, 'responses');
+
+      // Pass full response objects to grader for tool usage evaluation
       const gradeResult = await graderService.gradeResponses(
         evaluation.responses,
         testConfig,
@@ -170,7 +211,20 @@ export class DeterminismService {
         status: 'completed',
         currentPhase: 'Evaluation complete',
         progress: 100,
-        result: gradeResult,
+        result: {
+          ...gradeResult,
+          batchProcessingStats: batchResult.toolUsageStats ? {
+            totalRequestsProcessed: batchResult.summary?.successful || evaluation.responses.length - 1,
+            requestsWithToolUsage: batchResult.toolUsageStats.totalRequestsWithTools,
+            totalToolCallsDetected: batchResult.toolUsageStats.totalToolCalls,
+            uniqueToolsUsed: batchResult.toolUsageStats.uniqueToolsUsed,
+            toolUsageDetectionRate: batchResult.toolUsageStats.toolUsageDetectionSuccesses > 0
+              ? (batchResult.toolUsageStats.toolUsageDetectionSuccesses / (batchResult.toolUsageStats.toolUsageDetectionSuccesses + batchResult.toolUsageStats.toolUsageDetectionErrors)) * 100
+              : 100,
+            toolConfigurationProvided: !!testConfig.toolConfig,
+            availableTools: testConfig.toolConfig ? testConfig.toolConfig.tools.map(tool => tool.toolSpec.name) : []
+          } : null
+        },
         endTime: Date.now()
       });
 
@@ -267,6 +321,8 @@ export class DeterminismService {
     // Not implemented for main thread execution
     console.warn('Resume not supported in main thread mode');
   }
+
+
 
   /**
    * Clean up resources

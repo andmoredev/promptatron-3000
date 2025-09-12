@@ -256,7 +256,7 @@ const PromptEditor = ({
         <div className="flex items-center space-x-2">
           <h3 className="text-lg font-semibold text-gray-900">Prompt Configuration</h3>
           <HelpTooltip
-            content="Configure both system and user prompts. The system prompt defines the AI's role and behavior, while the user prompt contains your specific request. Dataset content will be automatically appended to the user prompt."
+            content="Configure your prompts. The system prompt (optional) defines the AI's role and behavior, while the user prompt contains your specific request. Dataset content will be automatically appended to the user prompt."
             position="right"
           />
         </div>
@@ -336,10 +336,10 @@ const PromptEditor = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <label htmlFor="system-prompt-input" className="block text-sm font-medium text-gray-700">
-                  System Prompt
+                  System Prompt <span className="text-gray-400 font-normal">(optional)</span>
                 </label>
                 <HelpTooltip
-                  content="The system prompt defines the AI's role, expertise, and behavior. It sets the context for how the AI should approach and respond to your requests."
+                  content="The system prompt defines the AI's role, expertise, and behavior. It's optional - you can leave it empty to let the model respond naturally, or use it to set specific context for how the AI should approach your requests."
                   position="right"
                 />
               </div>
@@ -357,7 +357,7 @@ const PromptEditor = ({
               id="system-prompt-input"
               value={systemPrompt}
               onChange={handleSystemPromptChange}
-              placeholder="Define the AI's role and expertise. For example: 'You are an expert data analyst specializing in fraud detection...'"
+              placeholder="Optional: Define the AI's role and expertise. Leave empty for natural responses, or specify like: 'You are an expert data analyst specializing in fraud detection...'"
               className={`input-field resize-none transition-all duration-200 ${
                 systemPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-blue-200 focus:border-blue-500 focus:ring-blue-500'
               }`}
@@ -368,7 +368,7 @@ const PromptEditor = ({
             )}
             <div className="flex justify-between items-center text-sm text-gray-500">
               <span>{systemPrompt.length} characters</span>
-              <span>Defines AI behavior and expertise</span>
+              <span>Optional: Defines AI behavior and expertise</span>
             </div>
           </div>
         </div>

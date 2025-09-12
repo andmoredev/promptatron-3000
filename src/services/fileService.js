@@ -348,6 +348,40 @@ export class FileService {
       errors.push('timestamp must be a valid ISO string if provided');
     }
 
+    // Validate tool usage structure if present
+    if (testResult.toolUsage !== null && testResult.toolUsage !== undefined) {
+      if (typeof testResult.toolUsage !== 'object') {
+        errors.push('toolUsage must be an object if provided');
+      } else {
+        if (testResult.toolUsage.hasToolUsage !== undefined && typeof testResult.toolUsage.hasToolUsage !== 'boolean') {
+          errors.push('toolUsage.hasToolUsage must be a boolean if provided');
+        }
+
+        if (testResult.toolUsage.toolCallCount !== undefined && typeof testResult.toolUsage.toolCallCount !== 'number') {
+          errors.push('toolUsage.toolCallCount must be a number if provided');
+        }
+
+        if (testResult.toolUsage.toolCalls !== undefined) {
+          if (!Array.isArray(testResult.toolUsage.toolCalls)) {
+            errors.push('toolUsage.toolCalls must be an array if provided');
+          } else {
+            testResult.toolUsage.toolCalls.forEach((call, index) => {
+              if (!call.toolName || typeof call.toolName !== 'string') {
+                errors.push(`toolUsage.toolCalls[${index}].toolName is required and must be a string`);
+              }
+              if (call.attempted !== undefined && typeof call.attempted !== 'boolean') {
+                errors.push(`toolUsage.toolCalls[${index}].attempted must be a boolean if provided`);
+              }
+            });
+          }
+        }
+
+        if (testResult.toolUsage.availableTools !== undefined && !Array.isArray(testResult.toolUsage.availableTools)) {
+          errors.push('toolUsage.availableTools must be an array if provided');
+        }
+      }
+    }
+
     return errors;
   }
 
@@ -512,12 +546,18 @@ export class FileService {
       return false;
     }
 
-    // Required fields
-    const requiredFields = ['modelId', 'prompt'];
-    for (const field of requiredFields) {
-      if (!testResult[field] || typeof testResult[field] !== 'string') {
-        return false;
-      }
+    // Required fields - modelId is always required
+    if (!testResult.modelId || typeof testResult.modelId !== 'string') {
+      return false;
+    }
+
+    // Check for dual prompt format (preferred) or legacy single prompt
+    const hasSystemPrompt = testResult.systemPrompt && typeof testResult.systemPrompt === 'string';
+    const hasUserPrompt = testResult.userPrompt && typeof testResult.userPrompt === 'string';
+    const hasLegacyPrompt = testResult.prompt && typeof testResult.prompt === 'string';
+
+    if (!hasSystemPrompt && !hasUserPrompt && !hasLegacyPrompt) {
+      return false;
     }
 
     // Optional but expected fields
@@ -535,6 +575,22 @@ export class FileService {
 
     if (testResult.timestamp && !this.isValidTimestamp(testResult.timestamp)) {
       return false;
+    }
+
+    // Validate tool usage structure if present
+    if (testResult.toolUsage !== null && testResult.toolUsage !== undefined) {
+      if (typeof testResult.toolUsage !== 'object') {
+        return false;
+      }
+
+      // Basic structure validation for tool usage
+      if (testResult.toolUsage.hasToolUsage !== undefined && typeof testResult.toolUsage.hasToolUsage !== 'boolean') {
+        return false;
+      }
+
+      if (testResult.toolUsage.toolCalls !== undefined && !Array.isArray(testResult.toolUsage.toolCalls)) {
+        return false;
+      }
     }
 
     return true;

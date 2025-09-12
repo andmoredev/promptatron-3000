@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import HelpTooltip from './HelpTooltip'
+import { datasetToolIntegrationService } from '../services/datasetToolIntegrationService.js'
 
 const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) => {
   const [datasetTypes, setDatasetTypes] = useState([])
@@ -8,9 +9,12 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
   const [isLoadingTypes, setIsLoadingTypes] = useState(false)
   const [isLoadingOptions, setIsLoadingOptions] = useState(false)
   const [error, setError] = useState(null)
+  const [toolConfigSummary, setToolConfigSummary] = useState(null)
 
   useEffect(() => {
     loadDatasetTypes()
+    // Initialize dataset tool integration service
+    datasetToolIntegrationService.initialize()
   }, [])
 
   useEffect(() => {
@@ -29,6 +33,15 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
       loadDatasetContent(selectedDataset.type, selectedDataset.option)
     }
   }, [selectedDataset.type, selectedDataset.option, selectedDataset.content])
+
+  // Load tool configuration summary when dataset type changes
+  useEffect(() => {
+    if (selectedDataset.type) {
+      loadToolConfigurationSummary(selectedDataset)
+    } else {
+      setToolConfigSummary(null)
+    }
+  }, [selectedDataset.type])
 
   const loadDatasetTypes = async () => {
     setIsLoadingTypes(true)
@@ -65,12 +78,9 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
     setError(null)
 
     try {
-      const manifestResponse = await fetch(`/datasets/${type}/manifest.json`)
-      if (!manifestResponse.ok) {
-        throw new Error(`Failed to load dataset manifest: ${manifestResponse.status}. Please ensure /datasets/${type}/manifest.json exists.`)
-      }
+      // Use the enhanced dataset manifest loading from integration service
+      const manifest = await datasetToolIntegrationService.loadDatasetManifest(type)
 
-      const manifest = await manifestResponse.json()
       if (!manifest.files || !Array.isArray(manifest.files)) {
         throw new Error(`Invalid manifest format: expected "files" array in /datasets/${type}/manifest.json`)
       }
@@ -99,6 +109,23 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
     }
   }
 
+  const loadToolConfigurationSummary = async (dataset) => {
+    try {
+      const summary = await datasetToolIntegrationService.getToolConfigurationSummary(dataset)
+      setToolConfigSummary(summary)
+    } catch (err) {
+      console.error('Error loading tool configuration summary:', err)
+      setToolConfigSummary({
+        hasTools: false,
+        toolCount: 0,
+        toolNames: [],
+        status: 'error',
+        message: `Error loading tool configuration: ${err.message}`,
+        datasetType: dataset?.type || null
+      })
+    }
+  }
+
   const handleTypeChange = async (type) => {
     // First, clear the current selection
     onDatasetSelect({
@@ -113,12 +140,9 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
       setError(null)
 
       try {
-        const manifestResponse = await fetch(`/datasets/${type}/manifest.json`)
-        if (!manifestResponse.ok) {
-          throw new Error(`Failed to load dataset manifest: ${manifestResponse.status}. Please ensure /datasets/${type}/manifest.json exists.`)
-        }
+        // Use the enhanced dataset manifest loading from integration service
+        const manifest = await datasetToolIntegrationService.loadDatasetManifest(type)
 
-        const manifest = await manifestResponse.json()
         if (!manifest.files || !Array.isArray(manifest.files)) {
           throw new Error(`Invalid manifest format: expected "files" array in /datasets/${type}/manifest.json`)
         }
@@ -292,6 +316,48 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
               <div className="mt-2 flex items-center text-sm text-blue-600">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
                 Scanning {selectedDataset.type} directory...
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tool Configuration Summary */}
+        {selectedDataset.type && toolConfigSummary && (
+          <div className="mt-4 p-3 rounded-lg border">
+            <div className="flex items-center space-x-2 mb-2">
+              <h4 className="text-sm font-medium text-gray-700">Tool Configuration</h4>
+              <HelpTooltip
+                content="Shows whether AI models will have access to tools when analyzing this dataset. Tools allow models to take actions like freezing accounts in fraud detection scenarios."
+                position="right"
+              />
+            </div>
+
+            {toolConfigSummary.hasTools ? (
+              <div className="bg-green-50 border border-green-200 rounded p-2">
+                <div className="flex items-center space-x-2">
+                  <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm text-green-800 font-medium">
+                    {toolConfigSummary.toolCount} tool{toolConfigSummary.toolCount !== 1 ? 's' : ''} available
+                  </span>
+                </div>
+                {toolConfigSummary.toolNames.length > 0 && (
+                  <div className="mt-1 text-xs text-green-700">
+                    Tools: {toolConfigSummary.toolNames.join(', ')}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-gray-50 border border-gray-200 rounded p-2">
+                <div className="flex items-center space-x-2">
+                  <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm text-gray-600">
+                    {toolConfigSummary.message || 'No tools configured for this dataset'}
+                  </span>
+                </div>
               </div>
             )}
           </div>

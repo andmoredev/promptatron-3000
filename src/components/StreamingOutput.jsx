@@ -7,6 +7,7 @@ const StreamingOutput = ({
   isComplete,
   onCopy,
   streamingProgress,
+  streamingToolUsage = { detected: false, activeTools: [], completedTools: [] },
   className = '',
   performanceMetrics = null
 }) => {
@@ -250,6 +251,80 @@ const StreamingOutput = ({
         </div>
       )}
 
+      {/* Tool usage detection during streaming */}
+      {streamingToolUsage.detected && (
+        <div className="mb-3 p-3 bg-orange-50 border border-orange-200 rounded-md">
+          <div className="flex items-center space-x-2 mb-3">
+            <svg className="h-5 w-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            <span className="text-sm font-medium text-orange-800">
+              Tool Usage Detected
+            </span>
+          </div>
+
+          {/* Active tools being processed */}
+          {streamingToolUsage.activeTools.length > 0 && (
+            <div className="mb-3">
+              <h5 className="text-xs font-medium text-orange-800 mb-2">Active Tool Calls:</h5>
+              <div className="space-y-2">
+                {streamingToolUsage.activeTools.map((tool, index) => (
+                  <div key={`${tool.toolUseId}-${index}`} className="bg-white border border-orange-200 rounded p-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></div>
+                        <span className="text-sm font-medium text-orange-900">{tool.name}</span>
+                        <span className="text-xs text-orange-600">({tool.status})</span>
+                      </div>
+                      <span className="text-xs text-orange-500">
+                        {new Date(tool.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    {tool.currentInput && Object.keys(tool.currentInput).length > 0 && (
+                      <div className="mt-2 text-xs text-orange-700">
+                        <span className="font-medium">Parameters: </span>
+                        {Object.keys(tool.currentInput).length} parameter{Object.keys(tool.currentInput).length !== 1 ? 's' : ''} received
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Completed tools */}
+          {streamingToolUsage.completedTools.length > 0 && (
+            <div>
+              <h5 className="text-xs font-medium text-orange-800 mb-2">Completed Tool Calls:</h5>
+              <div className="space-y-2">
+                {streamingToolUsage.completedTools.map((tool, index) => (
+                  <div key={`${tool.toolUseId}-${index}`} className="bg-white border border-orange-200 rounded p-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span className="text-sm font-medium text-orange-900">{tool.name}</span>
+                        <span className="text-xs text-green-600">completed</span>
+                      </div>
+                      <span className="text-xs text-orange-500">
+                        {new Date(tool.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    {tool.input && Object.keys(tool.input).length > 0 && (
+                      <div className="mt-2 text-xs text-orange-700">
+                        <span className="font-medium">Parameters: </span>
+                        {Object.keys(tool.input).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Content display area */}
       <div
         ref={contentRef}
@@ -318,6 +393,23 @@ StreamingOutput.propTypes = {
     tokensPerSecond: PropTypes.number,
     duration: PropTypes.number
   }),
+  streamingToolUsage: PropTypes.shape({
+    detected: PropTypes.bool,
+    activeTools: PropTypes.arrayOf(PropTypes.shape({
+      name: PropTypes.string,
+      toolUseId: PropTypes.string,
+      status: PropTypes.string,
+      currentInput: PropTypes.object,
+      timestamp: PropTypes.string
+    })),
+    completedTools: PropTypes.arrayOf(PropTypes.shape({
+      name: PropTypes.string,
+      toolUseId: PropTypes.string,
+      input: PropTypes.object,
+      status: PropTypes.string,
+      timestamp: PropTypes.string
+    }))
+  }),
   performanceMetrics: PropTypes.shape({
     renderCount: PropTypes.number,
     averageLatency: PropTypes.number,
@@ -332,6 +424,7 @@ StreamingOutput.defaultProps = {
   isComplete: false,
   onCopy: null,
   streamingProgress: null,
+  streamingToolUsage: { detected: false, activeTools: [], completedTools: [] },
   performanceMetrics: null,
   className: ''
 }
