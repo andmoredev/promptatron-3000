@@ -331,7 +331,7 @@ export class DatasetToolIntegrationService {
       if (!hasToolsInService) {
         validation.warnings.push(`No tools configured in service for dataset type: ${datasetType}`)
       } else {
-        const toolConfig = toolConfigService.getToolsForDatasetType(datasetType)
+        const toolConfig = toolConfigService.getToolsForDatasetTypeSimple(datasetType)
         if (toolConfig && toolConfig.tools) {
           validation.toolCount = toolConfig.tools.length
 
@@ -365,6 +365,115 @@ export class DatasetToolIntegrationService {
   }
 
   /**
+   * Ensure tool configuration is loaded for a dataset type
+   * This method checks if configuration exists and loads it if needed
+   * @param {string} datasetType - The dataset type to ensure configuration for
+   * @returns {Promise<boolean>} True if configuration is available
+   */
+  async ensureToolConfigurationLoaded(datasetType) {
+    try {
+      if (!datasetType) {
+        return false
+      }
+
+      // Check if configuration already exists
+      const hasConfig = toolConfigService.hasToolsForDatasetType(datasetType)
+
+      if (hasConfig) {
+        // Configuration exists, verify it's valid
+        const configResult = toolConfigService.getToolsForDatasetType(datasetType)
+        if (configResult.success) {
+          return true
+        }
+      }
+
+      // Configuration doesn't exist or is invalid, try to load it
+      console.log(`Ensuring tool configuration is loaded for: ${datasetType}`)
+      const reloadResult = await this.reloadToolConfigurationForDataset(datasetType)
+
+      return reloadResult.success
+
+    } catch (error) {
+      console.error(`Failed to ensure tool configuration for ${datasetType}:`, error)
+      return false
+    }
+  }
+
+  /**
+   * Reload tool configuration for a specific dataset type
+   * This is useful when the page refreshes and we need to ensure tools are properly loaded
+   * @param {string} datasetType - The dataset type to reload configuration for
+   * @returns {Promise<Object>} Reload result
+   */
+  async reloadToolConfigurationForDataset(datasetType) {
+    try {
+      if (!datasetType) {
+        throw new Error('Dataset type is required for reload')
+      }
+
+      console.log(`[DatasetToolIntegrationService] Reloading tool configuration for dataset type: ${datasetType}`)
+
+      // Force reload the tool configuration from the toolConfigService
+      const reloadResult = await toolConfigService.reloadConfigurationForDatasetType(datasetType)
+
+      console.log(`[DatasetToolIntegrationService] Reload result for ${datasetType}:`, reloadResult)
+
+      if (reloadResult.success) {
+        console.log(`[DatasetToolIntegrationService] ✅ Successfully reloaded tool configuration for ${datasetType}`)
+        return {
+          success: true,
+          message: `Tool configuration reloaded for ${datasetType}`,
+          datasetType: datasetType,
+          toolCount: reloadResult.toolCount || 0,
+          source: reloadResult.source
+        }
+      } else {
+        console.warn(`[DatasetToolIntegrationService] ⚠️ Failed to reload tool configuration for ${datasetType}:`, reloadResult.error)
+        return {
+          success: false,
+          message: reloadResult.error || 'Unknown reload error',
+          datasetType: datasetType,
+          fallbackAvailable: true,
+          error: reloadResult.error
+        }
+      }
+
+    } catch (error) {
+      console.error(`[DatasetToolIntegrationService] ❌ Error reloading tool configuration for ${datasetType}:`, error)
+      return {
+        success: false,
+        message: `Reload failed: ${error.message}`,
+        datasetType: datasetType,
+        error: error.message
+      }
+    }
+  }
+
+  /**
+   * Debug method to check current tool configuration state
+   * @param {string} datasetType - Optional dataset type to check specifically
+   * @returns {Object} Debug information
+   */
+  debugToolConfiguration(datasetType = null) {
+    const debug = {
+      timestamp: new Date().toISOString(),
+      serviceInitialized: this.isInitialized,
+      toolServiceStatus: toolConfigService.getStatus()
+    }
+
+    if (datasetType) {
+      debug.specificDataset = {
+        type: datasetType,
+        hasConfig: toolConfigService.hasToolsForDatasetType(datasetType),
+        configResult: toolConfigService.getToolsForDatasetType(datasetType)
+      }
+    }
+
+    console.log('[DatasetToolIntegrationService] Debug info:', debug)
+    return debug
+  }
+
+  /**
    * Get service status
    * @returns {Object} Service status information
    */
@@ -379,3 +488,9 @@ export class DatasetToolIntegrationService {
 
 // Create and export singleton instance
 export const datasetToolIntegrationService = new DatasetToolIntegrationService()
+
+// Expose debug methods globally in development
+if (import.meta.env.DEV) {
+  window.debugToolConfig = (datasetType) => datasetToolIntegrationService.debugToolConfiguration(datasetType)
+  window.reloadToolConfig = (datasetType) => datasetToolIntegrationService.reloadToolConfigurationForDataset(datasetType)
+}

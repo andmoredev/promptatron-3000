@@ -84,7 +84,7 @@ const PromptEditor = ({
     },
     {
       name: 'Detect Fraud',
-      template: 'Please examine the following data for potential fraud indicators. Highlight suspicious patterns and explain your reasoning:\n\n'
+      template: 'Please examine the following data for potential fraud indicators. Identify suspicious patterns, explain your reasoning, and act on high risk possibilities.'
     },
     {
       name: 'Summarize Findings',

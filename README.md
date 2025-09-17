@@ -1,18 +1,32 @@
 # Promptatron 3000
 
-A React-based test harness for experimenting with AWS Bedrock foundation models. Test different models with various prompts and datasets, compare results, and maintain a complete history of experiments.
+A comprehensive React-based test harness for experimenting with AWS Bedrock foundation models. Build enterprise-grade AI agents with advanced testing, tool integration, determinism evaluation, and comprehensive analysis capabilities.
 
-## Features
+## 🚀 Key Features
 
-- **Model Selection**: Choose from available AWS Bedrock foundation models
-- **Dataset Management**: Load and test with different datasets organized by use case
-- **Prompt Engineering**: Create and test custom prompts with template support
-- **Results Analysis**: View formatted responses with metadata and performance metrics
-- **Test History**: Track all experiments with search and filtering capabilities
-- **Side-by-Side Comparison**: Compare results from different tests
-- **Responsive Design**: Modern, professional UI built with Tailwind CSS
-- **Error Handling**: Comprehensive error handling with retry mechanisms
+### Core Testing & Analysis
+- **Model Selection**: Choose from all available AWS Bedrock foundation models (Claude, Nova, Llama, etc.)
+- **Dual Prompt System**: Separate system and user prompts for better AI control
+- **Dataset Management**: Load and test with datasets organized by use case with automatic discovery
+- **Real-time Streaming**: Stream responses with live progress indicators and performance metrics
+- **Results Analysis**: View formatted responses with metadata, token usage, and performance metrics
+- **Test History**: Complete audit trail with search, filtering, and comparison capabilities
+- **Side-by-Side Comparison**: Compare results from different model configurations
+
+### Advanced AI Capabilities
+- **Tool Integration**: AI models can use tools (e.g., freeze accounts in fraud detection scenarios)
+- **Tool Usage Visualization**: Real-time display of tool calls and results during streaming
+- **Determinism Evaluation**: Run multiple tests to measure response consistency and reliability
+- **Performance Monitoring**: Track streaming performance, token rates, and latency metrics
+- **Grading System**: Automated evaluation of AI responses with customizable criteria
+
+### User Experience
+- **Professional UI**: Modern, responsive design with nature-inspired green theme
+- **Form State Persistence**: Automatically saves and restores your work across sessions
+- **Keyboard Shortcuts**: Efficient navigation and testing workflows
+- **Error Handling**: Comprehensive error handling with retry mechanisms and graceful degradation
 - **Browser Compatibility**: Works across modern browsers with compatibility checks
+- **Debug Tools**: Built-in debugging capabilities for development and troubleshooting
 
 ## Prerequisites
 
@@ -34,45 +48,119 @@ A React-based test harness for experimenting with AWS Bedrock foundation models.
 
 3. **Open your browser** to `http://localhost:3000`
 
-## Project Structure
+## 📁 Project Structure
 
 ```
-bedrock-llm-analyzer/
+promptatron-3000/
 ├── src/
-│   ├── components/          # React components
-│   │   ├── ModelSelector.jsx
-│   │   ├── DatasetSelector.jsx
-│   │   ├── PromptEditor.jsx
-│   │   ├── TestResults.jsx
-│   │   └── History.jsx
+│   ├── components/          # React UI components
+│   │   ├── ModelSelector.jsx       # AWS Bedrock model selection
+│   │   ├── DatasetSelector.jsx     # Dataset selection with tool integration
+│   │   ├── PromptEditor.jsx        # Dual prompt system (system + user)
+│   │   ├── TestResults.jsx         # Results display with tool usage
+│   │   ├── History.jsx             # Test history with search/filter
+│   │   ├── Comparison.jsx          # Side-by-side result comparison
+│   │   ├── ToolUsageDisplay.jsx    # Real-time tool usage visualization
+│   │   ├── StreamingPerformanceMonitor.jsx  # Performance metrics
+│   │   ├── LoadingSpinner.jsx      # Loading states
+│   │   ├── ProgressBar.jsx         # Progress indicators
+│   │   └── RobotGraphic/           # Animated robot mascot
+│   ├── services/            # Business logic & API services
+│   │   ├── bedrockService.js       # AWS Bedrock integration
+│   │   ├── toolConfigService.js    # Tool configuration management
+│   │   ├── datasetToolIntegrationService.js  # Dataset-tool integration
+│   │   ├── determinismService.js   # Determinism evaluation
+│   │   ├── graderService.js        # Response grading system
+│   │   └── determinismStorageService.js  # Determinism data storage
+│   ├── hooks/               # Custom React hooks
+│   │   └── useHistory.js           # Test history management
+│   ├── utils/               # Utility functions & helpers
+│   │   ├── formValidation.js       # Form validation logic
+│   │   ├── errorHandling.js        # Error handling utilities
+│   │   ├── toolErrorHandling.js    # Tool-specific error handling
+│   │   └── formStateStorage.js     # Form state persistence
 │   ├── App.jsx             # Main application component
 │   ├── main.jsx            # React entry point
-│   └── index.css           # Tailwind CSS styles
-├── datasets/               # Dataset files organized by use case
-│   └── fraud-detection/
-│       ├── international.csv
-│       ├── mixed.csv
-│       └── retail.csv
-└── public/                 # Static assets
+│   └── index.css           # Global styles & Tailwind
+├── public/
+│   └── datasets/           # Dataset files organized by use case
+│       ├── manifest.json           # Global dataset registry
+│       └── fraud-detection/        # Example use case
+│           ├── manifest.json       # Use case configuration
+│           ├── tools.json          # Tool definitions
+│           ├── international.csv   # Dataset files
+│           ├── mixed.csv
+│           └── retail.csv
+├── .kiro/                  # Kiro IDE configuration
+│   ├── steering/           # AI assistant guidance
+│   └── specs/              # Feature specifications
+└── [config files]         # Build & tool configuration
 ```
 
-## Dataset Structure
+## 📊 Dataset & Tool Integration
 
-Datasets are organized in the `public/datasets/` directory by use case. The application automatically discovers dataset types and options from this folder structure.
+Datasets are organized in the `public/datasets/` directory by use case, with optional tool configurations that enable AI models to take actions during analysis.
 
 ### Directory Structure
 ```
 public/datasets/
-├── manifest.json           # Optional: Global dataset metadata
+├── manifest.json           # Global dataset registry
 ├── [use-case-name]/        # Use case folder (e.g., "fraud-detection")
-│   ├── manifest.json       # Optional: Use case metadata
-│   ├── dataset1.csv        # Dataset files (CSV format)
+│   ├── manifest.json       # Use case configuration & tool settings
+│   ├── tools.json          # Tool definitions (optional)
+│   ├── dataset1.csv        # Dataset files (CSV/JSON format)
 │   ├── dataset2.csv
 │   └── dataset3.csv
 └── [another-use-case]/
+    ├── manifest.json
     ├── option1.csv
     └── option2.csv
 ```
+
+### Tool Integration
+
+The application supports AI models using tools during analysis. For example, in fraud detection scenarios, models can:
+- Freeze suspicious accounts
+- Flag transactions for review
+- Generate investigation reports
+
+#### Tool Configuration Example
+```json
+{
+  "toolConfiguration": {
+    "enabled": true,
+    "datasetType": "fraud-detection",
+    "tools": [
+      {
+        "toolSpec": {
+          "name": "freeze_account",
+          "description": "Put a freeze on a specific account and mark why it was frozen",
+          "inputSchema": {
+            "json": {
+              "type": "object",
+              "properties": {
+                "account_id": {
+                  "type": "string",
+                  "description": "The account ID to freeze"
+                },
+                "transaction_ids": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Array of transaction IDs that led to this decision"
+                },
+                "reason": {
+                  "type": "string",
+                  "description": "Detailed reason for freezing the account"
+                }
+              },
+              "required": ["account_id", "transaction_ids", "reason"]
+            }
+          }
+        }
+      }
+    ]
+  }
+}
 
 ### Adding Your Own Datasets
 
@@ -81,34 +169,60 @@ public/datasets/
    mkdir public/datasets/my-use-case
    ```
 
-2. **Add CSV files** with your data:
+2. **Add dataset files**:
    ```bash
    # Example: Customer support tickets
    mkdir public/datasets/customer-support
-   # Add your CSV files
    cp my-tickets.csv public/datasets/customer-support/
    ```
 
-3. **CSV Format Requirements**:
-   - First row should contain column headers
-   - Data should be properly escaped for CSV format
-   - UTF-8 encoding recommended
-   - File size should be reasonable for browser processing
-
-4. **Optional: Add metadata** with a `manifest.json` file:
+3. **Create manifest.json** for the use case:
    ```json
    {
      "name": "Customer Support Analysis",
      "description": "Customer support ticket analysis datasets",
      "version": "1.0",
-     "datasets": {
-       "tickets-2024.csv": {
-         "name": "2024 Support Tickets",
-         "description": "Customer support tickets from 2024",
-         "rows": 1500,
-         "columns": ["ticket_id", "category", "description", "priority"]
-       }
+     "files": ["tickets-2024.csv", "tickets-2023.csv"],
+     "toolConfiguration": {
+       "enabled": false,
+       "datasetType": "customer-support"
      }
+   }
+   ```
+
+4. **Optional: Add tool integration**:
+   ```json
+   {
+     "toolConfiguration": {
+       "enabled": true,
+       "datasetType": "customer-support",
+       "tools": [
+         {
+           "toolSpec": {
+             "name": "escalate_ticket",
+             "description": "Escalate a support ticket to management",
+             "inputSchema": {
+               "json": {
+                 "type": "object",
+                 "properties": {
+                   "ticket_id": { "type": "string" },
+                   "priority": { "type": "string", "enum": ["high", "urgent", "critical"] },
+                   "reason": { "type": "string" }
+                 },
+                 "required": ["ticket_id", "priority", "reason"]
+               }
+             }
+           }
+         }
+       ]
+     }
+   }
+   ```
+
+5. **Update global manifest** (`public/datasets/manifest.json`):
+   ```json
+   {
+     "types": ["fraud-detection", "customer-support"]
    }
    ```
 
@@ -122,35 +236,57 @@ public/datasets/
 - Include column headers in CSV files
 - Test with small datasets first before adding large ones
 
-## Usage Guide
+## 🎯 Usage Guide
 
 ### Basic Workflow
 
 1. **Select a Model**: Choose from available AWS Bedrock foundation models
-2. **Choose a Dataset**: Select a use case and specific dataset
-3. **Write a Prompt**: Create your prompt in the editor
-4. **Run Test**: Execute the test and view results
-5. **Review History**: Access previous tests and compare results
+2. **Choose a Dataset**: Select a use case and specific dataset (tool integration shown automatically)
+3. **Configure Prompts**: Create system and user prompts using the dual prompt editor
+4. **Configure Options**: Enable/disable streaming, determinism evaluation
+5. **Run Test**: Execute the test and view real-time results
+6. **Analyze Results**: Review responses, tool usage, and performance metrics
+7. **Compare & Iterate**: Use history and comparison features to refine your approach
 
 ### Interface Overview
 
 #### Main Testing Interface
-- **Model Selector**: Dropdown with available Bedrock models
-- **Dataset Selector**: Two-level selection (use case → specific dataset)
-- **Prompt Editor**: Multi-line text editor with validation
-- **Test Button**: Executes the test with current configuration
-- **Results Panel**: Displays formatted LLM responses
+- **Model Selector**: Dropdown with all available Bedrock models and status indicators
+- **Dataset Selector**: Two-level selection with tool configuration display
+- **Dual Prompt Editor**: Separate system and user prompt fields with validation
+- **Advanced Options**: Streaming mode, determinism evaluation toggles
+- **Test Button**: Executes test with real-time progress indicators
+- **Results Panel**: Formatted responses with tool usage visualization
 
-#### History Tab
-- **Test History**: Chronological list of all tests
-- **Search & Filter**: Find specific tests by model, dataset, or content
-- **Rerun Tests**: Load previous configurations and run again
-- **Compare Results**: Select multiple tests for side-by-side comparison
+#### Streaming Mode
+- **Real-time Response**: Watch AI responses generate token by token
+- **Performance Metrics**: Live tracking of tokens/second, latency, and progress
+- **Tool Usage Display**: Real-time visualization of tool calls and results
+- **Progress Indicators**: Visual feedback for long-running operations
 
-#### Comparison View
-- **Side-by-Side Display**: Compare responses from different tests
-- **Highlight Differences**: Visual indicators for response variations
-- **Export Options**: Save comparison results
+#### Tool Integration
+- **Tool Configuration Status**: Shows available tools for each dataset type
+- **Tool Usage Visualization**: Real-time display of tool calls during streaming
+- **Tool Results**: Formatted display of tool inputs, outputs, and status
+- **Error Handling**: Graceful handling of tool failures with fallback options
+
+#### Determinism Evaluation
+- **Multiple Test Runs**: Automatically run the same prompt multiple times
+- **Consistency Analysis**: Measure response variation and reliability
+- **Statistical Metrics**: Calculate consistency scores and variation patterns
+- **Comparison Views**: Side-by-side analysis of determinism results
+
+#### History & Analysis
+- **Comprehensive History**: All tests with metadata, tool usage, and performance data
+- **Advanced Search**: Filter by model, dataset, prompts, tool usage, or date ranges
+- **Comparison Tools**: Select multiple tests for detailed side-by-side analysis
+- **Export Capabilities**: Save results and comparisons for external analysis
+
+#### Grading System
+- **Automated Evaluation**: Built-in grading of AI responses
+- **Custom Criteria**: Configurable evaluation metrics
+- **Scoring Visualization**: Clear display of grades and feedback
+- **Historical Tracking**: Track performance improvements over time
 
 ### Keyboard Shortcuts
 
@@ -160,21 +296,82 @@ public/datasets/
 - **Ctrl/Cmd + C**: Switch to Comparison tab (when available)
 - **Escape**: Clear current selection or close modals
 
+### Advanced Features
+
+#### Determinism Evaluation
+Enable determinism evaluation to run multiple tests with identical prompts and measure response consistency:
+
+1. Toggle "Determinism Evaluation" in advanced options
+2. Configure number of test runs (default: 3)
+3. Run test to execute multiple iterations automatically
+4. Review consistency metrics and variation analysis
+5. Use results to understand model reliability for your use case
+
+#### Tool Integration Best Practices
+1. **Review Tool Configuration**: Check the tool status indicator for each dataset
+2. **Monitor Tool Usage**: Watch real-time tool calls during streaming
+3. **Handle Tool Errors**: Review tool error messages and adjust prompts accordingly
+4. **Validate Tool Results**: Verify that tool calls produce expected outcomes
+
+#### Performance Optimization
+1. **Use Streaming Mode**: Enable streaming for better user experience with long responses
+2. **Monitor Performance**: Track tokens/second and latency metrics
+3. **Optimize Prompts**: Use performance data to refine prompt efficiency
+4. **Batch Testing**: Use determinism evaluation for comprehensive testing
+
 ### Tips for Effective Testing
 
-1. **Start Simple**: Begin with basic prompts before adding complexity
-2. **Use Consistent Datasets**: Test multiple models with the same data for fair comparison
-3. **Document Your Prompts**: Use descriptive prompts that explain the task clearly
-4. **Compare Results**: Use the comparison feature to analyze model differences
-5. **Save Configurations**: Use history to track successful prompt patterns
+1. **Dual Prompt Strategy**: Use system prompts to define AI behavior, user prompts for specific tasks
+2. **Tool-Aware Prompting**: When tools are available, explicitly mention available actions in prompts
+3. **Iterative Refinement**: Use history and comparison features to refine prompt effectiveness
+4. **Performance Monitoring**: Track streaming performance to optimize for your use cases
+5. **Determinism Testing**: Use determinism evaluation for critical applications requiring consistency
+6. **Error Analysis**: Review tool usage and error patterns to improve reliability
 
-## Development
+## 🛠️ Development
 
-- **Development server**: `npm run dev`
+### Available Scripts
+
+- **Development server**: `npm run dev` (starts on port 3000, auto-opens browser)
+- **Local AWS setup + dev**: `npm run dev:local` (runs setup script then starts dev server)
 - **Build for production**: `npm run build`
 - **Preview production build**: `npm run preview`
-- **Run tests**: `npm test` (when tests are added)
-- **Lint code**: `npm run lint` (when linting is configured)
+- **AWS credential setup**: `npm run setup-local` (extracts SSO credentials)
+
+### Development Features
+
+#### Hot Reloading
+- **Component Updates**: Instant updates for React components
+- **Tool Configuration**: Hot reload of tool configurations in development
+- **Dataset Changes**: Automatic detection of new datasets and manifests
+- **Style Updates**: Live CSS updates with Tailwind
+
+#### Debug Tools
+In development mode, the following debug tools are available in the browser console:
+
+```javascript
+// Debug tool configuration for a dataset type
+window.debugToolConfig('fraud-detection')
+
+// Manually reload tool configuration
+window.reloadToolConfig('fraud-detection')
+
+// Check service status
+window.bedrockService?.getStatus()
+```
+
+#### Development Environment Variables
+```bash
+# .env.local (created by local-setup.sh)
+VITE_AWS_REGION=us-east-1
+VITE_AWS_ACCESS_KEY_ID=your_key
+VITE_AWS_SECRET_ACCESS_KEY=your_secret
+VITE_AWS_SESSION_TOKEN=your_token
+
+# Optional development flags
+VITE_USE_MOCK_SERVICES=false
+VITE_DEBUG_MODE=true
+```
 
 ## AWS Configuration
 
@@ -216,7 +413,7 @@ Your AWS credentials need:
 - `bedrock:ListFoundationModels`
 - `bedrock:InvokeModel`
 
-### Troubleshooting
+### AWS Troubleshooting
 
 **Check if credentials are loaded:**
 ```bash
@@ -225,17 +422,35 @@ ls -la .env.local
 
 # Check the contents (be careful - contains sensitive data)
 head .env.local
+
+# Test AWS connectivity
+aws bedrock list-foundation-models --region us-east-1
 ```
 
-**Common issues:**
+**Common AWS issues:**
 - **No .env.local file**: Make sure `./local-setup.sh` runs without errors
 - **Access denied**: Ensure your AWS account has Bedrock enabled and proper permissions
 - **Region issues**: Bedrock is available in limited regions (us-east-1, us-west-2, etc.)
 - **Credentials expired**: Re-run `./local-setup.sh` to refresh SSO credentials
+- **Model access**: Some models require explicit access requests in AWS console
 
-## Troubleshooting
+**Tool Configuration Issues:**
+```bash
+# Check tool configuration status in browser console
+window.debugToolConfig('fraud-detection')
 
-### Application Won't Start
+# Manually reload tool configuration
+window.reloadToolConfig('fraud-detection')
+
+# Verify dataset manifest structure
+cat public/datasets/fraud-detection/manifest.json
+```
+
+## 🔧 Troubleshooting
+
+### Application Issues
+
+**Application Won't Start:**
 ```bash
 # Clear node modules and reinstall
 rm -rf node_modules package-lock.json
@@ -243,56 +458,149 @@ npm install
 
 # Check Node.js version (requires 18+)
 node --version
+
+# Try different port if 3000 is occupied
+npm run dev -- --port 3001
 ```
 
-### AWS Connection Issues
-```bash
-# Verify AWS CLI is configured
-aws sts get-caller-identity
+**Tool Configuration Problems:**
+- Check browser console for tool loading errors
+- Verify manifest.json files are valid JSON
+- Use debug tools: `window.debugToolConfig('dataset-type')`
+- Ensure tool configurations follow the correct schema
 
-# Check Bedrock access
-aws bedrock list-foundation-models --region us-east-1
+**Streaming Issues:**
+- Check network connectivity to AWS Bedrock
+- Verify streaming is enabled in advanced options
+- Monitor browser console for WebSocket or streaming errors
+- Try disabling streaming mode if issues persist
 
-# Refresh SSO credentials
-aws sso login
-./local-setup.sh
-```
-
-### Dataset Loading Problems
-- Ensure datasets are in `public/datasets/` directory
-- Check CSV file format and encoding (UTF-8 recommended)
-- Verify file permissions allow reading
-- Check browser console for specific error messages
-
-### Performance Issues
+**Performance Issues:**
 - Large datasets may cause browser slowdown
-- Consider splitting large CSV files into smaller chunks
-- Clear browser cache if experiencing loading issues
-- Use browser developer tools to monitor memory usage
+- Enable streaming mode for better responsiveness
+- Monitor performance metrics in the streaming display
+- Consider splitting large datasets into smaller files
+- Clear browser cache and localStorage if needed
 
-## FAQ
+### Dataset & Tool Issues
+
+**Dataset Loading Problems:**
+- Ensure datasets are in `public/datasets/` directory structure
+- Check CSV/JSON file format and UTF-8 encoding
+- Verify manifest.json files exist and are valid
+- Check browser console for specific error messages
+- Ensure file permissions allow reading
+
+**Tool Integration Issues:**
+- Verify tool configuration in dataset manifest
+- Check tool schema validation in browser console
+- Use `window.reloadToolConfig('dataset-type')` to force reload
+- Review tool error messages in the results display
+- Ensure tool definitions follow AWS Bedrock tool schema
+
+### Data Persistence Issues
+
+**Form State Not Saving:**
+- Check browser localStorage permissions
+- Clear localStorage if corrupted: `localStorage.clear()`
+- Verify form state persistence in browser dev tools
+- Check for JavaScript errors preventing saves
+
+**History Not Loading:**
+- Check browser IndexedDB permissions and storage
+- Clear browser data if history is corrupted
+- Verify history service initialization in console
+- Check for quota exceeded errors in browser storage
+
+## ❓ FAQ
+
+### General Usage
 
 **Q: Which AWS regions support Bedrock?**
-A: Bedrock is available in us-east-1, us-west-2, eu-west-1, and other select regions. Check the AWS documentation for the latest list.
-
-**Q: Can I use this with AWS profiles?**
-A: Yes, the local-setup.sh script respects your AWS CLI profile configuration.
+A: Bedrock is available in us-east-1, us-west-2, eu-west-1, ap-southeast-2, and other select regions. Check the AWS Bedrock documentation for the latest list.
 
 **Q: How do I add new models?**
-A: The application automatically discovers available models from your AWS account. No manual configuration needed.
+A: The application automatically discovers available models from your AWS account. No manual configuration needed. Some models may require access requests in the AWS console.
 
 **Q: Is my data sent anywhere besides AWS Bedrock?**
-A: No, all data processing happens locally in your browser and only prompt/dataset combinations are sent to AWS Bedrock for inference.
+A: No, all data processing happens locally in your browser. Only prompt/dataset combinations are sent to AWS Bedrock for inference. Tool configurations and test history are stored locally.
 
 **Q: Can I export my test history?**
-A: Test history is stored locally in your browser. You can access it through the History tab and manually copy results as needed.
+A: Test history is stored locally in your browser's IndexedDB. You can access it through the History tab and manually copy results. Future versions may include export functionality.
+
+### Tool Integration
+
+**Q: How do I enable tools for my datasets?**
+A: Add a `toolConfiguration` section to your dataset's manifest.json file with `"enabled": true` and define your tools following the AWS Bedrock tool schema.
+
+**Q: What types of tools are supported?**
+A: Any tool that follows the AWS Bedrock tool specification. Examples include account management, data analysis, report generation, and external API calls.
+
+**Q: Can I see what tools the AI is using?**
+A: Yes! Enable streaming mode to see real-time tool usage, or check the tool usage section in the results display after completion.
+
+**Q: What happens if a tool fails?**
+A: The application handles tool failures gracefully, showing error messages and allowing the AI to continue with available information.
+
+### Advanced Features
+
+**Q: What is determinism evaluation?**
+A: It runs the same prompt multiple times to measure response consistency. This helps evaluate model reliability for production use cases.
+
+**Q: How does streaming mode work?**
+A: Streaming mode shows AI responses as they're generated token by token, with real-time performance metrics and tool usage visualization.
+
+**Q: Can I use this with different AWS profiles?**
+A: Yes, the local-setup.sh script respects your AWS CLI profile configuration. Use `aws configure set profile your-profile` before running the setup.
 
 **Q: What file formats are supported for datasets?**
-A: Currently CSV and JSON formats are supported. CSV is recommended for tabular data.
+A: CSV and JSON formats are supported. CSV is recommended for tabular data, JSON for structured or nested data.
 
-## Technology Stack
+### Technical Details
 
-- **React 19**: Latest React with modern features
-- **Vite**: Fast build tool and development server
-- **Tailwind CSS**: Utility-first CSS framework
-- **AWS SDK for JavaScript v3**: AWS Bedrock integration
+**Q: How is form state preserved?**
+A: The application automatically saves your model selection, prompts, and settings to browser localStorage and restores them when you return.
+
+**Q: Can I run this in production?**
+A: Yes, but ensure proper AWS IAM permissions, consider using AWS Cognito for authentication, and review the security implications of client-side AWS credentials.
+
+**Q: How do I contribute or report issues?**
+A: This is a development tool. Check the project repository for contribution guidelines and issue reporting procedures.
+
+## 🏗️ Technology Stack
+
+### Core Technologies
+- **React 19**: Latest React with concurrent rendering and modern features
+- **Vite**: Fast build tool with HMR and optimized development experience
+- **Tailwind CSS**: Utility-first CSS framework with custom design system
+- **AWS SDK v3**: Modern JavaScript SDK for Bedrock integration
+
+### Key Dependencies
+- **AWS Bedrock Runtime**: Model invocation and streaming capabilities
+- **AWS Bedrock Management**: Model discovery and configuration
+- **React Markdown**: Formatted response rendering with syntax highlighting
+- **IndexedDB**: Local storage for test history and persistence
+
+### Architecture Patterns
+- **Service Layer**: Singleton services for AWS, tool configuration, and data management
+- **Custom Hooks**: Reusable state logic for history, forms, and data fetching
+- **Component Composition**: Modular, reusable UI components with clear responsibilities
+- **Error Boundaries**: Graceful error handling and recovery mechanisms
+
+### Development Tools
+- **Hot Module Replacement**: Instant updates during development
+- **Tool Configuration Hot Reload**: Dynamic tool configuration updates
+- **Debug Console Tools**: Built-in debugging capabilities
+- **Performance Monitoring**: Real-time metrics and performance tracking
+
+### Browser Compatibility
+- **Modern Browsers**: Chrome 90+, Firefox 88+, Safari 14+, Edge 90+
+- **ES2020+ Features**: Modern JavaScript with proper polyfills
+- **WebSocket Support**: Required for streaming functionality
+- **IndexedDB Support**: Required for local data persistence
+
+## 🚀 Getting Started
+
+Ready to build enterprise-grade AI agents? Follow the Quick Start guide above and explore the comprehensive feature set. The application includes built-in help, debug tools, and comprehensive error handling to guide you through advanced AI testing and tool integration scenarios.
+
+For questions, issues, or contributions, check the project documentation and development guidelines.
