@@ -97,7 +97,6 @@ function App() {
   const isFormValid = () => {
     const hasValidationErrors = Object.keys(validationErrors).length > 0;
     const hasRequiredFields = selectedModel &&
-      systemPrompt.trim() &&
       userPrompt.trim() &&
       selectedDataset.type &&
       selectedDataset.option &&
@@ -161,10 +160,10 @@ function App() {
   useEffect(() => {
     // Only trigger on initial load if we have a saved dataset selection but no content
     if (savedFormState.selectedDataset.type &&
-        savedFormState.selectedDataset.option &&
-        !selectedDataset.content &&
-        selectedDataset.type === savedFormState.selectedDataset.type &&
-        selectedDataset.option === savedFormState.selectedDataset.option) {
+      savedFormState.selectedDataset.option &&
+      !selectedDataset.content &&
+      selectedDataset.type === savedFormState.selectedDataset.type &&
+      selectedDataset.option === savedFormState.selectedDataset.option) {
 
       // The DatasetSelector component will handle reloading the content
       // We just need to ensure the selection is properly set

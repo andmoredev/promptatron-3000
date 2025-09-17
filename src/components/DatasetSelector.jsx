@@ -43,6 +43,33 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
     }
   }, [selectedDataset.type])
 
+  // Force reload tool configuration when component mounts with existing dataset (handles page refresh)
+  useEffect(() => {
+    const forceReloadOnMount = async () => {
+      if (selectedDataset.type) {
+        console.log(`DatasetSelector mounted with existing dataset: ${selectedDataset.type}`)
+
+        // Force reload the tool configuration to ensure it's available after page refresh
+        try {
+          const reloadResult = await datasetToolIntegrationService.reloadToolConfigurationForDataset(selectedDataset.type)
+          console.log(`Tool configuration reload result for ${selectedDataset.type}:`, reloadResult)
+
+          // Load the tool configuration summary after reload
+          loadToolConfigurationSummary(selectedDataset)
+        } catch (error) {
+          console.warn(`Failed to reload tool configuration for ${selectedDataset.type}:`, error)
+          // Still try to load summary with existing configuration
+          loadToolConfigurationSummary(selectedDataset)
+        }
+      }
+    }
+
+    // Only run this on mount, and only if we have a dataset type
+    if (selectedDataset.type) {
+      forceReloadOnMount()
+    }
+  }, []) // Empty dependency array - only run on mount
+
   const loadDatasetTypes = async () => {
     setIsLoadingTypes(true)
     setError(null)
