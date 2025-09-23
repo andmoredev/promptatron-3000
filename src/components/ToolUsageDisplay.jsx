@@ -6,6 +6,7 @@ import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 const ToolUsageDisplay = ({ toolUsage }) => {
   const [expandedTools, setExpandedTools] = useState(new Set())
   const [showErrors, setShowErrors] = useState(false)
+  const [showAllTools, setShowAllTools] = useState(false)
 
   // Handle case where no tool usage data is provided
   if (!toolUsage) {
@@ -182,93 +183,239 @@ const ToolUsageDisplay = ({ toolUsage }) => {
     return 'Tool call attempted (not executed)'
   }
 
+  // Group tool calls by name for summary
+  const toolCallSummary = toolUsage.toolCalls.reduce((acc, toolCall) => {
+    acc[toolCall.toolName] = (acc[toolCall.toolName] || 0) + 1
+    return acc
+  }, {})
+
+  const totalToolCalls = toolUsage.toolCalls.length
+  const uniqueTools = Object.keys(toolCallSummary).length
+  const shouldShowSummary = totalToolCalls > 3
+
   return (
     <div className="space-y-3">
-      <div className="space-y-3">
-        {toolUsage.toolCalls.map((toolCall, index) => {
-          const isExpanded = expandedTools.has(index)
-          const hasIssues = toolCall.extractionSuccess === false ||
-                           toolCall.wasToolAvailable === false ||
-                           (toolCall.parameterValidation && !toolCall.parameterValidation.isValid)
+      {/* Tool Usage Summary */}
+      {shouldShowSummary && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <svg className="h-5 w-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              <div>
+                <h4 className="text-sm font-medium text-blue-900">
+                  Tool Usage Summary
+                </h4>
+                <p className="text-xs text-blue-700">
+                  {totalToolCalls} tool call{totalToolCalls !== 1 ? 's' : ''} across {uniqueTools} tool{uniqueTools !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAllTools(!showAllTools)}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            >
+              {showAllTools ? 'Hide Details' : 'Show All Tools'}
+            </button>
+          </div>
 
-          const borderColor = hasIssues ?
-            (toolCall.extractionSuccess === false ? 'border-red-200' : 'border-yellow-200') :
-            'border-orange-200'
-          const bgColor = hasIssues ?
-            (toolCall.extractionSuccess === false ? 'bg-red-50' : 'bg-yellow-50') :
-            'bg-orange-50'
+          {/* Tool breakdown */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {Object.entries(toolCallSummary).map(([toolName, count]) => (
+              <span
+                key={toolName}
+                className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+              >
+                {toolName}: {count}x
+              </span>
+            ))}
+          </div>
 
-          return (
-            <div key={index} className={`${bgColor} border ${borderColor} rounded-lg overflow-hidden`}>
-              {/* Tool header */}
-              <div className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2">
-                        <h4 className="text-sm font-medium text-orange-900">
-                          {toolCall.toolName}
-                        </h4>
+          {/* Individual Tool Calls - shown when expanded */}
+          {showAllTools && (
+            <div className="mt-4 space-y-3">
+              <div className="border-t border-blue-200 pt-4">
+                <h5 className="text-xs font-medium text-blue-900 mb-3">Tool Call Details:</h5>
+                <div className="space-y-3">
+                  {toolUsage.toolCalls.map((toolCall, index) => {
+                    const isExpanded = expandedTools.has(index)
+                    const hasIssues = toolCall.extractionSuccess === false ||
+                                     toolCall.wasToolAvailable === false ||
+                                     (toolCall.parameterValidation && !toolCall.parameterValidation.isValid)
+
+                    const borderColor = hasIssues ?
+                      (toolCall.extractionSuccess === false ? 'border-red-200' : 'border-yellow-200') :
+                      'border-orange-200'
+                    const bgColor = hasIssues ?
+                      (toolCall.extractionSuccess === false ? 'bg-red-50' : 'bg-yellow-50') :
+                      'bg-orange-50'
+
+                    return (
+                      <div key={index} className={`${bgColor} border ${borderColor} rounded-lg overflow-hidden`}>
+                        {/* Tool header */}
+                        <div className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className="flex-1">
+                                <div className="flex items-center space-x-2">
+                                  <h4 className="text-sm font-medium text-orange-900">
+                                    {toolCall.toolName}
+                                  </h4>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={() => toggleToolExpansion(index)}
+                                className="text-xs text-orange-600 hover:text-orange-800 font-medium"
+                              >
+                                {isExpanded ? 'Collapse' : 'Expand'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Parameter validation errors */}
+                          {toolCall.parameterValidation && !toolCall.parameterValidation.isValid && (
+                            <div className="mt-3 p-2 bg-yellow-100 border border-yellow-300 rounded">
+                              <p className="text-xs font-medium text-yellow-800">Parameter Validation Issues:</p>
+                              <ul className="text-xs text-yellow-700 mt-1 list-disc list-inside">
+                                {toolCall.parameterValidation.errors.map((error, errorIndex) => (
+                                  <li key={errorIndex}>{error}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {/* Extraction error */}
+                          {toolCall.extractionError && (
+                            <div className="mt-3 p-2 bg-red-100 border border-red-300 rounded">
+                              <p className="text-xs font-medium text-red-800">Extraction Error:</p>
+                              <p className="text-xs text-red-700 mt-1">{toolCall.extractionError}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Expanded parameter details - only show when expanded */}
+                        {isExpanded && (
+                          <div className="border-t border-orange-200 bg-white">
+                            <div className="p-4">
+                              <h5 className="text-xs font-medium text-gray-700 mb-3">Parameters:</h5>
+                              <div className="bg-gray-50 border border-gray-200 rounded overflow-hidden">
+                                <SyntaxHighlighter
+                                  language="json"
+                                  style={oneLight}
+                                  customStyle={{
+                                    margin: 0,
+                                    fontSize: '12px',
+                                    lineHeight: '1.4',
+                                    background: 'transparent'
+                                  }}
+                                >
+                                  {formatToolInput(toolCall.input)}
+                                </SyntaxHighlighter>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Individual Tool Calls - for cases with ≤3 tools (no summary) */}
+      {!shouldShowSummary && (
+        <div className="space-y-3">
+          {toolUsage.toolCalls.map((toolCall, index) => {
+            const isExpanded = expandedTools.has(index)
+            const hasIssues = toolCall.extractionSuccess === false ||
+                             toolCall.wasToolAvailable === false ||
+                             (toolCall.parameterValidation && !toolCall.parameterValidation.isValid)
+
+            const borderColor = hasIssues ?
+              (toolCall.extractionSuccess === false ? 'border-red-200' : 'border-yellow-200') :
+              'border-orange-200'
+            const bgColor = hasIssues ?
+              (toolCall.extractionSuccess === false ? 'bg-red-50' : 'bg-yellow-50') :
+              'bg-orange-50'
+
+            return (
+              <div key={index} className={`${bgColor} border ${borderColor} rounded-lg overflow-hidden`}>
+                {/* Tool header */}
+                <div className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <h4 className="text-sm font-medium text-orange-900">
+                            {toolCall.toolName}
+                          </h4>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => toggleToolExpansion(index)}
+                        className="text-xs text-orange-600 hover:text-orange-800 font-medium"
+                      >
+                        {isExpanded ? 'Collapse' : 'Expand'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Parameter validation errors */}
+                  {toolCall.parameterValidation && !toolCall.parameterValidation.isValid && (
+                    <div className="mt-3 p-2 bg-yellow-100 border border-yellow-300 rounded">
+                      <p className="text-xs font-medium text-yellow-800">Parameter Validation Issues:</p>
+                      <ul className="text-xs text-yellow-700 mt-1 list-disc list-inside">
+                        {toolCall.parameterValidation.errors.map((error, errorIndex) => (
+                          <li key={errorIndex}>{error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Extraction error */}
+                  {toolCall.extractionError && (
+                    <div className="mt-3 p-2 bg-red-100 border border-red-300 rounded">
+                      <p className="text-xs font-medium text-red-800">Extraction Error:</p>
+                      <p className="text-xs text-red-700 mt-1">{toolCall.extractionError}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Expanded parameter details - only show when expanded */}
+                {isExpanded && (
+                  <div className="border-t border-orange-200 bg-white">
+                    <div className="p-4">
+                      <h5 className="text-xs font-medium text-gray-700 mb-3">Parameters:</h5>
+                      <div className="bg-gray-50 border border-gray-200 rounded overflow-hidden">
+                        <SyntaxHighlighter
+                          language="json"
+                          style={oneLight}
+                          customStyle={{
+                            margin: 0,
+                            fontSize: '12px',
+                            lineHeight: '1.4',
+                            background: 'transparent'
+                          }}
+                        >
+                          {formatToolInput(toolCall.input)}
+                        </SyntaxHighlighter>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => toggleToolExpansion(index)}
-                      className="text-xs text-orange-600 hover:text-orange-800 font-medium"
-                    >
-                      {isExpanded ? 'Collapse' : 'Expand'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Parameter validation errors */}
-                {toolCall.parameterValidation && !toolCall.parameterValidation.isValid && (
-                  <div className="mt-3 p-2 bg-yellow-100 border border-yellow-300 rounded">
-                    <p className="text-xs font-medium text-yellow-800">Parameter Validation Issues:</p>
-                    <ul className="text-xs text-yellow-700 mt-1 list-disc list-inside">
-                      {toolCall.parameterValidation.errors.map((error, errorIndex) => (
-                        <li key={errorIndex}>{error}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Extraction error */}
-                {toolCall.extractionError && (
-                  <div className="mt-3 p-2 bg-red-100 border border-red-300 rounded">
-                    <p className="text-xs font-medium text-red-800">Extraction Error:</p>
-                    <p className="text-xs text-red-700 mt-1">{toolCall.extractionError}</p>
-                  </div>
                 )}
               </div>
-
-              {/* Expanded parameter details - only show when expanded */}
-              {isExpanded && (
-                <div className="border-t border-orange-200 bg-white">
-                  <div className="p-4">
-                    <h5 className="text-xs font-medium text-gray-700 mb-3">Parameters:</h5>
-                    <div className="bg-gray-50 border border-gray-200 rounded overflow-hidden">
-                      <SyntaxHighlighter
-                        language="json"
-                        style={oneLight}
-                        customStyle={{
-                          margin: 0,
-                          fontSize: '12px',
-                          lineHeight: '1.4',
-                          background: 'transparent'
-                        }}
-                      >
-                        {formatToolInput(toolCall.input)}
-                      </SyntaxHighlighter>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Error and warning section */}
       {renderErrorSection()}

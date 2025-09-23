@@ -1171,7 +1171,7 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
               </h4>
 
               {/* Tool Usage Score from Grader */}
-              <div className="bg-gradient-to-r from-primary-50 to-secondary-50 border border-primary-200 p-4 rounded-lg mb-4">
+              <div className="bg-gradient-to-r from-primary-50 to-secondary-50 border border-primary-200 p-4 rounded-lg mb-4 card-with-gradient">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm font-medium text-primary-800">Tool Usage Consistency</div>
                   <div className="text-2xl font-bold text-primary-900">

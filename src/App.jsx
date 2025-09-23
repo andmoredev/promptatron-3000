@@ -7,6 +7,7 @@ import History from './components/History';
 import Comparison from './components/Comparison';
 import ErrorBoundary from './components/ErrorBoundary';
 import BrowserCompatibility from './components/BrowserCompatibility';
+import UIErrorNotification from './components/UIErrorNotification';
 import HelpGuide from './components/HelpGuide';
 import LoadingSpinner from './components/LoadingSpinner';
 import ProgressBar from './components/ProgressBar';
@@ -16,14 +17,41 @@ import StreamingPerformanceMonitor from './components/StreamingPerformanceMonito
 import { bedrockService } from './services/bedrockService';
 import { datasetToolIntegrationService } from './services/datasetToolIntegrationService';
 import { useHistory } from './hooks/useHistory';
+import { useModelOutput } from './hooks/useModelOutput';
+import { useStatePersistence, useUIStatePersistence, useNavigationStatePersistence, useTestResultsStatePersistence } from './hooks/useStatePersistence';
+import { statePersistenceService } from './services/statePersistenceService';
 import { validateForm } from './utils/formValidation';
 import { handleError, retryWithBackoff } from './utils/errorHandling';
 import { loadFormState, saveFormState, createDebouncedSave, clearFormState, hasFormState } from './utils/formStateStorage';
+import { gradientErrorRecovery } from './utils/gradientErrorRecovery';
+import { handleUIError, initializeUIErrorMonitoring, proactiveUICheck } from './utils/uiErrorIntegration';
+import { useUIErrorRecovery } from './hooks/useUIErrorRecovery';
+import { fileService } from './services/fileService';
 
 
 function App() {
   // Load saved form state on initialization
   const savedFormState = useMemo(() => loadFormState(), []);
+
+  // Initialize state persistence hooks first
+  const {
+    uiState,
+    updateUIState,
+    isRestored: uiStateRestored
+  } = useUIStatePersistence({
+    activeTab: 'test',
+    selectedForComparison: [],
+    validationErrors: {},
+    touchedFields: {},
+    isExpanded: {},
+    viewModes: {}
+  });
+
+  const {
+    navigationState,
+    switchTab: persistentSwitchTab,
+    isRestored: navigationStateRestored
+  } = useNavigationStatePersistence();
 
   // Core state management for the test harness (initialized from saved state)
   const [selectedModel, setSelectedModel] = useState(savedFormState.selectedModel);
@@ -33,10 +61,10 @@ function App() {
   const [testResults, setTestResults] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('test');
-  const [validationErrors, setValidationErrors] = useState({});
-  const [touchedFields, setTouchedFields] = useState({});
-  const [selectedForComparison, setSelectedForComparison] = useState([]);
+  const [activeTab, setActiveTab] = useState(navigationState.activeTab || 'test');
+  const [validationErrors, setValidationErrors] = useState(uiState.validationErrors || {});
+  const [touchedFields, setTouchedFields] = useState(uiState.touchedFields || {});
+  const [selectedForComparison, setSelectedForComparison] = useState(uiState.selectedForComparison || []);
   const [retryCount, setRetryCount] = useState(0);
   const [progressStatus, setProgressStatus] = useState('');
   const [progressValue, setProgressValue] = useState(0);
@@ -69,6 +97,59 @@ function App() {
 
   // Use the history hook for managing test history
   const { saveTestResult } = useHistory();
+
+  // Use model output manager for state persistence and error recovery
+  const {
+    initializeOutput,
+    updateOutput,
+    handleStreamingError,
+    completeStreaming,
+    handleDisplayError
+  } = useModelOutput();
+
+  // Use comprehensive state persistence system
+  const {
+    isInitialized: statePersistenceInitialized,
+    saveTestResultsState,
+    restoreTestResultsState,
+    saveModelOutputState,
+    restoreModelOutputState,
+    getSessionInfo,
+    stateInfo
+  } = useStatePersistence();
+
+
+
+  // Use test results state persistence
+  const {
+    testResults: persistedTestResults,
+    saveResults: savePersistentResults,
+    restoreResults: restorePersistentResults,
+    isRestored: testResultsStateRestored
+  } = useTestResultsStatePersistence();
+
+  // Use UI error recovery system
+  const {
+    componentRef: appRef,
+    handleUIError: handleAppUIError,
+    backupState,
+    checkComponentHealth,
+    applyRecoveryStrategy
+  } = useUIErrorRecovery('App', {
+    enableAutoRecovery: true,
+    enableStateBackup: true,
+    onRecoveryAttempt: (errorInfo) => {
+      console.log('UI recovery attempt for App:', errorInfo);
+    },
+    onRecoverySuccess: (result) => {
+      console.log('UI recovery successful for App:', result);
+    },
+    onRecoveryFailure: (result) => {
+      console.error('UI recovery failed for App:', result);
+    }
+  });
+
+
 
   // Helper function to generate user-friendly validation messages
   const getValidationGuidance = (errors) => {
@@ -134,6 +215,11 @@ function App() {
     });
 
     setValidationErrors(filteredErrors);
+
+    // Update persisted UI state
+    if (statePersistenceInitialized) {
+      updateUIState({ validationErrors: filteredErrors });
+    }
   }, [selectedModel, systemPrompt, userPrompt, selectedDataset, touchedFields]);
 
   // Create debounced save function for form state persistence (silent background saving)
@@ -171,6 +257,112 @@ function App() {
     }
   }, []); // Only run on mount
 
+  // Initialize gradient error recovery and UI error monitoring
+  useEffect(() => {
+    // Apply preventive fixes on component mount
+    gradientErrorRecovery.applyPreventiveFixes();
+
+    // Initialize comprehensive UI error monitoring
+    initializeUIErrorMonitoring();
+
+
+
+    // Set up periodic checks for gradient issues
+    const checkInterval = setInterval(() => {
+      const issues = gradientErrorRecovery.detectGradientIssues();
+      if (issues.length > 0) {
+        console.log('Detected gradient issues:', issues);
+        issues.forEach(issue => {
+          gradientErrorRecovery.handleUIError({
+            errorType: 'gradient',
+            component: issue.component,
+            errorMessage: issue.description
+          });
+        });
+      }
+
+
+    }, 5000); // Check every 5 seconds
+
+    // Perform initial proactive UI check
+    proactiveUICheck('App').then(issues => {
+      if (issues.length > 0) {
+        console.log('Initial UI check found issues:', issues);
+      }
+    });
+
+
+
+    return () => {
+      clearInterval(checkInterval);
+
+    };
+  }, []);
+
+  // Backup app state for UI recovery
+  useEffect(() => {
+    const appState = {
+      selectedModel,
+      selectedDataset,
+      systemPrompt,
+      userPrompt,
+      determinismEnabled,
+      streamingEnabled,
+      activeTab,
+      testResults: testResults ? { id: testResults.id, timestamp: testResults.timestamp } : null
+    };
+
+    backupState(appState);
+  }, [selectedModel, selectedDataset, systemPrompt, userPrompt, determinismEnabled, streamingEnabled, activeTab, testResults, backupState]);
+
+  // Sync UI state with persistence system
+  useEffect(() => {
+    if (statePersistenceInitialized && uiStateRestored) {
+      updateUIState({
+        activeTab,
+        selectedForComparison,
+        validationErrors,
+        touchedFields
+      });
+    }
+  }, [activeTab, selectedForComparison, validationErrors, touchedFields, statePersistenceInitialized, uiStateRestored, updateUIState]);
+
+  // Restore navigation state when available
+  useEffect(() => {
+    if (navigationStateRestored && navigationState.activeTab && navigationState.activeTab !== activeTab) {
+      setActiveTab(navigationState.activeTab);
+      console.log('App: Restored active tab from navigation state:', navigationState.activeTab);
+    }
+  }, [navigationStateRestored, navigationState.activeTab, activeTab]);
+
+  // Restore test results state when available
+  useEffect(() => {
+    if (testResultsStateRestored && persistedTestResults && !testResults) {
+      setTestResults(persistedTestResults);
+      console.log('App: Restored test results from persistence:', persistedTestResults.id);
+    }
+  }, [testResultsStateRestored, persistedTestResults, testResults]);
+
+  // Save test results to persistence system when they change
+  useEffect(() => {
+    if (statePersistenceInitialized && testResults) {
+      savePersistentResults(testResults, testResults.id);
+
+      // Also save model output if available
+      if (testResults.response) {
+        saveModelOutputState({
+          output: testResults.response,
+          testId: testResults.id,
+          modelId: testResults.modelId,
+          usage: testResults.usage,
+          isStreamed: testResults.isStreamed,
+          streamingMetrics: testResults.streamingMetrics,
+          timestamp: testResults.timestamp
+        }, testResults.id);
+      }
+    }
+  }, [testResults, statePersistenceInitialized, savePersistentResults, saveModelOutputState]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -185,19 +377,19 @@ function App() {
       // Ctrl/Cmd + H: Switch to History tab
       if ((event.ctrlKey || event.metaKey) && event.key === 'h') {
         event.preventDefault();
-        setActiveTab('history');
+        handleTabSwitch('history');
       }
 
       // Ctrl/Cmd + T: Switch to Test tab
       if ((event.ctrlKey || event.metaKey) && event.key === 't') {
         event.preventDefault();
-        setActiveTab('test');
+        handleTabSwitch('test');
       }
 
       // Ctrl/Cmd + C: Switch to Comparison tab (when available)
       if ((event.ctrlKey || event.metaKey) && event.key === 'c' && selectedForComparison.length > 0) {
         event.preventDefault();
-        setActiveTab('comparison');
+        handleTabSwitch('comparison');
       }
 
       // Escape: Clear current selection or close modals
@@ -266,13 +458,14 @@ function App() {
         errorMessage += guidance.map(tip => `• ${tip}`).join('\n');
       }
 
-      const errorInfo = handleError(
+      const errorInfo = await handleUIError(
         new Error(errorMessage),
         {
           component: 'App',
           action: 'validateTestConfiguration',
           validationErrors: validationErrors,
-          fieldCount: Object.keys(validationErrors).length
+          fieldCount: Object.keys(validationErrors).length,
+          errorType: 'validation'
         }
       );
       setError(errorInfo.userMessage);
@@ -284,6 +477,21 @@ function App() {
     setRetryCount(0);
     setProgressStatus('Initializing...');
     setProgressValue(10);
+
+    // Initialize model output manager for this test
+    const testId = Date.now().toString();
+    const outputInitialized = initializeOutput(testId, {
+      streamingEnabled,
+      modelId: selectedModel,
+      systemPrompt,
+      userPrompt
+    });
+
+    if (!outputInitialized) {
+      setError('Failed to initialize output state management');
+      setIsLoading(false);
+      return;
+    }
 
     try {
       console.log("Running test with:", {
@@ -390,11 +598,26 @@ function App() {
                 }
                 tokensReceived++;
                 setStreamingContent(prev => prev + token);
-                setStreamingProgress({
+
+                const progressData = {
                   tokensReceived,
                   startTime,
                   firstTokenLatency: firstTokenTime - startTime,
                   duration: Date.now() - startTime
+                };
+                setStreamingProgress(progressData);
+
+                // Update output manager with streaming chunk
+                updateOutput(token, {
+                  isChunk: true,
+                  metadata: {
+                    streamingProgress: progressData,
+                    toolUsage: metadata.toolUsageDetected ? {
+                      detected: true,
+                      activeTools: metadata.toolUseStarted ? [metadata.toolUseStarted] : [],
+                      completedTools: metadata.toolUseCompleted ? [metadata.toolUseCompleted] : []
+                    } : undefined
+                  }
                 });
 
                 // Handle tool usage detection during streaming
@@ -442,11 +665,22 @@ function App() {
                   totalTokens: tokensReceived,
                   averageTokensPerSecond: tokensReceived / ((endTime - startTime) / 1000)
                 };
+
+                // Complete streaming in output manager
+                completeStreaming({
+                  usage: finalResponse.usage,
+                  streamingMetrics: streamingMetrics
+                });
+
                 setIsStreaming(false);
               },
               // onError callback
               (error) => {
                 setStreamingError(error.message);
+
+                // Handle streaming error in output manager
+                handleStreamingError(error);
+
                 setIsStreaming(false);
               },
               toolConfig // Pass tool configuration to streaming method
@@ -460,13 +694,34 @@ function App() {
               selectedDataset.content,
               toolConfig // Pass tool configuration to standard method
             );
+
+            // Update output manager with complete response
+            updateOutput(response.text, {
+              isComplete: true,
+              metadata: {
+                usage: response.usage
+              }
+            });
           }
 
           setProgressStatus('Processing response...');
           setProgressValue(75);
 
+          // Update output manager with final response
+          const finalUpdateSuccess = updateOutput(response.text, {
+            isComplete: true,
+            metadata: {
+              usage: response.usage,
+              streamingMetrics: streamingMetrics
+            }
+          });
+
+          if (!finalUpdateSuccess) {
+            console.warn('Failed to update output manager with final response');
+          }
+
           return {
-            id: Date.now().toString(),
+            id: testId,
             modelId: selectedModel,
             systemPrompt: systemPrompt,
             userPrompt: userPrompt,
@@ -518,14 +773,26 @@ function App() {
     } catch (err) {
       console.error('Test execution failed:', err);
 
-      // Use enhanced error handling with streaming context
-      const errorInfo = handleError(err, {
+      // Handle display error in output manager
+      const recovered = handleDisplayError(err, {
         component: "App",
         action: "runTest",
         model: selectedModel,
         datasetType: selectedDataset.type,
         systemPromptLength: systemPrompt.length,
         userPromptLength: userPrompt.length
+      });
+
+      // Use enhanced error handling with UI recovery
+      const errorInfo = await handleUIError(err, {
+        component: "App",
+        action: "runTest",
+        model: selectedModel,
+        datasetType: selectedDataset.type,
+        systemPromptLength: systemPrompt.length,
+        userPromptLength: userPrompt.length,
+        recovered,
+        errorType: 'component'
       });
 
       setError(errorInfo.userMessage);
@@ -582,30 +849,54 @@ function App() {
       userPrompt: true
     });
 
-    setActiveTab('test');
+    handleTabSwitch('test');
   };
 
   const handleCompareTests = (tests) => {
     setSelectedForComparison(tests);
+    if (statePersistenceInitialized) {
+      updateUIState({ selectedForComparison: tests });
+    }
     if (tests.length > 0) {
-      setActiveTab('comparison');
+      handleTabSwitch('comparison');
     }
   };
 
   const handleRemoveFromComparison = (testId) => {
-    setSelectedForComparison(prev => prev.filter(test => test.id !== testId));
+    const newSelection = selectedForComparison.filter(test => test.id !== testId);
+    setSelectedForComparison(newSelection);
+    if (statePersistenceInitialized) {
+      updateUIState({ selectedForComparison: newSelection });
+    }
   };
 
   const handleClearComparison = () => {
     setSelectedForComparison([]);
+    if (statePersistenceInitialized) {
+      updateUIState({ selectedForComparison: [] });
+    }
   };
+
+  // Handle tab switching with persistence
+  const handleTabSwitch = useCallback(async (newTab) => {
+    setActiveTab(newTab);
+    if (statePersistenceInitialized) {
+      await persistentSwitchTab(newTab);
+    }
+  }, [statePersistenceInitialized, persistentSwitchTab]);
 
   // Mark fields as touched when user interacts with them
   const markFieldAsTouched = (fieldName) => {
-    setTouchedFields(prev => ({
-      ...prev,
+    const newTouchedFields = {
+      ...touchedFields,
       [fieldName]: true
-    }));
+    };
+    setTouchedFields(newTouchedFields);
+
+    // Update persisted UI state
+    if (statePersistenceInitialized) {
+      updateUIState({ touchedFields: newTouchedFields });
+    }
   };
 
   // Enhanced handlers that mark fields as touched
@@ -629,9 +920,15 @@ function App() {
     markFieldAsTouched('userPrompt');
   };
 
-  const handleClearSavedSettings = () => {
-    if (confirm('Are you sure you want to clear all saved settings? This will reset the form to default values.')) {
+  const handleClearSavedSettings = async () => {
+    if (confirm('Are you sure you want to clear all saved settings? This will reset the form to default values and clear all persisted state.')) {
       clearFormState();
+
+      // Clear comprehensive state persistence
+      if (statePersistenceInitialized) {
+        await statePersistenceService.clearAllState();
+      }
+
       // Reset form to default values
       setSelectedModel('');
       setSelectedDataset({ type: '', option: '', content: null });
@@ -639,9 +936,17 @@ function App() {
       setUserPrompt('');
       setDeterminismEnabled(true);
       setStreamingEnabled(true);
-      // Clear touched fields
+
+      // Clear UI state
       setTouchedFields({});
       setValidationErrors({});
+      setSelectedForComparison([]);
+      setActiveTab('test');
+
+      // Clear test results
+      setTestResults(null);
+
+      console.log('All saved settings and state cleared');
     }
   };
 
@@ -675,9 +980,9 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider theme={themeConfig}>
         <BrowserCompatibility>
-          <div className="min-h-screen bg-gradient-to-br from-tertiary-50 to-secondary-100">
+          <div ref={appRef} className="min-h-screen bg-gradient-to-br from-tertiary-50 to-secondary-100 bg-gradient-container">
             {/* Sticky Header */}
-            <div className="sticky top-0 z-50 bg-gradient-to-br from-tertiary-50 to-secondary-100 border-b border-secondary-200 shadow-sm">
+            <div className="sticky top-0 z-50 bg-gradient-to-br from-tertiary-50 to-secondary-100 border-b border-secondary-200 shadow-sm sticky-header-gradient">
               <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
                 {/* Header with Robot */}
                 <div className="text-center mb-3 relative">
@@ -713,6 +1018,23 @@ function App() {
                       <p className="text-sm md:text-base text-secondary-700 px-2">
                         Building enterprise-grade AI agents before it was cool
                       </p>
+
+                      {/* State Persistence Status */}
+                      {statePersistenceInitialized && (uiStateRestored || navigationStateRestored || testResultsStateRestored) && (
+                        <div className="flex items-center justify-center space-x-2 text-xs mt-2">
+                          <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full flex items-center space-x-1">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>Session Restored</span>
+                          </span>
+                          {stateInfo && stateInfo.session && (
+                            <span className="text-gray-500">
+                              {stateInfo.session.testCount} tests this session
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -721,7 +1043,7 @@ function App() {
                 <div className="flex justify-center px-4">
                   <div className="bg-white rounded-lg p-1 shadow-sm border border-gray-200 flex flex-wrap sm:flex-nowrap">
                     <button
-                      onClick={() => setActiveTab('test')}
+                      onClick={() => handleTabSwitch('test')}
                       className={`px-3 sm:px-4 py-1.5 rounded-md font-medium transition-colors duration-200 text-sm ${activeTab === 'test'
                         ? 'bg-primary-600 text-white'
                         : 'text-gray-600 hover:text-gray-900'
@@ -730,7 +1052,7 @@ function App() {
                       Test
                     </button>
                     <button
-                      onClick={() => setActiveTab('history')}
+                      onClick={() => handleTabSwitch('history')}
                       className={`px-3 sm:px-4 py-1.5 rounded-md font-medium transition-colors duration-200 text-sm ${activeTab === 'history'
                         ? 'bg-primary-600 text-white'
                         : 'text-gray-600 hover:text-gray-900'
@@ -739,7 +1061,7 @@ function App() {
                       History
                     </button>
                     <button
-                      onClick={() => setActiveTab('comparison')}
+                      onClick={() => handleTabSwitch('comparison')}
                       className={`px-3 sm:px-4 py-1.5 rounded-md font-medium transition-colors duration-200 relative text-sm ${activeTab === 'comparison'
                         ? 'bg-primary-600 text-white'
                         : 'text-gray-600 hover:text-gray-900'
@@ -990,7 +1312,7 @@ function App() {
                           // Save the evaluation result to storage
                           if (testResults && grade) {
                             try {
-                              const { fileService } = await import('./services/fileService.js');
+                              // fileService is now statically imported
                               console.log('Saving determinism evaluation for test ID:', testResults.id);
                               const saved = await fileService.saveDeterminismEvaluation(testResults.id, grade);
                               console.log('Determinism evaluation save result:', saved);
@@ -1055,6 +1377,9 @@ function App() {
               )}
             </div>
           </div>
+
+          {/* UI Error Notification System */}
+          <UIErrorNotification />
         </BrowserCompatibility>
       </ThemeProvider>
     </ErrorBoundary>
