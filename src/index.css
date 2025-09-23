@@ -106,6 +106,72 @@
   .copy-button-default {
     @apply bg-gray-100 text-gray-700 hover:bg-gray-200;
   }
+
+  /* Essential gradient fixes */
+  .bg-gradient-container {
+    @apply relative overflow-hidden;
+    background-attachment: local;
+    z-index: 1;
+  }
+
+  .sticky-header-gradient {
+    background-attachment: local !important;
+  }
+
+  /* Essential text wrapping fixes */
+  .system-prompt-display {
+    @apply block w-full;
+    word-wrap: break-word;
+    word-break: break-word;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-width: 100%;
+    hyphens: auto;
+    line-height: 1.5;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .test-results-prompt {
+    @apply block w-full max-w-full;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+    line-height: 1.5;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .prompt-editor-textarea {
+    word-wrap: break-word;
+    word-break: break-word;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+    line-height: 1.5;
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Error notification animations */
+  .animate-slide-in {
+    animation: slideIn 0.3s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
 }
 
 @layer utilities {
@@ -144,7 +210,6 @@
       @apply mb-4;
     }
 
-    /* Smaller robot on mobile */
     .robot-size-lg {
       width: 80px !important;
       height: 80px !important;
@@ -168,6 +233,44 @@
 
   .robot-container-error {
     @apply animate-pulse;
+  }
+
+  /* Essential responsive fixes */
+  @media (max-width: 640px) {
+    .bg-gradient-container {
+      background-attachment: local;
+    }
+  }
+
+  /* Reduced motion fallbacks */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-in,
+    .animate-slide-up,
+    .animate-slide-down,
+    .animate-scale-in,
+    .animate-bounce-in {
+      animation: none !important;
+    }
+
+    .streaming-cursor {
+      animation: none !important;
+      opacity: 1 !important;
+    }
+  }
+
+  /* High contrast mode support */
+  @media (prefers-contrast: high) {
+    .btn-primary {
+      background: #000000 !important;
+      color: #ffffff !important;
+      border: 2px solid #000000 !important;
+    }
+
+    .btn-secondary {
+      background: #ffffff !important;
+      color: #000000 !important;
+      border: 2px solid #000000 !important;
+    }
   }
 }
 

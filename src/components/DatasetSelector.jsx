@@ -47,12 +47,8 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
   useEffect(() => {
     const forceReloadOnMount = async () => {
       if (selectedDataset.type) {
-        console.log(`DatasetSelector mounted with existing dataset: ${selectedDataset.type}`)
-
-        // Force reload the tool configuration to ensure it's available after page refresh
         try {
-          const reloadResult = await datasetToolIntegrationService.reloadToolConfigurationForDataset(selectedDataset.type)
-          console.log(`Tool configuration reload result for ${selectedDataset.type}:`, reloadResult)
+          await datasetToolIntegrationService.reloadToolConfigurationForDataset(selectedDataset.type)
 
           // Load the tool configuration summary after reload
           loadToolConfigurationSummary(selectedDataset)

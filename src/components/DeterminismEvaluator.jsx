@@ -279,7 +279,7 @@ function DeterminismEvaluator({
   }
 
   return (
-    <div className="mt-4 p-4 bg-gradient-to-r from-primary-50 to-secondary-100 border border-primary-200 rounded-lg">
+    <div className="mt-4 p-4 bg-gradient-to-r from-primary-50 to-secondary-100 border border-primary-200 rounded-lg determinism-gradient-container">
       <div className="flex items-center justify-between mb-3">
         <h4 className="text-sm font-medium text-gray-700 flex items-center space-x-2">
           <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -571,7 +571,7 @@ function DeterminismModal({ grade, onClose }) {
               </h4>
 
               {/* Tool Usage Score from Grader */}
-              <div className="bg-gradient-to-r from-primary-50 to-secondary-50 border border-primary-200 p-4 rounded-lg mb-4">
+              <div className="bg-gradient-to-r from-primary-50 to-secondary-50 border border-primary-200 p-4 rounded-lg mb-4 card-with-gradient">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm font-medium text-primary-800">Tool Usage Consistency</div>
                   <div className="text-2xl font-bold text-primary-900">

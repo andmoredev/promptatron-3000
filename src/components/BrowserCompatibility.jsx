@@ -12,9 +12,20 @@ const BrowserCompatibility = ({ children }) => {
   const checkBrowserCompatibility = () => {
     const issues = []
 
-    // Check for ES6+ support
+    // Check for ES6+ support using safer feature detection
     try {
-      eval('const test = () => {}; const [a] = [1];')
+      // Test arrow functions
+      const testArrow = () => true;
+      // Test destructuring
+      const [testDestructure] = [1];
+      // Test const/let
+      const testConst = 'test';
+      let testLet = 'test';
+
+      // If we get here, basic ES6 features are supported
+      if (!testArrow() || testDestructure !== 1 || !testConst || !testLet) {
+        throw new Error('ES6 features not working properly');
+      }
     } catch (e) {
       issues.push({
         type: 'critical',

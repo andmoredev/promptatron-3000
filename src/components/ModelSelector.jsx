@@ -30,22 +30,15 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError, external
     setCredentialStatus('checking')
 
     try {
-      console.log('Attempting to initialize Bedrock service...')
-
-      // Initialize the Bedrock service if not already done
       if (!bedrockService.isReady()) {
         const initResult = await bedrockService.initialize()
-        console.log('Bedrock service initialization result:', initResult)
 
         if (!initResult.success) {
           throw new Error(initResult.message)
         }
       }
 
-      console.log('Loading models from AWS Bedrock...')
-      // Load models from AWS Bedrock
       const bedrockModels = await bedrockService.listFoundationModels()
-      console.log('Loaded models:', bedrockModels)
 
       setModels(bedrockModels)
       setCredentialStatus('valid')

@@ -162,6 +162,8 @@ The application supports AI models using tools during analysis. For example, in 
   }
 }
 
+```
+
 ### Adding Your Own Datasets
 
 1. **Create a use case folder** in `public/datasets/`:

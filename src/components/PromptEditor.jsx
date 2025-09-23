@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import HelpTooltip from './HelpTooltip'
+import { uiErrorRecovery } from '../utils/uiErrorRecovery'
 
 const PromptEditor = ({
   systemPrompt = '',
@@ -39,6 +40,16 @@ const PromptEditor = ({
   useEffect(() => {
     autoResize(userPromptRef.current)
   }, [userPrompt])
+
+  // Monitor for text wrapping issues in textareas
+  useEffect(() => {
+    // Small delay to ensure DOM is updated
+    setTimeout(() => {
+      uiErrorRecovery.monitorTextOverflow('.prompt-editor-textarea', 'general')
+      uiErrorRecovery.monitorTextOverflow('.system-prompt-display', 'system-prompt')
+      uiErrorRecovery.monitorTextOverflow('.test-results-prompt', 'user-prompt')
+    }, 100)
+  }, [systemPrompt, userPrompt, prompt])
 
   // Handle system prompt change with auto-resize
   const handleSystemPromptChange = (e) => {
@@ -218,7 +229,7 @@ const PromptEditor = ({
             value={prompt || ''}
             onChange={(e) => onPromptChange && typeof onPromptChange === 'function' && onPromptChange(e.target.value)}
             placeholder="Enter your prompt here. The selected dataset will be automatically appended to your prompt when the test runs."
-            className={`input-field resize-none ${
+            className={`input-field resize-none prompt-editor-textarea ${
               isExpanded ? 'h-64' : 'h-32'
             } transition-all duration-200 ${
               validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
@@ -238,7 +249,7 @@ const PromptEditor = ({
           <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
             <p className="text-sm font-medium text-gray-700 mb-2">Preview:</p>
             <div className="text-sm text-gray-600 max-h-32 overflow-y-auto">
-              <div className="whitespace-pre-wrap font-mono bg-white p-2 rounded border">
+              <div className="font-mono bg-white p-2 rounded border test-results-prompt text-safe">
                 {prompt}
                 {prompt && !prompt.endsWith('\n') && '\n'}
                 <span className="text-gray-400 italic">[Dataset content will be inserted here]</span>
@@ -358,7 +369,7 @@ const PromptEditor = ({
               value={systemPrompt}
               onChange={handleSystemPromptChange}
               placeholder="Optional: Define the AI's role and expertise. Leave empty for natural responses, or specify like: 'You are an expert data analyst specializing in fraud detection...'"
-              className={`input-field resize-none transition-all duration-200 ${
+              className={`input-field resize-none transition-all duration-200 prompt-editor-textarea ${
                 systemPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-blue-200 focus:border-blue-500 focus:ring-blue-500'
               }`}
               style={{ overflow: 'hidden', minHeight: '128px' }}
@@ -428,7 +439,7 @@ const PromptEditor = ({
               value={userPrompt}
               onChange={handleUserPromptChange}
               placeholder="Enter your specific request or question. For example: 'Please analyze the following data for fraud patterns...'"
-              className={`input-field resize-none transition-all duration-200 ${
+              className={`input-field resize-none transition-all duration-200 prompt-editor-textarea ${
                 userPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-green-200 focus:border-green-500 focus:ring-green-500'
               }`}
               style={{ overflow: 'hidden', minHeight: '128px' }}
@@ -467,7 +478,7 @@ const PromptEditor = ({
                     <span className="text-sm text-blue-600">Role & Behavior Definition</span>
                   </div>
                   <div className="text-sm text-blue-800 max-h-32 overflow-y-auto">
-                    <div className="whitespace-pre-wrap font-mono bg-white p-2 rounded border border-blue-200">
+                    <div className="font-mono bg-white p-2 rounded border border-blue-200 system-prompt-display text-safe">
                       {systemPrompt}
                     </div>
                   </div>
@@ -484,7 +495,7 @@ const PromptEditor = ({
                     <span className="text-sm text-green-600">Request & Dataset</span>
                   </div>
                   <div className="text-sm text-green-800 max-h-32 overflow-y-auto">
-                    <div className="whitespace-pre-wrap font-mono bg-white p-2 rounded border border-green-200">
+                    <div className="font-mono bg-white p-2 rounded border border-green-200 test-results-prompt text-safe">
                       {userPrompt}
                       {userPrompt && !userPrompt.endsWith('\n') && '\n'}
                       <span className="text-gray-400 italic">[Dataset content will be inserted here]</span>

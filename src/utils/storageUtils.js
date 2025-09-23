@@ -73,7 +73,7 @@ export class UnifiedStorage {
       }
 
       this.initialized = true
-      console.log(`Storage initialized: ${this.storageType}`)
+      // Storage initialized successfully
 
       return this.storageType
     } catch (error) {
@@ -173,7 +173,6 @@ export class UnifiedStorage {
 
       // Try fallback storage
       if (this.fallbackStorage) {
-        console.log(`Attempting fallback to ${this.fallbackStorage}`)
         return await this.setItemFallback(store, key, item)
       }
 
@@ -208,7 +207,6 @@ export class UnifiedStorage {
 
       // Try fallback storage
       if (this.fallbackStorage) {
-        console.log(`Attempting fallback to ${this.fallbackStorage}`)
         return await this.getItemFallback(store, key)
       }
 
@@ -243,7 +241,6 @@ export class UnifiedStorage {
 
       // Try fallback storage
       if (this.fallbackStorage) {
-        console.log(`Attempting fallback to ${this.fallbackStorage}`)
         return await this.removeItemFallback(store, key)
       }
 

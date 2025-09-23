@@ -43,7 +43,7 @@ export const saveFormState = (formState) => {
     };
 
     localStorage.setItem(FORM_STATE_KEY, JSON.stringify(stateToSave));
-    console.log('Form state saved successfully');
+    // Form state saved successfully
   } catch (error) {
     console.warn('Failed to save form state:', error);
   }
@@ -86,7 +86,7 @@ export const loadFormState = () => {
 export const clearFormState = () => {
   try {
     localStorage.removeItem(FORM_STATE_KEY);
-    console.log('Form state cleared');
+    // Form state cleared
   } catch (error) {
     console.warn('Failed to clear form state:', error);
   }

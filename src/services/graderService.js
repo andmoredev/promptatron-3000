@@ -247,7 +247,7 @@ export class GraderService {
 
     try {
       // Try to extract JSON from the response
-      console.log('Raw grader response:', graderResponse);
+      // Processing grader response
       const jsonMatch = this.extractJsonFromResponse(graderResponse);
       console.log('Extracted JSON:', jsonMatch);
 

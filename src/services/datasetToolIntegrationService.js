@@ -410,16 +410,9 @@ export class DatasetToolIntegrationService {
       if (!datasetType) {
         throw new Error('Dataset type is required for reload')
       }
-
-      console.log(`[DatasetToolIntegrationService] Reloading tool configuration for dataset type: ${datasetType}`)
-
-      // Force reload the tool configuration from the toolConfigService
       const reloadResult = await toolConfigService.reloadConfigurationForDatasetType(datasetType)
 
-      console.log(`[DatasetToolIntegrationService] Reload result for ${datasetType}:`, reloadResult)
-
       if (reloadResult.success) {
-        console.log(`[DatasetToolIntegrationService] ✅ Successfully reloaded tool configuration for ${datasetType}`)
         return {
           success: true,
           message: `Tool configuration reloaded for ${datasetType}`,
