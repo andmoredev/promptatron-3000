@@ -39,7 +39,7 @@ export class ThroughputManager {
       this.serviceQuotasClient = new ServiceQuotasClient(awsConfig);
       this.isInitialized = true;
 
-      console.log('ThroughputManager initialized successfully');
+      // ThroughputManager initialized successfully
       return { success: true };
     } catch (error) {
       const errorInfo = handleError(error, {
@@ -206,8 +206,7 @@ export class ThroughputManager {
     // Calculate safe concurrency level
     const concurrency = maxConcurrency || this.calculateSafeConcurrency(limits);
 
-    console.log(`Executing ${requests.length} requests for ${modelId} with concurrency ${concurrency}`);
-    console.log(`Model limits:`, limits);
+    // Executing requests with calculated concurrency limits
 
     const results = [];
     const errors = [];
@@ -243,7 +242,7 @@ export class ThroughputManager {
                 maxDelay: 16000,
                 backoffFactor: 2,
                 onRetry: (error, attempt, delay) => {
-                  console.log(`Retrying request ${globalIndex + 1} (attempt ${attempt}) after ${delay}ms:`, error.message);
+                  // Retrying request with backoff
 
                   if (onThrottle && this.isThrottlingError(error)) {
                     onThrottle(error, attempt, delay);
@@ -293,13 +292,10 @@ export class ThroughputManager {
       if (i + concurrency < requests.length) {
         const batchDelay = this.calculateBatchDelay(limits, concurrency);
         if (batchDelay > 0) {
-          console.log(`Waiting ${batchDelay}ms between batches for rate limiting`);
           await new Promise(resolve => setTimeout(resolve, batchDelay));
         }
       }
     }
-
-    console.log(`Completed ${completed} requests with ${errors.length} errors`);
 
     return {
       results,
@@ -353,7 +349,6 @@ export class ThroughputManager {
       const waitTime = oldestTimestamp + 60000 - now;
 
       if (waitTime > 0) {
-        console.log(`Rate limit approached for ${modelId}, waiting ${waitTime}ms`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
     }
@@ -445,7 +440,6 @@ export class ThroughputManager {
     this.modelLimits.clear();
     this.activeRequests.clear();
     this.requestQueue.clear();
-    console.log('ThroughputManager reset completed');
   }
 }
 

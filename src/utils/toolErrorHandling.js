@@ -217,14 +217,8 @@ export function handleToolError(error, context = {}, onError = null) {
   console.error('Context:', context)
 
   if (toolErrorInfo.gracefulDegradation) {
-    console.info('Using graceful degradation - analysis will continue')
+    // Using graceful degradation - analysis will continue
   }
-
-  console.groupCollapsed('Suggested Actions:')
-  toolErrorInfo.suggestedActions.forEach((action, index) => {
-    console.log(`${index + 1}. ${action}`)
-  })
-  console.groupEnd()
   console.groupEnd()
 
   // Store error report for debugging

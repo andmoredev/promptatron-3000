@@ -157,7 +157,7 @@ export class ToolConfigService {
         console.warn(`Failed to initialize fraud-detection fallback tools: ${validation.error}`)
       }
 
-      console.log('Tool configuration service initialized with fallback configurations')
+      // Tool configuration service initialized with fallback configurations
 
     } catch (error) {
       this.initializationErrors.push({
@@ -190,7 +190,7 @@ export class ToolConfigService {
       if (this.initializationErrors.length > 0) {
         console.warn(`Tool configuration service initialized from manifests with ${this.initializationErrors.length} error(s)`)
       } else {
-        console.log('Tool configuration service successfully initialized from manifests')
+        // Tool configuration service successfully initialized from manifests
       }
 
       // Set up hot reloading in development
@@ -430,13 +430,7 @@ export class ToolConfigService {
     // If so, we keep them; if not, we keep the fallback configurations
 
     const loadedTypes = Array.from(this.toolConfigurations.keys())
-    console.log(`Loaded tool configurations for dataset types: ${loadedTypes.join(', ')}`)
-
-    // Log configuration sources
-    for (const [datasetType, config] of this.toolConfigurations.entries()) {
-      const source = config.metadata?.source || 'unknown'
-      console.log(`  ${datasetType}: ${source} (${config.tools?.length || 0} tools)`)
-    }
+    // Tool configurations loaded successfully
   }
 
   /**
@@ -454,7 +448,7 @@ export class ToolConfigService {
       }
     }, 2000) // Check every 2 seconds in development
 
-    console.log('Tool configuration hot reloading enabled')
+    // Tool configuration hot reloading enabled
   }
 
   /**
@@ -471,7 +465,6 @@ export class ToolConfigService {
           for (const datasetType of mainManifest.types) {
             // Check if this is a new dataset type
             if (!this.manifestCache.has(datasetType)) {
-              console.log(`Hot reload: New dataset type detected: ${datasetType}`)
               await this.loadToolConfigurationFromManifest(datasetType)
             }
           }
@@ -479,7 +472,6 @@ export class ToolConfigService {
       }
     } catch (error) {
       // Silently fail hot reload checks to avoid spamming console
-      console.debug('Hot reload check error:', error.message)
     }
   }
 
@@ -495,7 +487,6 @@ export class ToolConfigService {
       }
 
       const normalizedType = datasetType.toLowerCase().trim()
-      console.log(`Reloading tool configuration for dataset type: ${normalizedType}`)
 
       // Clear existing configuration for this dataset type
       const hadPreviousConfig = this.toolConfigurations.has(normalizedType)
@@ -536,10 +527,7 @@ export class ToolConfigService {
       }
 
       if (reloadedConfig) {
-        console.log(`Successfully reloaded configuration for ${normalizedType}:`, {
-          toolCount: result.toolCount,
-          source: result.source
-        })
+        // Successfully reloaded configuration
       } else {
         result.error = `No configuration available for dataset type: ${normalizedType}`
         console.warn(`No configuration found for ${normalizedType} after reload attempt`)
@@ -572,22 +560,18 @@ export class ToolConfigService {
       }
 
       const normalizedType = datasetType.toLowerCase().trim()
-      console.log(`[ToolConfigService] Reloading tool configuration for dataset type: ${normalizedType}`)
+      // Reloading tool configuration
 
       // Check current state before reload
       const hadPreviousConfig = this.toolConfigurations.has(normalizedType)
       const previousConfig = hadPreviousConfig ? this.toolConfigurations.get(normalizedType) : null
 
-      console.log(`[ToolConfigService] Previous config state for ${normalizedType}:`, {
-        hadConfig: hadPreviousConfig,
-        toolCount: previousConfig?.tools?.length || 0,
-        source: previousConfig?.metadata?.source || 'none'
-      })
+      // Checking previous config state
 
       // Clear existing configuration for this dataset type
       if (hadPreviousConfig) {
         this.toolConfigurations.delete(normalizedType)
-        console.log(`[ToolConfigService] Cleared existing configuration for ${normalizedType}`)
+        // Cleared existing configuration
       }
 
       // Clear cache entry
@@ -600,33 +584,30 @@ export class ToolConfigService {
       )
       const errorsAfter = this.initializationErrors.length
       if (errorsBefore !== errorsAfter) {
-        console.log(`[ToolConfigService] Cleared ${errorsBefore - errorsAfter} previous errors for ${normalizedType}`)
+        // Cleared previous errors
       }
 
       // Reload configuration from manifest
       let reloadedConfig = null
       try {
-        console.log(`[ToolConfigService] Attempting to load configuration from manifest for ${normalizedType}`)
+        // Attempting to load configuration from manifest
         reloadedConfig = await this.loadToolConfigurationFromManifest(normalizedType)
 
         if (reloadedConfig) {
-          console.log(`[ToolConfigService] Successfully loaded from manifest for ${normalizedType}:`, {
-            toolCount: reloadedConfig.tools?.length || 0,
-            source: reloadedConfig.metadata?.source || 'manifest'
-          })
+          // Successfully loaded from manifest
         }
       } catch (manifestError) {
         console.warn(`[ToolConfigService] Failed to reload from manifest for ${normalizedType}:`, manifestError.message)
 
         // If manifest loading fails, check if we have a fallback configuration
         if (normalizedType === 'fraud-detection') {
-          console.log(`[ToolConfigService] Attempting to reinitialize fallback configuration for ${normalizedType}`)
+          // Attempting to reinitialize fallback configuration
           // Reinitialize fallback for fraud-detection
           this.initializeFallbackConfigurations()
           reloadedConfig = this.toolConfigurations.get(normalizedType)
 
           if (reloadedConfig) {
-            console.log(`[ToolConfigService] Successfully loaded fallback configuration for ${normalizedType}`)
+            // Successfully loaded fallback configuration
           }
         }
       }
@@ -641,11 +622,7 @@ export class ToolConfigService {
       }
 
       if (reloadedConfig) {
-        console.log(`[ToolConfigService] ✅ Successfully reloaded configuration for ${normalizedType}:`, {
-          toolCount: result.toolCount,
-          source: result.source,
-          hadPrevious: result.hadPreviousConfig
-        })
+        // Successfully reloaded configuration
       } else {
         result.error = `No configuration available for dataset type: ${normalizedType}`
         console.warn(`[ToolConfigService] ❌ No configuration found for ${normalizedType} after reload attempt`)
@@ -708,7 +685,7 @@ export class ToolConfigService {
         timestamp: new Date().toISOString()
       }
 
-      console.log('Tool configurations reloaded:', result)
+      // Tool configurations reloaded
       this.lastReloadTime = Date.now()
 
       return result
@@ -851,7 +828,7 @@ export class ToolConfigService {
     }
 
     try {
-      console.log('Tool configuration service not initialized, attempting initialization...')
+      // Tool configuration service not initialized, attempting initialization
       await this.initializeFromManifests()
       return this.isInitialized
     } catch (error) {
@@ -1136,7 +1113,7 @@ export class ToolConfigService {
     this.watchedManifests.clear()
     this.isInitialized = false
 
-    console.log('Tool configuration service cleaned up')
+    // Tool configuration service cleaned up
   }
 }
 

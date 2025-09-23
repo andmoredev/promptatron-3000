@@ -45,7 +45,7 @@ export class DeterminismCompatibilityManager {
     }
 
     try {
-      console.log('🔍 Checking determinism evaluator compatibility...')
+      // Checking determinism evaluator compatibility
 
       // Run comprehensive compatibility check
       const browserCompat = getBrowserCompatibility()
@@ -70,7 +70,7 @@ export class DeterminismCompatibilityManager {
 
       this.initialized = true
 
-      console.log(`✅ Determinism evaluator compatibility: ${this.compatibilityLevel}`)
+      // Determinism evaluator compatibility checked
 
       if (this.warnings.length > 0) {
         console.warn('⚠️ Compatibility warnings:', this.warnings)
@@ -300,12 +300,12 @@ export class DeterminismCompatibilityManager {
    * Run compatibility tests
    */
   async runCompatibilityTests() {
-    console.log('🧪 Running determinism evaluator compatibility tests...')
+    // Running determinism evaluator compatibility tests
 
     try {
       const testResults = await runQuickCompatibilityCheck()
 
-      console.log('✅ Compatibility tests completed:', testResults)
+      // Compatibility tests completed
 
       return {
         success: true,

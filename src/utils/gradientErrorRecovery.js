@@ -197,7 +197,7 @@ export class GradientErrorRecovery {
       this.errorLog = this.errorLog.slice(-50);
     }
 
-    console.log('Gradient recovery:', logEntry);
+    // Gradient recovery applied
   }
 
   /**

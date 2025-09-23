@@ -139,10 +139,10 @@ function App() {
     enableAutoRecovery: true,
     enableStateBackup: true,
     onRecoveryAttempt: (errorInfo) => {
-      console.log('UI recovery attempt for App:', errorInfo);
+      // Recovery attempt logged at warning level in recovery system
     },
     onRecoverySuccess: (result) => {
-      console.log('UI recovery successful for App:', result);
+      // Recovery success logged at info level in recovery system
     },
     onRecoveryFailure: (result) => {
       console.error('UI recovery failed for App:', result);
@@ -253,7 +253,6 @@ function App() {
 
       // The DatasetSelector component will handle reloading the content
       // We just need to ensure the selection is properly set
-      console.log('Dataset selection restored from localStorage, content will be reloaded by DatasetSelector');
     }
   }, []); // Only run on mount
 
@@ -271,7 +270,6 @@ function App() {
     const checkInterval = setInterval(() => {
       const issues = gradientErrorRecovery.detectGradientIssues();
       if (issues.length > 0) {
-        console.log('Detected gradient issues:', issues);
         issues.forEach(issue => {
           gradientErrorRecovery.handleUIError({
             errorType: 'gradient',
@@ -286,9 +284,7 @@ function App() {
 
     // Perform initial proactive UI check
     proactiveUICheck('App').then(issues => {
-      if (issues.length > 0) {
-        console.log('Initial UI check found issues:', issues);
-      }
+      // Issues are logged at appropriate levels in the UI check system
     });
 
 
@@ -331,7 +327,6 @@ function App() {
   useEffect(() => {
     if (navigationStateRestored && navigationState.activeTab && navigationState.activeTab !== activeTab) {
       setActiveTab(navigationState.activeTab);
-      console.log('App: Restored active tab from navigation state:', navigationState.activeTab);
     }
   }, [navigationStateRestored, navigationState.activeTab, activeTab]);
 
@@ -339,7 +334,6 @@ function App() {
   useEffect(() => {
     if (testResultsStateRestored && persistedTestResults && !testResults) {
       setTestResults(persistedTestResults);
-      console.log('App: Restored test results from persistence:', persistedTestResults.id);
     }
   }, [testResultsStateRestored, persistedTestResults, testResults]);
 
@@ -494,12 +488,6 @@ function App() {
     }
 
     try {
-      console.log("Running test with:", {
-        model: selectedModel,
-        dataset: selectedDataset,
-        systemPrompt: systemPrompt,
-        userPrompt: userPrompt
-      });
 
       // Use retry with backoff for the test execution
       const testResult = await retryWithBackoff(
@@ -528,19 +516,12 @@ function App() {
 
             if (toolConfigResult.hasToolConfig) {
               toolConfig = toolConfigResult.toolConfig;
-              console.log(`Tool configuration loaded for ${selectedDataset.type}:`, {
-                toolCount: toolConfig.tools?.length || 0,
-                toolNames: toolConfig.tools?.map(t => t.toolSpec.name) || [],
-                hasWarnings: toolConfigResult.warnings?.length > 0,
-                gracefulDegradation: toolConfigResult.gracefulDegradation
-              });
 
               // Show warnings if any
               if (toolConfigResult.warnings?.length > 0) {
                 console.warn('Tool configuration warnings:', toolConfigResult.warnings);
               }
             } else {
-              console.log(`No tool configuration for ${selectedDataset.type}: ${toolConfigResult.message}`);
 
               // Check if this is an error condition or expected behavior
               if (toolConfigResult.errors?.length > 0) {
@@ -548,7 +529,7 @@ function App() {
               }
 
               if (toolConfigResult.gracefulDegradation) {
-                console.info('Using graceful degradation - analysis will proceed without tools');
+                // Using graceful degradation - analysis will proceed without tools
               }
             }
           } catch (toolError) {
@@ -741,7 +722,6 @@ function App() {
           maxRetries: 2,
           baseDelay: 1000,
           onRetry: (error, attempt, delay) => {
-            console.log(`Retrying test execution (attempt ${attempt}) after ${delay}ms:`, error.message);
             setRetryCount(attempt);
           }
         }
@@ -945,8 +925,6 @@ function App() {
 
       // Clear test results
       setTestResults(null);
-
-      console.log('All saved settings and state cleared');
     }
   };
 
@@ -1306,16 +1284,10 @@ function App() {
                         determinismEnabled={determinismEnabled}
                         onEvaluationComplete={async (grade) => {
                           // Handle determinism evaluation completion
-                          console.log('Determinism evaluation completed:', grade);
-                          console.log('Current testResults:', testResults);
-
-                          // Save the evaluation result to storage
                           if (testResults && grade) {
                             try {
                               // fileService is now statically imported
-                              console.log('Saving determinism evaluation for test ID:', testResults.id);
                               const saved = await fileService.saveDeterminismEvaluation(testResults.id, grade);
-                              console.log('Determinism evaluation save result:', saved);
 
                               if (saved) {
                                 // Update the current test results to include the grade
@@ -1323,7 +1295,6 @@ function App() {
                                   ...prev,
                                   determinismGrade: grade
                                 }));
-                                console.log('Updated test results with determinism grade');
                               }
                             } catch (error) {
                               console.error('Failed to save determinism evaluation:', error);

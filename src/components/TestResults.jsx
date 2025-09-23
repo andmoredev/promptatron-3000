@@ -158,7 +158,7 @@ const TestResults = ({
       // Try to restore the last displayed output
       const restored = restoreState();
       if (restored && restored.output) {
-        console.log('TestResults: Restored previous output state');
+        // State restored successfully
       }
     }
   }, [results, isLoading, isStreaming, restoreState]);
@@ -166,7 +166,7 @@ const TestResults = ({
 
   // Handle copy functionality for streaming output
   const handleStreamingCopy = (content) => {
-    console.log('Streaming content copied:', content.length, 'characters');
+    // Content copied successfully
   };
 
   // Handle retry for display errors

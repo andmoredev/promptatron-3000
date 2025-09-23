@@ -20,7 +20,6 @@ export async function registerServiceWorker(scriptURL, options = {}) {
 
   try {
     const registration = await navigator.serviceWorker.register(scriptURL, options)
-    console.log('Service Worker registered successfully:', registration)
     return registration
   } catch (error) {
     console.error('Service Worker registration failed:', error)
@@ -143,7 +142,6 @@ export async function unregisterServiceWorker(registration) {
 
   try {
     const result = await registration.unregister()
-    console.log('Service Worker unregistered:', result)
     return result
   } catch (error) {
     console.error('Failed to unregister service worker:', error)

@@ -79,7 +79,7 @@ export class UIErrorRecovery {
       })
 
       if (recovered) {
-        console.log(`Text wrapping recovery applied to ${error.component}`)
+        // Text wrapping recovery applied
       }
 
       return recovered
@@ -113,7 +113,7 @@ export class UIErrorRecovery {
       })
 
       if (recovered) {
-        console.log(`Gradient recovery applied to ${error.component}`)
+        // Gradient recovery applied
       }
 
       return recovered
@@ -151,7 +151,7 @@ export class UIErrorRecovery {
       })
 
       if (recovered) {
-        console.log(`Display recovery applied to ${error.component}`)
+        // Display recovery applied
       }
 
       return recovered

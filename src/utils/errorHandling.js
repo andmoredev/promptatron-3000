@@ -342,11 +342,7 @@ export function logError(errorInfo) {
     console.error('Stack:', errorInfo.stack)
   }
 
-  console.groupCollapsed('Suggested Actions:')
-  errorInfo.suggestedActions.forEach((action, index) => {
-    console.log(`${index + 1}. ${action}`)
-  })
-  console.groupEnd()
+  // Suggested actions available in error info
 
   console.groupEnd()
 }

@@ -323,7 +323,7 @@ export async function executeWithDeterminismErrorHandling(evaluationFn, options 
           onRetry(errorInfo, retryCount, delay)
         }
 
-        console.log(`Retrying determinism evaluation (attempt ${retryCount + 1}) after ${delay}ms`)
+        // Retrying determinism evaluation
         await new Promise(resolve => setTimeout(resolve, delay))
       } else if (errorInfo.canPause && onPause) {
         // Offer to pause instead of failing

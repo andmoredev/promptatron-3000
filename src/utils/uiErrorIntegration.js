@@ -28,13 +28,7 @@ export async function handleUIError(error, context = {}, onError = null) {
     // Enhance error info with recovery status
     errorInfo.uiRecovery = recoveryResult;
 
-    // Log recovery attempt
-    console.log('UI Recovery attempted:', {
-      component: context.component,
-      errorType: errorInfo.type,
-      recoverySuccess: recoveryResult.success,
-      strategy: recoveryResult.strategy
-    });
+    // Recovery attempt initiated
   }
 
   // Use existing error handling for logging and reporting
@@ -315,14 +309,14 @@ export function initializeUIErrorMonitoring() {
     try {
       const issues = await proactiveUICheck();
       if (issues.length > 0) {
-        console.log('Proactive UI check found and fixed issues:', issues);
+        // Proactive UI check found and fixed issues
       }
     } catch (monitorError) {
       console.warn('UI monitoring check failed:', monitorError);
     }
   }, 30000); // Check every 30 seconds
 
-  console.log('UI error monitoring initialized');
+  // UI error monitoring initialized
 }
 
 /**

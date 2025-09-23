@@ -92,10 +92,7 @@ export class ModelOutputManager {
       // Clear any previous recovery attempts for this test
       this.recoveryAttempts.delete(testId)
 
-      console.log('ModelOutputManager: Initialized output state for test', testId, {
-        streamingEnabled,
-        modelId
-      })
+      // Initialized output state for test
 
       return true
     } catch (error) {
@@ -211,7 +208,7 @@ export class ModelOutputManager {
       // Preserve any accumulated content
       if (this.state.streaming.accumulatedText) {
         this.state.currentOutput = this.state.streaming.accumulatedText
-        console.log('ModelOutputManager: Preserved partial streaming content after error')
+        // Preserved partial streaming content after error
       }
 
       // Attempt recovery if we haven't exceeded max attempts
@@ -246,7 +243,7 @@ export class ModelOutputManager {
         // Save to history
         this.saveToHistory()
 
-        console.log('ModelOutputManager: Streaming completed successfully')
+        // Streaming completed successfully
       }
     } catch (error) {
       console.error('Failed to complete streaming:', error)
@@ -283,7 +280,7 @@ export class ModelOutputManager {
         this.stateHistory.delete(oldestKey)
       }
 
-      console.log('ModelOutputManager: Saved state to history for test', this.state.testId)
+      // Saved state to history
     } catch (error) {
       console.warn('Failed to save state to history:', error)
     }
@@ -305,14 +302,14 @@ export class ModelOutputManager {
 
       // First check if this is the current active state
       if (this.state.testId === targetTestId && this.state.currentOutput) {
-        console.log('ModelOutputManager: Returning current active state')
+        // Returning current active state
         return this.getCurrentState()
       }
 
       // Check history
       const historyEntry = this.stateHistory.get(targetTestId)
       if (historyEntry) {
-        console.log('ModelOutputManager: Restored state from history for test', targetTestId)
+        // Restored state from history
         return {
           testId: historyEntry.testId,
           output: historyEntry.output,
@@ -416,7 +413,7 @@ export class ModelOutputManager {
     try {
       // If we have output content, try to preserve it
       if (this.state.currentOutput) {
-        console.log('ModelOutputManager: Preserving output content during display error recovery')
+        // Preserving output content during display error recovery
 
         // Clear the error to allow re-rendering
         this.state.lastError = null
@@ -432,7 +429,7 @@ export class ModelOutputManager {
       if (restored && restored.output) {
         this.state.currentOutput = restored.output
         this.state.lastError = null
-        console.log('ModelOutputManager: Recovered output from history')
+        // Recovered output from history
         return true
       }
 
@@ -460,7 +457,7 @@ export class ModelOutputManager {
         // Save partial result to history
         this.saveToHistory()
 
-        console.log('ModelOutputManager: Recovered partial streaming content')
+        // Recovered partial streaming content
         return true
       }
 
@@ -492,7 +489,7 @@ export class ModelOutputManager {
         lastError: null
       }
 
-      console.log('ModelOutputManager: Reset state while preserving output')
+      // Reset state while preserving output
       return true
     } catch (error) {
       console.error('State error recovery failed:', error)
@@ -516,7 +513,7 @@ export class ModelOutputManager {
         this.state.currentOutput = this.state.currentOutput || this.state.streaming.accumulatedText
         this.state.isDisplaying = true
 
-        console.log('ModelOutputManager: Generic error recovery - preserved content')
+        // Generic error recovery - preserved content
         return true
       }
 
@@ -604,7 +601,7 @@ export class ModelOutputManager {
   clearState() {
     this.state = { ...DEFAULT_OUTPUT_STATE }
     this.streamingCallbacks.clear()
-    console.log('ModelOutputManager: State cleared')
+    // State cleared
   }
 
   /**
@@ -623,7 +620,7 @@ export class ModelOutputManager {
   clearHistory() {
     this.stateHistory.clear()
     this.recoveryAttempts.clear()
-    console.log('ModelOutputManager: History cleared')
+    // History cleared
   }
 
   /**

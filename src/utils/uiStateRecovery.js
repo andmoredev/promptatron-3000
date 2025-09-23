@@ -971,6 +971,6 @@ export const uiStateRecovery = new UIStateRecovery();
 // Auto-initialize on DOM content loaded
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', () => {
-    console.log('UI State Recovery system initialized');
+    // UI State Recovery system initialized
   });
 }

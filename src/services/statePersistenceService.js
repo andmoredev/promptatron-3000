@@ -4,7 +4,7 @@
  * Manages test results, model outputs, UI state, and navigation state
  */
 
-import { handleError, ErrorTypes } from '../utils/errorHandling.js'
+import { handleError, ErrorTypes } from '../utils/errorHandling.js';
 
 /**
  * Storage keys for different types of state
@@ -15,7 +15,7 @@ const STORAGE_KEYS = {
   TEST_RESULTS_STATE: 'promptatron_test_results_state',
   MODEL_OUTPUT_STATE: 'promptatron_model_output_state',
   SESSION_STATE: 'promptatron_session_state'
-}
+};
 
 /**
  * Default state structures
@@ -28,7 +28,7 @@ const DEFAULT_UI_STATE = {
   isExpanded: {},
   viewModes: {},
   lastUpdated: null
-}
+};
 
 const DEFAULT_NAVIGATION_STATE = {
   currentRoute: '/',
@@ -36,7 +36,7 @@ const DEFAULT_NAVIGATION_STATE = {
   navigationHistory: [],
   tabHistory: ['test'],
   lastNavigation: null
-}
+};
 
 const DEFAULT_TEST_RESULTS_STATE = {
   currentResults: null,
@@ -44,7 +44,7 @@ const DEFAULT_TEST_RESULTS_STATE = {
   lastTestId: null,
   displayState: {},
   lastUpdated: null
-}
+};
 
 const DEFAULT_MODEL_OUTPUT_STATE = {
   currentOutput: null,
@@ -52,7 +52,7 @@ const DEFAULT_MODEL_OUTPUT_STATE = {
   streamingState: {},
   displayErrors: {},
   lastUpdated: null
-}
+};
 
 const DEFAULT_SESSION_STATE = {
   sessionId: null,
@@ -60,18 +60,18 @@ const DEFAULT_SESSION_STATE = {
   lastActivity: null,
   testCount: 0,
   navigationCount: 0
-}
+};
 
 /**
  * StatePersistenceService class for comprehensive state management
  */
 export class StatePersistenceService {
   constructor() {
-    this.maxHistorySize = 50
-    this.maxNavigationHistory = 20
-    this.cleanupInterval = 5 * 60 * 1000 // 5 minutes
-    this.sessionTimeout = 24 * 60 * 60 * 1000 // 24 hours
-    this.isInitialized = false
+    this.maxHistorySize = 50;
+    this.maxNavigationHistory = 20;
+    this.cleanupInterval = 5 * 60 * 1000; // 5 minutes
+    this.sessionTimeout = 24 * 60 * 60 * 1000; // 24 hours
+    this.isInitialized = false;
 
     // In-memory state cache for performance
     this.stateCache = {
@@ -80,16 +80,16 @@ export class StatePersistenceService {
       testResults: null,
       modelOutput: null,
       session: null
-    }
+    };
 
     // Cleanup timer
-    this.cleanupTimer = null
+    this.cleanupTimer = null;
 
     // Bind methods
-    this.initialize = this.initialize.bind(this)
-    this.saveUIState = this.saveUIState.bind(this)
-    this.restoreUIState = this.restoreUIState.bind(this)
-    this.cleanup = this.cleanup.bind(this)
+    this.initialize = this.initialize.bind(this);
+    this.saveUIState = this.saveUIState.bind(this);
+    this.restoreUIState = this.restoreUIState.bind(this);
+    this.cleanup = this.cleanup.bind(this);
   }
 
   /**
@@ -97,32 +97,32 @@ export class StatePersistenceService {
    */
   async initialize() {
     try {
-      console.log('StatePersistenceService: Initializing...')
+      // Initializing state persistence service
 
       // Initialize session
-      await this.initializeSession()
+      await this.initializeSession();
 
       // Load cached states
-      await this.loadAllStates()
+      await this.loadAllStates();
 
       // Start cleanup timer
-      this.startCleanupTimer()
+      this.startCleanupTimer();
 
       // Set up beforeunload handler for cleanup
-      this.setupBeforeUnloadHandler()
+      this.setupBeforeUnloadHandler();
 
-      this.isInitialized = true
-      console.log('StatePersistenceService: Initialized successfully')
+      this.isInitialized = true;
+      // Service initialized successfully
 
-      return true
+      return true;
     } catch (error) {
       const errorInfo = handleError(error, {
         component: 'StatePersistenceService',
         action: 'initialize'
-      })
+      });
 
-      console.error('StatePersistenceService: Initialization failed:', errorInfo.userMessage)
-      return false
+      console.error('StatePersistenceService: Initialization failed:', errorInfo.userMessage);
+      return false;
     }
   }
 
@@ -131,8 +131,8 @@ export class StatePersistenceService {
    */
   async initializeSession() {
     try {
-      const existingSession = this.loadFromStorage(STORAGE_KEYS.SESSION_STATE)
-      const now = Date.now()
+      const existingSession = this.loadFromStorage(STORAGE_KEYS.SESSION_STATE);
+      const now = Date.now();
 
       if (existingSession && (now - existingSession.lastActivity) < this.sessionTimeout) {
         // Continue existing session
@@ -140,8 +140,8 @@ export class StatePersistenceService {
           ...existingSession,
           lastActivity: now,
           navigationCount: existingSession.navigationCount + 1
-        }
-        console.log('StatePersistenceService: Continuing existing session', this.stateCache.session.sessionId)
+        };
+        // Continuing existing session
       } else {
         // Create new session
         this.stateCache.session = {
@@ -149,20 +149,20 @@ export class StatePersistenceService {
           sessionId: this.generateSessionId(),
           startTime: now,
           lastActivity: now
-        }
-        console.log('StatePersistenceService: Created new session', this.stateCache.session.sessionId)
+        };
+        // Created new session
       }
 
-      await this.saveSessionState()
+      await this.saveSessionState();
     } catch (error) {
-      console.error('Failed to initialize session:', error)
+      console.error('Failed to initialize session:', error);
       // Create minimal session as fallback
       this.stateCache.session = {
         ...DEFAULT_SESSION_STATE,
         sessionId: this.generateSessionId(),
         startTime: Date.now(),
         lastActivity: Date.now()
-      }
+      };
     }
   }
 
@@ -170,7 +170,7 @@ export class StatePersistenceService {
    * Generate a unique session ID
    */
   generateSessionId() {
-    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
   /**
@@ -178,39 +178,39 @@ export class StatePersistenceService {
    */
   async loadAllStates() {
     try {
-      this.stateCache.ui = this.loadFromStorage(STORAGE_KEYS.UI_STATE) || DEFAULT_UI_STATE
-      this.stateCache.navigation = this.loadFromStorage(STORAGE_KEYS.NAVIGATION_STATE) || DEFAULT_NAVIGATION_STATE
+      this.stateCache.ui = this.loadFromStorage(STORAGE_KEYS.UI_STATE) || DEFAULT_UI_STATE;
+      this.stateCache.navigation = this.loadFromStorage(STORAGE_KEYS.NAVIGATION_STATE) || DEFAULT_NAVIGATION_STATE;
 
       // Load test results state and convert Map from JSON
-      const testResultsData = this.loadFromStorage(STORAGE_KEYS.TEST_RESULTS_STATE)
+      const testResultsData = this.loadFromStorage(STORAGE_KEYS.TEST_RESULTS_STATE);
       if (testResultsData) {
         this.stateCache.testResults = {
           ...testResultsData,
           resultsHistory: new Map(testResultsData.resultsHistory || [])
-        }
+        };
       } else {
-        this.stateCache.testResults = DEFAULT_TEST_RESULTS_STATE
+        this.stateCache.testResults = DEFAULT_TEST_RESULTS_STATE;
       }
 
       // Load model output state and convert Map from JSON
-      const modelOutputData = this.loadFromStorage(STORAGE_KEYS.MODEL_OUTPUT_STATE)
+      const modelOutputData = this.loadFromStorage(STORAGE_KEYS.MODEL_OUTPUT_STATE);
       if (modelOutputData) {
         this.stateCache.modelOutput = {
           ...modelOutputData,
           outputHistory: new Map(modelOutputData.outputHistory || [])
-        }
+        };
       } else {
-        this.stateCache.modelOutput = DEFAULT_MODEL_OUTPUT_STATE
+        this.stateCache.modelOutput = DEFAULT_MODEL_OUTPUT_STATE;
       }
 
-      console.log('StatePersistenceService: Loaded all states from storage')
+      // States loaded from storage successfully
     } catch (error) {
-      console.error('Failed to load states:', error)
+      console.error('Failed to load states:', error);
       // Initialize with defaults
-      this.stateCache.ui = DEFAULT_UI_STATE
-      this.stateCache.navigation = DEFAULT_NAVIGATION_STATE
-      this.stateCache.testResults = DEFAULT_TEST_RESULTS_STATE
-      this.stateCache.modelOutput = DEFAULT_MODEL_OUTPUT_STATE
+      this.stateCache.ui = DEFAULT_UI_STATE;
+      this.stateCache.navigation = DEFAULT_NAVIGATION_STATE;
+      this.stateCache.testResults = DEFAULT_TEST_RESULTS_STATE;
+      this.stateCache.modelOutput = DEFAULT_MODEL_OUTPUT_STATE;
     }
   }
 
@@ -223,22 +223,22 @@ export class StatePersistenceService {
         ...this.stateCache.ui,
         ...uiState,
         lastUpdated: Date.now()
-      }
+      };
 
-      this.stateCache.ui = stateToSave
-      this.saveToStorage(STORAGE_KEYS.UI_STATE, stateToSave)
+      this.stateCache.ui = stateToSave;
+      this.saveToStorage(STORAGE_KEYS.UI_STATE, stateToSave);
 
       // Update session activity
-      await this.updateSessionActivity()
+      await this.updateSessionActivity();
 
-      return true
+      return true;
     } catch (error) {
       const errorInfo = handleError(error, {
         component: 'StatePersistenceService',
         action: 'saveUIState'
-      })
-      console.error('Failed to save UI state:', errorInfo.userMessage)
-      return false
+      });
+      console.error('Failed to save UI state:', errorInfo.userMessage);
+      return false;
     }
   }
 
@@ -247,16 +247,11 @@ export class StatePersistenceService {
    */
   restoreUIState() {
     try {
-      const uiState = this.stateCache.ui || DEFAULT_UI_STATE
-      console.log('StatePersistenceService: Restored UI state', {
-        activeTab: uiState.activeTab,
-        hasComparisons: uiState.selectedForComparison?.length > 0,
-        touchedFields: Object.keys(uiState.touchedFields || {}).length
-      })
-      return uiState
+      const uiState = this.stateCache.ui || DEFAULT_UI_STATE;
+      return uiState;
     } catch (error) {
-      console.error('Failed to restore UI state:', error)
-      return DEFAULT_UI_STATE
+      console.error('Failed to restore UI state:', error);
+      return DEFAULT_UI_STATE;
     }
   }
 
@@ -265,21 +260,21 @@ export class StatePersistenceService {
    */
   async saveNavigationState(navigationState) {
     try {
-      const currentNav = this.stateCache.navigation || DEFAULT_NAVIGATION_STATE
+      const currentNav = this.stateCache.navigation || DEFAULT_NAVIGATION_STATE;
 
       const stateToSave = {
         ...currentNav,
         ...navigationState,
         lastNavigation: Date.now()
-      }
+      };
 
       // Manage navigation history
       if (navigationState.currentRoute && navigationState.currentRoute !== currentNav.currentRoute) {
-        stateToSave.previousRoute = currentNav.currentRoute
+        stateToSave.previousRoute = currentNav.currentRoute;
         stateToSave.navigationHistory = [
           navigationState.currentRoute,
           ...currentNav.navigationHistory.slice(0, this.maxNavigationHistory - 1)
-        ]
+        ];
       }
 
       // Manage tab history
@@ -287,23 +282,23 @@ export class StatePersistenceService {
         stateToSave.tabHistory = [
           navigationState.activeTab,
           ...currentNav.tabHistory.slice(0, 9) // Keep last 10 tabs
-        ]
+        ];
       }
 
-      this.stateCache.navigation = stateToSave
-      this.saveToStorage(STORAGE_KEYS.NAVIGATION_STATE, stateToSave)
+      this.stateCache.navigation = stateToSave;
+      this.saveToStorage(STORAGE_KEYS.NAVIGATION_STATE, stateToSave);
 
       // Update session activity
-      await this.updateSessionActivity('navigation')
+      await this.updateSessionActivity('navigation');
 
-      return true
+      return true;
     } catch (error) {
       const errorInfo = handleError(error, {
         component: 'StatePersistenceService',
         action: 'saveNavigationState'
-      })
-      console.error('Failed to save navigation state:', errorInfo.userMessage)
-      return false
+      });
+      console.error('Failed to save navigation state:', errorInfo.userMessage);
+      return false;
     }
   }
 
@@ -312,16 +307,11 @@ export class StatePersistenceService {
    */
   restoreNavigationState() {
     try {
-      const navState = this.stateCache.navigation || DEFAULT_NAVIGATION_STATE
-      console.log('StatePersistenceService: Restored navigation state', {
-        currentRoute: navState.currentRoute,
-        previousRoute: navState.previousRoute,
-        tabHistory: navState.tabHistory?.slice(0, 3) // Log first 3 tabs
-      })
-      return navState
+      const navState = this.stateCache.navigation || DEFAULT_NAVIGATION_STATE;
+      return navState;
     } catch (error) {
-      console.error('Failed to restore navigation state:', error)
-      return DEFAULT_NAVIGATION_STATE
+      console.error('Failed to restore navigation state:', error);
+      return DEFAULT_NAVIGATION_STATE;
     }
   }
 
@@ -330,14 +320,14 @@ export class StatePersistenceService {
    */
   async saveTestResultsState(testResults, testId = null) {
     try {
-      const currentState = this.stateCache.testResults || DEFAULT_TEST_RESULTS_STATE
+      const currentState = this.stateCache.testResults || DEFAULT_TEST_RESULTS_STATE;
 
       const stateToSave = {
         ...currentState,
         currentResults: testResults,
         lastTestId: testId || testResults?.id || currentState.lastTestId,
         lastUpdated: Date.now()
-      }
+      };
 
       // Add to history if we have a test ID
       if (testId && testResults) {
@@ -345,36 +335,36 @@ export class StatePersistenceService {
           results: testResults,
           timestamp: Date.now(),
           displayState: currentState.displayState[testId] || {}
-        })
+        });
 
         // Cleanup old history entries
         if (stateToSave.resultsHistory.size > this.maxHistorySize) {
-          const oldestKey = stateToSave.resultsHistory.keys().next().value
-          stateToSave.resultsHistory.delete(oldestKey)
+          const oldestKey = stateToSave.resultsHistory.keys().next().value;
+          stateToSave.resultsHistory.delete(oldestKey);
         }
       }
 
-      this.stateCache.testResults = stateToSave
+      this.stateCache.testResults = stateToSave;
 
       // Convert Map to Array for storage
       const storageData = {
         ...stateToSave,
         resultsHistory: Array.from(stateToSave.resultsHistory.entries())
-      }
-      this.saveToStorage(STORAGE_KEYS.TEST_RESULTS_STATE, storageData)
+      };
+      this.saveToStorage(STORAGE_KEYS.TEST_RESULTS_STATE, storageData);
 
       // Update session activity
-      await this.updateSessionActivity('test')
+      await this.updateSessionActivity('test');
 
-      return true
+      return true;
     } catch (error) {
       const errorInfo = handleError(error, {
         component: 'StatePersistenceService',
         action: 'saveTestResultsState',
         testId
-      })
-      console.error('Failed to save test results state:', errorInfo.userMessage)
-      return false
+      });
+      console.error('Failed to save test results state:', errorInfo.userMessage);
+      return false;
     }
   }
 
@@ -383,39 +373,35 @@ export class StatePersistenceService {
    */
   restoreTestResultsState(testId = null) {
     try {
-      const testState = this.stateCache.testResults || DEFAULT_TEST_RESULTS_STATE
+      const testState = this.stateCache.testResults || DEFAULT_TEST_RESULTS_STATE;
 
       if (testId && testState.resultsHistory.has(testId)) {
-        const historyEntry = testState.resultsHistory.get(testId)
-        console.log('StatePersistenceService: Restored test results from history', testId)
+        const historyEntry = testState.resultsHistory.get(testId);
+        // Restored test results from history
         return {
           currentResults: historyEntry.results,
           displayState: historyEntry.displayState,
           fromHistory: true,
           timestamp: historyEntry.timestamp
-        }
+        };
       }
 
-      console.log('StatePersistenceService: Restored current test results state', {
-        hasCurrentResults: !!testState.currentResults,
-        lastTestId: testState.lastTestId,
-        historySize: testState.resultsHistory.size
-      })
+      // Restored current test results state
 
       return {
         currentResults: testState.currentResults,
         displayState: testState.displayState,
         fromHistory: false,
         lastTestId: testState.lastTestId
-      }
+      };
     } catch (error) {
-      console.error('Failed to restore test results state:', error)
+      console.error('Failed to restore test results state:', error);
       return {
         currentResults: null,
         displayState: {},
         fromHistory: false,
         lastTestId: null
-      }
+      };
     }
   }
 
@@ -424,13 +410,13 @@ export class StatePersistenceService {
    */
   async saveModelOutputState(outputData, testId = null) {
     try {
-      const currentState = this.stateCache.modelOutput || DEFAULT_MODEL_OUTPUT_STATE
+      const currentState = this.stateCache.modelOutput || DEFAULT_MODEL_OUTPUT_STATE;
 
       const stateToSave = {
         ...currentState,
         currentOutput: outputData,
         lastUpdated: Date.now()
-      }
+      };
 
       // Add to history if we have a test ID
       if (testId && outputData) {
@@ -439,33 +425,33 @@ export class StatePersistenceService {
           timestamp: Date.now(),
           streamingState: currentState.streamingState[testId] || {},
           displayErrors: currentState.displayErrors[testId] || {}
-        })
+        });
 
         // Cleanup old history entries
         if (stateToSave.outputHistory.size > this.maxHistorySize) {
-          const oldestKey = stateToSave.outputHistory.keys().next().value
-          stateToSave.outputHistory.delete(oldestKey)
+          const oldestKey = stateToSave.outputHistory.keys().next().value;
+          stateToSave.outputHistory.delete(oldestKey);
         }
       }
 
-      this.stateCache.modelOutput = stateToSave
+      this.stateCache.modelOutput = stateToSave;
 
       // Convert Map to Array for storage
       const storageData = {
         ...stateToSave,
         outputHistory: Array.from(stateToSave.outputHistory.entries())
-      }
-      this.saveToStorage(STORAGE_KEYS.MODEL_OUTPUT_STATE, storageData)
+      };
+      this.saveToStorage(STORAGE_KEYS.MODEL_OUTPUT_STATE, storageData);
 
-      return true
+      return true;
     } catch (error) {
       const errorInfo = handleError(error, {
         component: 'StatePersistenceService',
         action: 'saveModelOutputState',
         testId
-      })
-      console.error('Failed to save model output state:', errorInfo.userMessage)
-      return false
+      });
+      console.error('Failed to save model output state:', errorInfo.userMessage);
+      return false;
     }
   }
 
@@ -474,39 +460,36 @@ export class StatePersistenceService {
    */
   restoreModelOutputState(testId = null) {
     try {
-      const outputState = this.stateCache.modelOutput || DEFAULT_MODEL_OUTPUT_STATE
+      const outputState = this.stateCache.modelOutput || DEFAULT_MODEL_OUTPUT_STATE;
 
       if (testId && outputState.outputHistory.has(testId)) {
-        const historyEntry = outputState.outputHistory.get(testId)
-        console.log('StatePersistenceService: Restored model output from history', testId)
+        const historyEntry = outputState.outputHistory.get(testId);
+        // Restored model output from history
         return {
           currentOutput: historyEntry.output,
           streamingState: historyEntry.streamingState,
           displayErrors: historyEntry.displayErrors,
           fromHistory: true,
           timestamp: historyEntry.timestamp
-        }
+        };
       }
 
-      console.log('StatePersistenceService: Restored current model output state', {
-        hasCurrentOutput: !!outputState.currentOutput,
-        historySize: outputState.outputHistory.size
-      })
+      // Restored current model output state
 
       return {
         currentOutput: outputState.currentOutput,
         streamingState: outputState.streamingState,
         displayErrors: outputState.displayErrors,
         fromHistory: false
-      }
+      };
     } catch (error) {
-      console.error('Failed to restore model output state:', error)
+      console.error('Failed to restore model output state:', error);
       return {
         currentOutput: null,
         streamingState: {},
         displayErrors: {},
         fromHistory: false
-      }
+      };
     }
   }
 
@@ -515,19 +498,19 @@ export class StatePersistenceService {
    */
   async updateSessionActivity(activityType = 'general') {
     try {
-      if (!this.stateCache.session) return
+      if (!this.stateCache.session) return;
 
-      this.stateCache.session.lastActivity = Date.now()
+      this.stateCache.session.lastActivity = Date.now();
 
       if (activityType === 'test') {
-        this.stateCache.session.testCount += 1
+        this.stateCache.session.testCount += 1;
       } else if (activityType === 'navigation') {
-        this.stateCache.session.navigationCount += 1
+        this.stateCache.session.navigationCount += 1;
       }
 
-      await this.saveSessionState()
+      await this.saveSessionState();
     } catch (error) {
-      console.error('Failed to update session activity:', error)
+      console.error('Failed to update session activity:', error);
     }
   }
 
@@ -537,10 +520,10 @@ export class StatePersistenceService {
   async saveSessionState() {
     try {
       if (this.stateCache.session) {
-        this.saveToStorage(STORAGE_KEYS.SESSION_STATE, this.stateCache.session)
+        this.saveToStorage(STORAGE_KEYS.SESSION_STATE, this.stateCache.session);
       }
     } catch (error) {
-      console.error('Failed to save session state:', error)
+      console.error('Failed to save session state:', error);
     }
   }
 
@@ -548,22 +531,19 @@ export class StatePersistenceService {
    * Get session information
    */
   getSessionInfo() {
-    return this.stateCache.session || DEFAULT_SESSION_STATE
+    return this.stateCache.session || DEFAULT_SESSION_STATE;
   }
 
   /**
    * Start cleanup timer for old state data
    */
   startCleanupTimer() {
-    if (this.cleanupTimer) {
-      clearInterval(this.cleanupTimer)
-    }
 
     this.cleanupTimer = setInterval(() => {
-      this.cleanup()
-    }, this.cleanupInterval)
+      this.cleanup();
+    }, this.cleanupInterval);
 
-    console.log('StatePersistenceService: Started cleanup timer')
+    // Cleanup timer started
   }
 
   /**
@@ -571,58 +551,58 @@ export class StatePersistenceService {
    */
   async cleanup() {
     try {
-      const now = Date.now()
-      const maxAge = 24 * 60 * 60 * 1000 // 24 hours
-      let cleanedCount = 0
+      const now = Date.now();
+      const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+      let cleanedCount = 0;
 
       // Cleanup test results history
       if (this.stateCache.testResults?.resultsHistory) {
-        const toDelete = []
+        const toDelete = [];
         for (const [testId, entry] of this.stateCache.testResults.resultsHistory) {
           if (now - entry.timestamp > maxAge) {
-            toDelete.push(testId)
+            toDelete.push(testId);
           }
         }
         toDelete.forEach(testId => {
-          this.stateCache.testResults.resultsHistory.delete(testId)
-          cleanedCount++
-        })
+          this.stateCache.testResults.resultsHistory.delete(testId);
+          cleanedCount++;
+        });
       }
 
       // Cleanup model output history
       if (this.stateCache.modelOutput?.outputHistory) {
-        const toDelete = []
+        const toDelete = [];
         for (const [testId, entry] of this.stateCache.modelOutput.outputHistory) {
           if (now - entry.timestamp > maxAge) {
-            toDelete.push(testId)
+            toDelete.push(testId);
           }
         }
         toDelete.forEach(testId => {
-          this.stateCache.modelOutput.outputHistory.delete(testId)
-          cleanedCount++
-        })
+          this.stateCache.modelOutput.outputHistory.delete(testId);
+          cleanedCount++;
+        });
       }
 
       // Cleanup navigation history
       if (this.stateCache.navigation?.navigationHistory) {
-        const maxNavHistory = 10
+        const maxNavHistory = 10;
         if (this.stateCache.navigation.navigationHistory.length > maxNavHistory) {
           this.stateCache.navigation.navigationHistory =
-            this.stateCache.navigation.navigationHistory.slice(0, maxNavHistory)
-          cleanedCount++
+            this.stateCache.navigation.navigationHistory.slice(0, maxNavHistory);
+          cleanedCount++;
         }
       }
 
       // Save cleaned states if any cleanup occurred
       if (cleanedCount > 0) {
-        await this.saveAllStates()
-        console.log(`StatePersistenceService: Cleaned up ${cleanedCount} old state entries`)
+        await this.saveAllStates();
+        // Cleaned up old state entries
       }
 
-      return cleanedCount
+      return cleanedCount;
     } catch (error) {
-      console.error('Cleanup failed:', error)
-      return 0
+      console.error('Cleanup failed:', error);
+      return 0;
     }
   }
 
@@ -633,12 +613,12 @@ export class StatePersistenceService {
     try {
       // Save UI state
       if (this.stateCache.ui) {
-        this.saveToStorage(STORAGE_KEYS.UI_STATE, this.stateCache.ui)
+        this.saveToStorage(STORAGE_KEYS.UI_STATE, this.stateCache.ui);
       }
 
       // Save navigation state
       if (this.stateCache.navigation) {
-        this.saveToStorage(STORAGE_KEYS.NAVIGATION_STATE, this.stateCache.navigation)
+        this.saveToStorage(STORAGE_KEYS.NAVIGATION_STATE, this.stateCache.navigation);
       }
 
       // Save test results state
@@ -646,8 +626,8 @@ export class StatePersistenceService {
         const storageData = {
           ...this.stateCache.testResults,
           resultsHistory: Array.from(this.stateCache.testResults.resultsHistory.entries())
-        }
-        this.saveToStorage(STORAGE_KEYS.TEST_RESULTS_STATE, storageData)
+        };
+        this.saveToStorage(STORAGE_KEYS.TEST_RESULTS_STATE, storageData);
       }
 
       // Save model output state
@@ -655,17 +635,17 @@ export class StatePersistenceService {
         const storageData = {
           ...this.stateCache.modelOutput,
           outputHistory: Array.from(this.stateCache.modelOutput.outputHistory.entries())
-        }
-        this.saveToStorage(STORAGE_KEYS.MODEL_OUTPUT_STATE, storageData)
+        };
+        this.saveToStorage(STORAGE_KEYS.MODEL_OUTPUT_STATE, storageData);
       }
 
       // Save session state
-      await this.saveSessionState()
+      await this.saveSessionState();
 
-      return true
+      return true;
     } catch (error) {
-      console.error('Failed to save all states:', error)
-      return false
+      console.error('Failed to save all states:', error);
+      return false;
     }
   }
 
@@ -676,8 +656,8 @@ export class StatePersistenceService {
     try {
       // Clear storage
       Object.values(STORAGE_KEYS).forEach(key => {
-        this.removeFromStorage(key)
-      })
+        this.removeFromStorage(key);
+      });
 
       // Reset cache
       this.stateCache = {
@@ -686,16 +666,16 @@ export class StatePersistenceService {
         testResults: DEFAULT_TEST_RESULTS_STATE,
         modelOutput: DEFAULT_MODEL_OUTPUT_STATE,
         session: null
-      }
+      };
 
       // Reinitialize session
-      await this.initializeSession()
+      await this.initializeSession();
 
-      console.log('StatePersistenceService: Cleared all state')
-      return true
+      // All state cleared
+      return true;
     } catch (error) {
-      console.error('Failed to clear all state:', error)
-      return false
+      console.error('Failed to clear all state:', error);
+      return false;
     }
   }
 
@@ -730,13 +710,13 @@ export class StatePersistenceService {
           historySize: this.stateCache.modelOutput?.outputHistory?.size || 0,
           lastUpdated: this.stateCache.modelOutput?.lastUpdated
         }
-      }
+      };
     } catch (error) {
-      console.error('Failed to get state info:', error)
+      console.error('Failed to get state info:', error);
       return {
         isInitialized: false,
         error: error.message
-      }
+      };
     }
   }
 
@@ -747,16 +727,16 @@ export class StatePersistenceService {
     window.addEventListener('beforeunload', () => {
       try {
         // Save all states before page unload
-        this.saveAllStates()
+        this.saveAllStates();
 
         // Clear cleanup timer
         if (this.cleanupTimer) {
-          clearInterval(this.cleanupTimer)
+          clearInterval(this.cleanupTimer);
         }
       } catch (error) {
-        console.error('Error during beforeunload cleanup:', error)
+        console.error('Error during beforeunload cleanup:', error);
       }
-    })
+    });
   }
 
   /**
@@ -764,19 +744,19 @@ export class StatePersistenceService {
    */
   saveToStorage(key, data) {
     try {
-      localStorage.setItem(key, JSON.stringify(data))
+      localStorage.setItem(key, JSON.stringify(data));
     } catch (error) {
       if (error.name === 'QuotaExceededError') {
-        console.warn('localStorage quota exceeded, attempting cleanup')
-        this.cleanup()
+        console.warn('localStorage quota exceeded, attempting cleanup');
+        this.cleanup();
         // Try again after cleanup
         try {
-          localStorage.setItem(key, JSON.stringify(data))
+          localStorage.setItem(key, JSON.stringify(data));
         } catch (retryError) {
-          console.error('Failed to save after cleanup:', retryError)
+          console.error('Failed to save after cleanup:', retryError);
         }
       } else {
-        console.error('Failed to save to localStorage:', error)
+        console.error('Failed to save to localStorage:', error);
       }
     }
   }
@@ -786,11 +766,11 @@ export class StatePersistenceService {
    */
   loadFromStorage(key) {
     try {
-      const data = localStorage.getItem(key)
-      return data ? JSON.parse(data) : null
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : null;
     } catch (error) {
-      console.error('Failed to load from localStorage:', error)
-      return null
+      console.error('Failed to load from localStorage:', error);
+      return null;
     }
   }
 
@@ -799,9 +779,9 @@ export class StatePersistenceService {
    */
   removeFromStorage(key) {
     try {
-      localStorage.removeItem(key)
+      localStorage.removeItem(key);
     } catch (error) {
-      console.error('Failed to remove from localStorage:', error)
+      console.error('Failed to remove from localStorage:', error);
     }
   }
 
@@ -812,26 +792,26 @@ export class StatePersistenceService {
     try {
       // Clear cleanup timer
       if (this.cleanupTimer) {
-        clearInterval(this.cleanupTimer)
-        this.cleanupTimer = null
+        clearInterval(this.cleanupTimer);
+        this.cleanupTimer = null;
       }
 
       // Save final state
-      this.saveAllStates()
+      this.saveAllStates();
 
       // Clear cache
-      this.stateCache = {}
+      this.stateCache = {};
 
-      this.isInitialized = false
-      console.log('StatePersistenceService: Destroyed')
+      this.isInitialized = false;
+      // Service destroyed
     } catch (error) {
-      console.error('Error during service destruction:', error)
+      console.error('Error during service destruction:', error);
     }
   }
 }
 
 // Create and export singleton instance
-export const statePersistenceService = new StatePersistenceService()
+export const statePersistenceService = new StatePersistenceService();
 
 // Export class for testing
-export default StatePersistenceService
+export default StatePersistenceService;

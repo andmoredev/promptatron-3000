@@ -47,8 +47,6 @@ export class BedrockService {
         throw new Error('No AWS credentials found. Please run your local-setup.sh script or create a .env.local file with VITE_AWS_* variables.');
       }
 
-      console.log('Available credential sources:', credentialSources);
-
       const region = import.meta.env.VITE_AWS_REGION || 'us-east-1';
 
       const clientConfig = {
