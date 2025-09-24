@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import React, { useState, useRef } from 'react'
 import { useHistory } from '../hooks/useHistory.js'
 
 const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = [] }) => {
@@ -23,32 +23,76 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
   const [determinismModal, setDeterminismModal] = useState(null)
   const fileInputRef = useRef(null)
 
-  // Get unique models for filtering
-  const uniqueModels = [...new Set(history.map(item => item.modelId))].sort()
+  // Ensure unique IDs and clean up history data
+  const cleanedHistory = React.useMemo(() => {
+    const seenIds = new Set()
+    let duplicateCount = 0
+    let missingIdCount = 0
 
-  // Filter history based on search, model filter, and tool usage filter
-  const filteredHistory = history.filter(item => {
-    const matchesSearch = !searchTerm ||
-      item.systemPrompt?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.userPrompt?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.prompt?.toLowerCase().includes(searchTerm.toLowerCase()) || // Legacy prompt field for backward compatibility
-      item.datasetType?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.datasetOption?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.response?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      // Include tool usage in search
-      (item.toolUsage?.toolCalls?.some(call =>
-        call.toolName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        JSON.stringify(call.input)?.toLowerCase().includes(searchTerm.toLowerCase())
-      ))
+    const cleaned = history.filter((item, index) => {
+      // Generate a fallback ID if missing
+      if (!item.id) {
+        missingIdCount++
+        item.id = `history-${index}-${item.timestamp || Date.now()}`
+      }
 
-    const matchesModel = !filterModel || item.modelId === filterModel
+      // Check for duplicate IDs
+      if (seenIds.has(item.id)) {
+        duplicateCount++
+        item.id = `${item.id}-duplicate-${index}`
+      }
 
-    const matchesToolUsage = !filterToolUsage ||
-      (filterToolUsage === 'used' && item.toolUsage?.hasToolUsage) ||
-      (filterToolUsage === 'not-used' && !item.toolUsage?.hasToolUsage)
+      seenIds.add(item.id)
+      return true
+    })
 
-    return matchesSearch && matchesModel && matchesToolUsage
-  })
+    // Silently clean data without logging
+
+    return cleaned
+  }, [history])
+
+  // Get unique models for filtering (with error handling)
+  const uniqueModels = React.useMemo(() => {
+    try {
+      return [...new Set(cleanedHistory.map(item => item.modelId).filter(Boolean))].sort()
+    } catch (error) {
+      console.error('Error processing unique models:', error)
+      return []
+    }
+  }, [cleanedHistory])
+
+  // Filter history based on search, model filter, and tool usage filter (with error handling)
+  const filteredHistory = React.useMemo(() => {
+    try {
+      return cleanedHistory.filter(item => {
+        if (!item) return false
+
+        const matchesSearch = !searchTerm ||
+          item.systemPrompt?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.userPrompt?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.prompt?.toLowerCase().includes(searchTerm.toLowerCase()) || // Legacy prompt field for backward compatibility
+          item.datasetType?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.datasetOption?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.response?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          // Include tool usage in search
+          (item.toolUsage?.toolCalls?.some(call =>
+            call.toolName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            JSON.stringify(call.input)?.toLowerCase().includes(searchTerm.toLowerCase())
+          ))
+
+        const matchesModel = !filterModel || item.modelId === filterModel
+
+        const matchesToolUsage = !filterToolUsage ||
+          (filterToolUsage === 'used' && item.toolUsage?.hasToolUsage) ||
+          (filterToolUsage === 'not-used' && !item.toolUsage?.hasToolUsage)
+
+        return matchesSearch && matchesModel && matchesToolUsage
+      })
+    } catch (error) {
+      console.error('Error filtering history:', error)
+      return []
+    }
+  }, [cleanedHistory, searchTerm, filterModel, filterToolUsage])
 
   const formatTimestamp = (timestamp) => {
     return new Date(timestamp).toLocaleString()
@@ -164,7 +208,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
     )
   }
 
-  if (history.length === 0) {
+  if (!cleanedHistory || cleanedHistory.length === 0) {
     return (
       <div className="card">
         <div className="flex items-center justify-between mb-4">
@@ -343,8 +387,8 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
               className="select-field"
             >
               <option value="">All models</option>
-              {uniqueModels.map(model => (
-                <option key={model} value={model}>{model}</option>
+              {uniqueModels.map((model, index) => (
+                <option key={`model-${index}-${model}`} value={model}>{model}</option>
               ))}
             </select>
           </div>
@@ -366,7 +410,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
         </div>
 
         <div className="text-sm text-gray-600">
-          Showing {filteredHistory.length} of {history.length} tests
+          Showing {filteredHistory.length} of {cleanedHistory.length} tests
         </div>
 
         {/* Comparison Mode Notification */}
@@ -410,7 +454,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                   <div className="flex flex-wrap gap-1">
                     {selectedForComparison.map((test, index) => (
                       <span
-                        key={test.id}
+                        key={test.id || `comparison-${index}-${test.timestamp}`}
                         className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
                       >
                         {String.fromCharCode(65 + index)}: {test.modelId?.split('.')[0] || 'Unknown'}
@@ -450,8 +494,8 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
 
       {/* History List */}
       <div className="space-y-4">
-        {filteredHistory.map((item) => (
-          <div key={item.id} className="card">
+        {filteredHistory.map((item, index) => (
+          <div key={item.id || `history-item-${index}-${item.timestamp}`} className="card">
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center space-x-3 mb-2">
@@ -652,7 +696,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                               )}
                             </div>
                             {item.toolUsage.toolCalls?.map((toolCall, index) => (
-                              <div key={index} className="border border-orange-300 rounded p-2 bg-white">
+                              <div key={`tool-${item.id || index}-${index}-${toolCall.toolName || 'unknown'}`} className="border border-orange-300 rounded p-2 bg-white">
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="font-medium text-orange-900">{toolCall.toolName}</span>
                                   <span className="text-xs text-orange-600">
@@ -729,7 +773,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
         ))}
       </div>
 
-      {filteredHistory.length === 0 && history.length > 0 && (
+      {filteredHistory.length === 0 && cleanedHistory && cleanedHistory.length > 0 && (
         <div className="card text-center py-8">
           <p className="text-gray-600">No tests match your current filters</p>
           <button
@@ -1037,7 +1081,7 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
   }
 
   const formatPercentage = (value) => {
-    if (typeof value !== 'number') return 'N/A'
+    if (typeof value !== 'number' || isNaN(value)) return 'N/A'
     return `${(value * 100).toFixed(1)}%`
   }
 
@@ -1088,7 +1132,7 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
                 <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
                   <div className="text-sm font-medium text-blue-800 mb-1">Decision Consistency</div>
                   <div className="text-2xl font-bold text-blue-900">
-                    {formatPercentage(grade.metrics.decision_consistency_rate)}
+                    {formatPercentage(grade.metrics.decisionConsistency)}
                   </div>
                   <div className="text-xs text-blue-700 mt-1">
                     How often the model made the same decisions
@@ -1098,7 +1142,7 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
                 <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
                   <div className="text-sm font-medium text-green-800 mb-1">Structure Consistency</div>
                   <div className="text-2xl font-bold text-green-900">
-                    {formatPercentage(grade.metrics.structure_consistency_rate)}
+                    {formatPercentage(grade.metrics.structureConsistency)}
                   </div>
                   <div className="text-xs text-green-700 mt-1">
                     How consistent the response format was
@@ -1108,7 +1152,7 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
                 <div className="bg-purple-50 border border-purple-200 p-4 rounded-lg">
                   <div className="text-sm font-medium text-purple-800 mb-1">Semantic Equivalence</div>
                   <div className="text-2xl font-bold text-purple-900">
-                    {formatPercentage(grade.metrics.semantic_equivalence_rate)}
+                    {formatPercentage(grade.metrics.semanticSimilarity)}
                   </div>
                   <div className="text-xs text-purple-700 mt-1">
                     How similar the meaning was across responses
@@ -1118,7 +1162,7 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
                 <div className="bg-orange-50 border border-orange-200 p-4 rounded-lg">
                   <div className="text-sm font-medium text-orange-800 mb-1">Exact Text Match</div>
                   <div className="text-2xl font-bold text-orange-900">
-                    {formatPercentage(grade.metrics.exact_text_rate)}
+                    {formatPercentage(grade.metrics.exactMatches ? grade.metrics.exactMatches / grade.metrics.responseCount : 0)}
                   </div>
                   <div className="text-xs text-orange-700 mt-1">
                     How often responses were identical
@@ -1128,7 +1172,7 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
 
               <div className="bg-gray-50 border border-gray-200 p-3 rounded-lg text-center">
                 <div className="text-sm text-gray-600">Analyzed Responses</div>
-                <div className="text-xl font-bold text-gray-900">{grade.metrics.n_runs}</div>
+                <div className="text-xl font-bold text-gray-900">{grade.metrics.responseCount || grade.metrics.n_runs || 0}</div>
               </div>
             </div>
           ) : (
@@ -1175,7 +1219,7 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm font-medium text-primary-800">Tool Usage Consistency</div>
                   <div className="text-2xl font-bold text-primary-900">
-                    {formatPercentage(grade.metrics.tool_consistency_rate)}
+                    {formatPercentage(grade.metrics.toolUsageConsistency)}
                   </div>
                 </div>
                 <div className="text-xs text-primary-700">
@@ -1200,7 +1244,7 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                 <ul className="text-sm text-yellow-800 space-y-1">
                   {grade.notable_variations.map((variation, index) => (
-                    <li key={index} className="flex items-start">
+                    <li key={`variation-${index}-${variation.substring(0, 20)}`} className="flex items-start">
                       <span className="text-yellow-600 mr-2">•</span>
                       {variation}
                     </li>

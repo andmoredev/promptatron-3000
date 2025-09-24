@@ -31,12 +31,13 @@ function LoadingSpinner({ size = 'md', color = 'primary', text, inline = false }
   const containerClass = inline ? 'inline-flex items-center' : 'flex items-center justify-center'
 
   return (
-    <div className={containerClass}>
+    <div className={containerClass} role="status" aria-live="polite">
       <svg
         className={`animate-spin ${sizeClasses[size]} ${colorClasses[color]}`}
         xmlns="http://www.w3.org/2000/svg"
         fill="none"
         viewBox="0 0 24 24"
+        aria-hidden="true"
       >
         <circle
           className="opacity-25"
@@ -57,6 +58,7 @@ function LoadingSpinner({ size = 'md', color = 'primary', text, inline = false }
           {text}
         </span>
       )}
+      {!text && <span className="sr-only">Loading...</span>}
     </div>
   )
 }

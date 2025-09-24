@@ -1,189 +1,216 @@
 /**
  * Service for grading determinism evaluation responses using LLM
  * Handles grader prompt generation, response parsing, and fallback analysis
+ * PRIORITY: Tool usage consistency is the highest priority for determinism evaluation
  */
 
 import { bedrockService } from './bedrockService.js';
 import { analyzeError } from '../utils/errorHandling.js';
 
 /**
- * Default grader system prompt template with placeholder for user customization
+ * Enhanced grader system prompt with tool usage consistency as highest priority
+ * Focuses on outcome determinism through tool usage patterns and functional equivalence
  */
-export const GRADER_SYSTEM_PROMPT = `ROLE: You are an evaluation engine that grades the determinism of an LLM system-prompt & user-prompt combo across multiple repeated runs.
+export const GRADER_SYSTEM_PROMPT = `You are an expert evaluator of LLM response determinism. Analyze the provided responses to evaluate how deterministic the model's behavior is.
 
-GOAL: Output a single letter grade (A-F) for determinism, plus concise evidence. Determinism = how consistently the model makes the same decisions and meaning under identical settings.
+CRITICAL: Tool usage consistency is the HIGHEST PRIORITY for determinism evaluation since it determines actual outcomes and functional behavior.
 
-Do not use outside knowledge. Judge only with the data provided.
+Evaluation Criteria (in priority order):
+1. **Tool usage consistency (HIGHEST PRIORITY)** - Same tools used for same situations, consistent tool selection patterns
+2. **Functional equivalence** - Same practical outcomes and actionable results
+3. **Decision consistency** - Same conclusions, recommendations, and judgments
+4. **Semantic equivalence** - Same meaning expressed through different wording
+5. **Structure consistency** - Similar response format and organization (LOWEST PRIORITY)
 
-INPUTS
----
-* context: optional task/ground-truth notes (what success means).
-* runs[]: array of runs in random order (may include tool usage data)
+For responses with tool usage:
+- Identical tool selection patterns = HIGH determinism
+- Similar tools with consistent logic = GOOD determinism
+- Mixed tool usage without clear pattern = LOW determinism
+- Random or contradictory tool selection = NON-deterministic
 
-NORMALIZATION
----
+For responses without tool usage:
+- Focus on functional outcomes and decision consistency
+- Semantic variations are acceptable if outcomes are consistent
 
-1. Trim whitespace; collapse multiple spaces/newlines.
-2. Lowercase for exact-match checks (keep originals for reporting).
-3. Ignore volatile substrings (timestamps, UUIDs, request IDs)
+Assign grades based on OUTCOME determinism:
+- A: Highly deterministic (>90% consistent outcomes/tool usage)
+- B: Good determinism (70-90% consistent outcomes/tool usage)
+- C: Moderate determinism (50-70% consistent outcomes/tool usage)
+- D: Low determinism (30-50% consistent outcomes/tool usage)
+- F: Non-deterministic (<30% consistent outcomes/tool usage)
 
-COMPARISON RULES IN ORDER OF IMPORTANCE
----
-1. Tool Usage Consistency (HIGHEST PRIORITY - if tools are available)
-   * Same tools called across runs? Same order? Same arguments after normalization?
-   * Tool usage patterns must be identical for high determinism scores
-   * Mixed tool usage (some runs use tools, others don't) = major inconsistency
-2. Action/Decision Consistency
-   * Same structured decisions (e.g., same "freeze account: yes/no")
-   * Consistent reasoning patterns and conclusions
-3. Semantic Equivalence
-   * Are the answers meaning-equivalent given context?
-   * Treat paraphrases and rephrasings as equivalent if they preserve all task-relevant facts and directives.
-4. Schema/Structure Consistency
-   * JSON/object shape identical? All required fields present? Types stable?
-
-SCORING METHOD
----
-
-Compare each run to a reference (the first normalized run) and compute majority consistency across all pairs when helpful. Tally these rates:
-
-* decision_consistency_rate - % of runs with identical decisions/tool sequences & normalized args
-* structure_consistency_rate - % with identical schema/object shape
-* semantic_equivalence_rate - % meaning-equivalent given context
-* exact_text_rate - % exact matches after normalization
-
-Also record the worst deviation you observe (e.g., tool skipped/added, field missing, contradictory instruction).
-
-GRADE DEFINITIONS
----
-
-* A (Very High):
-  tool_consistency_rate ≥ 0.98 AND decision_consistency_rate ≥ 0.98 AND structure_consistency_rate ≥ 0.98 AND semantic_equivalence_rate ≥ 0.98.
-  Tool usage must be identical across runs. Text may vary slightly; numbers may differ within tolerances in <2%
-* B (High):
-  tool_consistency_rate ≥ 0.95 AND all other rates ≥ 0.95, no contradictory decisions; variations are paraphrases or harmless ordering.
-* C (Moderate):
-  tool_consistency_rate ≥ 0.85 AND all other rates ≥ 0.85; occasional minor structural drift (optional fields), no harmful decision flips.
-* D (Low):
-  tool_consistency_rate ≥ 0.60 OR any other rate ≥ 0.60 and < 0.85; noticeable decision or structure drift, intermittent schema failures.
-* F (Unstable):
-  tool_consistency_rate < 0.60 OR any other rate < 0.60 or any harmful decision flip (e.g., tool call yes/no toggles), missing critical fields, or contradictions.
-
-OUTPUT FORMAT - STRICT JSON
----
-
-Return **only** this JSON object:
-
+Required JSON response format:
 {
-  "grade": "A|B|C|D|F",
+  "grade": "A",
+  "score": 95,
+  "reasoning": "Detailed explanation focusing on tool usage and outcome consistency",
   "metrics": {
-    "tool_consistency_rate": 0.0,
-    "decision_consistency_rate": 0.0,
-    "structure_consistency_rate": 0.0,
-    "semantic_equivalence_rate": 0.0,
-    "exact_text_rate": 0.0,
-    "n_runs": 0
+    "toolUsageConsistency": 0.96,
+    "decisionConsistency": 0.94,
+    "semanticSimilarity": 0.92,
+    "structureConsistency": 0.88,
+    "responseCount": 10,
+    "uniqueResponses": 3,
+    "exactMatches": 2
   },
   "notable_variations": [
-    "short bullet on the most significant inconsistency, if any"
-  ],
-  "notes": "≤300 chars explaining the grade boundaries crossed or not"
+    "Different tool selection patterns",
+    "Varied explanation depth but same conclusion"
+  ]
 }
 
-PROCEDURE
----
-
-1. Normalize all runs (apply rules above).
-2. For each run, compute:
-
-   * same tool usage pattern? (boolean) - HIGHEST PRIORITY
-   * same decision signature? (boolean)
-   * same structure? (boolean)
-   * meaning-equivalent given context? (boolean)
-   * exact-text match? (boolean)
-3. Aggregate rates; assign grade using the thresholds.
-4. Emit JSON exactly as specified.
-
-GUARDRAILS
----
-
-* Temperature of your grading is conceptually 0: be strict and repeatable.
-* No chain-of-thought; include only short factual notes.
-* Don't invent facts; judge only from inputs.
-`;
+Responses to analyze (excluding throttled responses):`;
 
 /**
  * Grader service class for determinism evaluation
  */
 export class GraderService {
   constructor() {
-    this.defaultGraderModel = 'anthropic.claude-3-5-sonnet-20241022-v2:0';
-    this.fallbackGraderModel = 'amazon.nova-pro-v1:0';
+    this.graderModel = 'amazon.nova-pro-v1:0';
     this.maxResponsesPerRequest = 30;
     this.maxPromptLength = 100000;
   }
 
   /**
-   * Grade responses using grader LLM
-   * @param {Array<string|Object>} responses - Array of responses to grade (strings or response objects with tool usage)
+   * Grade responses using grader LLM with tool usage priority
+   * @param {Array<string|Object>} responses - Array of responses to grade
    * @param {Object} config - Evaluation configuration
    * @param {string} customGraderPrompt - Optional custom grader prompt
-   * @returns {Promise<Object>} Grading result with grade, score, reasoning, and variance
+   * @returns {Promise<Object>} Grading result with tool usage as primary metric
    */
-  async gradeResponses(responses, config) {
-
-
+  async gradeResponses(responses, config, customGraderPrompt = null) {
     if (!responses || !Array.isArray(responses) || responses.length === 0) {
       throw new Error('No responses provided for grading');
     }
 
     try {
-      // Prepare grader prompt with tool usage data
-      const graderPrompt = this.buildGraderPrompt(responses);
+      // Filter out throttled/abandoned responses for grading analysis
+      const responsesForGrading = responses.filter(response => {
+        if (typeof response === 'string') return true;
+        return !response.wasThrottled && !response.wasAbandoned;
+      });
 
-      // Use Nova Pro only (reliable and good for reasoning)
-      const graderResult = await this.invokeGrader('amazon.nova-pro-v1:0', graderPrompt);
+      console.log(`Grading ${responsesForGrading.length} responses (excluded ${responses.length - responsesForGrading.length} throttled/abandoned)`);
 
-      // Parse grader response
-      const parsedResult = this.parseGraderResponse(graderResult.text, responses, config);
+      if (responsesForGrading.length === 0) {
+        throw new Error('No valid responses available for grading after filtering throttled responses');
+      }
+
+      // Prepare grader prompt with tool usage emphasis
+      const graderPrompt = this.buildGraderPrompt(responsesForGrading, config, customGraderPrompt);
+
+      // Use Nova Pro for grading
+      const graderResult = await this.invokeGrader(this.graderModel, graderPrompt);
+
+      // Parse grader response with tool usage priority
+      const parsedResult = this.parseGraderResponse(graderResult.text, responsesForGrading, responses, config);
 
       return {
         ...parsedResult,
         graderModel: graderResult.graderModel,
         graderUsage: graderResult.usage,
+        responsesAnalyzed: responsesForGrading.length,
+        responsesExcluded: responses.length - responsesForGrading.length,
         timestamp: Date.now()
       };
 
     } catch (error) {
-      console.error('Grading failed completely, using fallback analysis:', error);
-      return this.performFallbackAnalysis(responses, config, error);
+      console.error('Grading failed completely, using enhanced fallback analysis:', error);
+      return this.performEnhancedFallbackAnalysis(responses, config, error);
     }
   }
 
   /**
-   * Build the complete grader prompt with responses including tool usage data
-   * @param {Array<string|Object>} responses - Responses to analyze (strings or response objects)
+   * Grade responses with graceful degradation for partial data
+   * @param {Array} responses - Responses to grade
+   * @param {Object} config - Configuration
+   * @param {string} customGraderPrompt - Custom prompt
+   * @param {Object} options - Additional options
+   * @returns {Promise<Object>} Grading result
+   */
+  async gradeResponsesWithGracefulDegradation(responses, config, customGraderPrompt = null, options = {}) {
+    const {
+      allowPartialAnalysis = true,
+      minResponsesForGrading = 3,
+      preferFallbackForSmallSets = false
+    } = options;
+
+    // Check if we have sufficient data
+    const validResponses = responses.filter(r => {
+      if (typeof r === 'string') return r.trim().length > 0;
+      return r && !r.wasAbandoned && r.text && r.text.trim().length > 0;
+    });
+
+    if (validResponses.length < minResponsesForGrading) {
+      if (allowPartialAnalysis && validResponses.length > 0) {
+        console.log(`Insufficient responses for full analysis (${validResponses.length} < ${minResponsesForGrading}), using fallback`);
+        return this.performEnhancedFallbackAnalysis(responses, config,
+          new Error(`Insufficient responses: ${validResponses.length} < ${minResponsesForGrading}`));
+      } else {
+        throw new Error(`Insufficient responses for analysis: ${validResponses.length} responses available, minimum ${minResponsesForGrading} required`);
+      }
+    }
+
+    // Use fallback for very small datasets if preferred
+    if (preferFallbackForSmallSets && validResponses.length <= 5) {
+      console.log('Using fallback analysis for small dataset');
+      return this.performEnhancedFallbackAnalysis(responses, config,
+        new Error('Small dataset - using statistical analysis'));
+    }
+
+    // Attempt normal grading with fallback on failure
+    try {
+      return await this.gradeResponses(responses, config, customGraderPrompt);
+    } catch (error) {
+      if (allowPartialAnalysis) {
+        console.log('Grading failed, falling back to statistical analysis');
+        return this.performEnhancedFallbackAnalysis(responses, config, error);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Build grader prompt with tool usage emphasis
+   * @param {Array<string|Object>} responses - Responses to analyze
    * @param {Object} config - Evaluation configuration
-   * @param {string} customGraderPrompt - Custom grader prompt
+   * @param {string} customGraderPrompt - Optional custom grader prompt
    * @returns {string} Complete grader prompt
    */
-  buildGraderPrompt(responses) {
-    const prompt = `Determine the level of determinism in these ${responses.length} responses: ${responses.map((r, index) => {
-      // Handle both string responses and response objects with tool usage
-      if (typeof r === 'string') {
-        return `\n--- Response ${index + 1} --- \n${r}`;
-      } else {
-        // Response object with potential tool usage data
-        let responseText = `\n--- Response ${index + 1} --- \n${r.text || ''}`;
+  buildGraderPrompt(responses, config, customGraderPrompt = null) {
+    // Use custom prompt if provided, otherwise use tool usage focused default
+    const systemPrompt = customGraderPrompt || GRADER_SYSTEM_PROMPT;
 
-        // Add tool usage information if available
+    // Build context information
+    let contextInfo = '';
+    if (config && config.systemPrompt) {
+      contextInfo += `\nContext - System Prompt: ${config.systemPrompt.substring(0, 200)}${config.systemPrompt.length > 200 ? '...' : ''}`;
+    }
+    if (config && config.userPrompt) {
+      contextInfo += `\nContext - User Prompt: ${config.userPrompt.substring(0, 200)}${config.userPrompt.length > 200 ? '...' : ''}`;
+    }
+
+    // Detect if any responses have tool usage
+    const hasToolUsage = responses.some(r =>
+      typeof r === 'object' && r.toolUsage && r.toolUsage.hasToolUsage
+    );
+
+    // Build responses section with enhanced tool usage formatting
+    const responsesText = responses.map((r, index) => {
+      if (typeof r === 'string') {
+        return `\n--- Response ${index + 1} ---\n${r}\n\nTOOL USAGE: None`;
+      } else {
+        let responseText = `\n--- Response ${index + 1} ---\n${r.text || ''}`;
+
+        // Enhanced tool usage formatting
         if (r.toolUsage && r.toolUsage.hasToolUsage && r.toolUsage.toolCalls && r.toolUsage.toolCalls.length > 0) {
-          responseText += `\n\nTOOL USAGE:\n`;
+          responseText += `\n\nTOOL USAGE:`;
           r.toolUsage.toolCalls.forEach((call, callIndex) => {
-            responseText += `Tool ${callIndex + 1}: ${call.toolName}\n`;
-            responseText += `Input: ${JSON.stringify(call.input)}\n`;
+            responseText += `\n  Tool ${callIndex + 1}: ${call.toolName}`;
+            responseText += `\n    Input: ${JSON.stringify(call.input)}`;
             if (call.output) {
-              responseText += `Output: ${JSON.stringify(call.output)}\n`;
+              responseText += `\n    Output: ${JSON.stringify(call.output)}`;
             }
           });
         } else {
@@ -192,7 +219,18 @@ export class GraderService {
 
         return responseText;
       }
-    }).join('\n')}`;
+    }).join('\n');
+
+    const prompt = `${contextInfo}
+
+Analyze these ${responses.length} responses for determinism:${responsesText}
+
+${hasToolUsage ?
+        '\n🔧 CRITICAL: These responses include TOOL USAGE. Tool usage consistency is the PRIMARY determinant of response determinism. Focus your analysis on:\n- Whether the same tools are selected for the same situations\n- Consistency in tool input parameters\n- Patterns in tool selection logic\n- Functional outcome equivalence through tool usage' :
+        '\n📝 NOTE: These responses do not include tool usage. Focus on functional outcomes, decision consistency, and semantic equivalence.'
+      }
+
+Prioritize OUTCOME determinism over text similarity. Analyze meaningful functional variations that affect results.`;
 
     // Check total prompt length and truncate if necessary
     if (prompt.length > this.maxPromptLength) {
@@ -210,7 +248,6 @@ export class GraderService {
    * @returns {Promise<Object>} Grader response
    */
   async invokeGrader(modelId, prompt) {
-
     try {
       const response = await bedrockService.invokeModel(
         modelId,
@@ -234,22 +271,22 @@ export class GraderService {
   }
 
   /**
-   * Parse grader LLM response to extract structured results
+   * Parse grader LLM response with tool usage priority
    * @param {string} graderResponse - Raw grader response
-   * @param {Array<string>} responses - Original responses for fallback calculation
+   * @param {Array<string|Object>} responsesForGrading - Responses used for grading
+   * @param {Array<string|Object>} allResponses - All responses including throttled ones
    * @param {Object} config - Evaluation configuration
-   * @returns {Object} Parsed grading result
+   * @returns {Object} Parsed grading result with tool usage metrics
    */
-  parseGraderResponse(graderResponse, responses, config) {
+  parseGraderResponse(graderResponse, responsesForGrading, allResponses, config) {
     if (!graderResponse || typeof graderResponse !== 'string') {
       throw new Error('Invalid grader response: empty or non-string response');
     }
 
     try {
       // Try to extract JSON from the response
-      // Processing grader response
       const jsonMatch = this.extractJsonFromResponse(graderResponse);
-      console.log('Extracted JSON:', jsonMatch);
+      console.log('Extracted grader JSON:', jsonMatch);
 
       if (!jsonMatch) {
         throw new Error('No valid JSON found in grader response');
@@ -258,8 +295,8 @@ export class GraderService {
       const parsed = JSON.parse(jsonMatch);
       console.log('Parsed grader JSON:', parsed);
 
-      // Validate required fields
-      const validatedResult = this.validateGraderResult(parsed, responses, config);
+      // Validate and enhance the result with tool usage priority
+      const validatedResult = this.validateGraderResult(parsed, responsesForGrading, allResponses, config);
       console.log('Validated grader result:', validatedResult);
 
       return {
@@ -273,10 +310,10 @@ export class GraderService {
 
       // Try alternative parsing methods
       try {
-        return this.parseGraderResponseFallback(graderResponse, responses, config);
+        return this.parseGraderResponseFallback(graderResponse, responsesForGrading, config);
       } catch (fallbackError) {
-        console.warn('All parsing methods failed, using statistical analysis');
-        return this.performFallbackAnalysis(responses, config, parseError);
+        console.warn('All parsing methods failed, using enhanced fallback analysis');
+        return this.performEnhancedFallbackAnalysis(allResponses, config, parseError);
       }
     }
   }
@@ -357,234 +394,494 @@ export class GraderService {
       grade,
       score,
       reasoning,
-      variance: this.calculateStatisticalVariance(responses),
+      metrics: this.calculateEnhancedMetrics(responses),
+      notable_variations: this.identifyNotableVariations(responses),
       parseMethod: 'regex_fallback',
       rawResponse: response,
-      fallbackAnalysis: !gradeMatch && !scoreMatch // Set fallback flag if no regex matches
+      fallbackAnalysis: !gradeMatch && !scoreMatch
     };
   }
 
   /**
-   * Validate and sanitize grader result
+   * Validate and sanitize grader result with tool usage priority
    * @param {Object} result - Parsed grader result
-   * @param {Array<string>} responses - Original responses
+   * @param {Array<string|Object>} responsesForGrading - Responses used for grading
+   * @param {Array<string|Object>} allResponses - All responses including throttled
    * @param {Object} config - Evaluation configuration
    * @returns {Object} Validated result
    */
-  validateGraderResult(result, responses, config) {
+  validateGraderResult(result, responsesForGrading, allResponses, config) {
     const validated = {};
 
     // Validate grade
     if (result.grade && typeof result.grade === 'string' && /^[A-F]$/.test(result.grade.toUpperCase())) {
       validated.grade = result.grade.toUpperCase();
     } else {
-      validated.grade = this.calculateStatisticalGrade(responses);
+      validated.grade = this.calculateStatisticalGrade(responsesForGrading);
     }
 
     // Validate score
     if (typeof result.score === 'number' && result.score >= 0 && result.score <= 100) {
       validated.score = Math.round(result.score);
     } else {
-      validated.score = this.calculateStatisticalScore(responses);
+      validated.score = this.calculateStatisticalScore(responsesForGrading);
     }
 
-    // Validate reasoning (keep for backward compatibility)
+    // Validate reasoning
     if (result.reasoning && typeof result.reasoning === 'string' && result.reasoning.trim().length > 0) {
       validated.reasoning = result.reasoning.trim();
     } else {
-      validated.reasoning = `Evaluated ${responses.length} responses with ${validated.grade} grade (${validated.score}% consistency)`;
+      validated.reasoning = `Evaluated ${responsesForGrading.length} responses with ${validated.grade} grade (${validated.score}% consistency)`;
     }
 
-    // Validate variance object
-    if (result.variance && typeof result.variance === 'object') {
-      validated.variance = this.validateVarianceObject(result.variance, responses);
-    } else {
-      validated.variance = this.calculateStatisticalVariance(responses);
-    }
-
-    // Validate metrics object (new grader format)
+    // Enhanced metrics validation with tool usage priority
     if (result.metrics && typeof result.metrics === 'object') {
       validated.metrics = {
-        tool_consistency_rate: typeof result.metrics.tool_consistency_rate === 'number' ? result.metrics.tool_consistency_rate : 1.0,
-        decision_consistency_rate: typeof result.metrics.decision_consistency_rate === 'number' ? result.metrics.decision_consistency_rate : 0,
-        structure_consistency_rate: typeof result.metrics.structure_consistency_rate === 'number' ? result.metrics.structure_consistency_rate : 0,
-        semantic_equivalence_rate: typeof result.metrics.semantic_equivalence_rate === 'number' ? result.metrics.semantic_equivalence_rate : 0,
-        exact_text_rate: typeof result.metrics.exact_text_rate === 'number' ? result.metrics.exact_text_rate : 0,
-        n_runs: typeof result.metrics.n_runs === 'number' ? result.metrics.n_runs : responses.length
+        toolUsageConsistency: this.validateMetricValue(result.metrics.toolUsageConsistency, 0.0, 1.0),
+        decisionConsistency: this.validateMetricValue(result.metrics.decisionConsistency, 0.0, 1.0),
+        semanticSimilarity: this.validateMetricValue(result.metrics.semanticSimilarity, 0.0, 1.0),
+        structureConsistency: this.validateMetricValue(result.metrics.structureConsistency, 0.0, 1.0),
+        responseCount: typeof result.metrics.responseCount === 'number' ? result.metrics.responseCount : responsesForGrading.length,
+        uniqueResponses: typeof result.metrics.uniqueResponses === 'number' ? result.metrics.uniqueResponses : this.calculateUniqueResponses(responsesForGrading),
+        exactMatches: typeof result.metrics.exactMatches === 'number' ? result.metrics.exactMatches : this.calculateExactMatches(responsesForGrading)
       };
+    } else {
+      // Generate metrics from statistical analysis with tool usage priority
+      validated.metrics = this.calculateEnhancedMetrics(responsesForGrading);
     }
 
     // Validate notable variations
     if (result.notable_variations && Array.isArray(result.notable_variations)) {
       validated.notable_variations = result.notable_variations.filter(v => typeof v === 'string' && v.trim().length > 0);
+    } else {
+      validated.notable_variations = this.identifyNotableVariations(responsesForGrading);
     }
 
-    // Validate notes - prioritize 'notes' field, fallback to 'reasoning' for important LLM analysis
-    if (result.notes && typeof result.notes === 'string' && result.notes.trim().length > 0) {
-      validated.notes = result.notes.trim();
-    } else if (result.reasoning && typeof result.reasoning === 'string' && result.reasoning.trim().length > 0) {
-      // Map reasoning to notes since that's where the important LLM analysis is
-      validated.notes = result.reasoning.trim();
-    }
+    // Add throttling information
+    validated.throttlingInfo = {
+      totalResponses: allResponses.length,
+      responsesAnalyzed: responsesForGrading.length,
+      throttledResponses: allResponses.length - responsesForGrading.length,
+      excludedFromAnalysis: allResponses.length - responsesForGrading.length > 0
+    };
 
     return validated;
   }
 
   /**
-   * Validate variance object from grader response
-   * @param {Object} variance - Variance object from grader
-   * @param {Array<string>} responses - Original responses
-   * @returns {Object} Validated variance object
+   * Validate a metric value within bounds
+   * @param {*} value - Value to validate
+   * @param {number} min - Minimum allowed value
+   * @param {number} max - Maximum allowed value
+   * @returns {number} Validated metric value
    */
-  validateVarianceObject(variance, responses) {
-    const statistical = this.calculateStatisticalVariance(responses);
+  validateMetricValue(value, min = 0.0, max = 1.0) {
+    if (typeof value === 'number' && !isNaN(value)) {
+      return Math.max(min, Math.min(max, value));
+    }
+    return min;
+  }
+
+  /**
+   * Calculate enhanced metrics with tool usage as primary focus
+   * @param {Array<string|Object>} responses - Responses to analyze
+   * @returns {Object} Enhanced metrics object
+   */
+  calculateEnhancedMetrics(responses) {
+    const responseTexts = responses.map(r =>
+      typeof r === 'string' ? r.trim() : (r.text || '').trim()
+    );
+
+    const uniqueResponses = this.calculateUniqueResponses(responses);
+    const exactMatches = this.calculateExactMatches(responses);
+
+    // Tool usage consistency is the primary metric
+    const toolUsageConsistency = this.calculateToolUsageConsistency(responses);
+    const decisionConsistency = this.calculateDecisionConsistency(responses);
+    const structureConsistency = this.calculateStructureConsistency(responses);
+
+    // Semantic similarity calculation (secondary to tool usage)
+    const nonExactResponses = responseTexts.length - exactMatches;
+    const semanticSimilarity = nonExactResponses > 0
+      ? Math.max(0, 1 - ((uniqueResponses - exactMatches) / nonExactResponses))
+      : 1.0;
 
     return {
-      responseCount: typeof variance.responseCount === 'number' ? variance.responseCount : statistical.responseCount,
-      uniqueResponses: typeof variance.uniqueResponses === 'number' ? variance.uniqueResponses : statistical.uniqueResponses,
-      averageLength: typeof variance.averageLength === 'number' ? Math.round(variance.averageLength) : statistical.averageLength,
-      lengthVariance: typeof variance.lengthVariance === 'number' ? Math.round(variance.lengthVariance * 100) / 100 : statistical.lengthVariance,
-      semanticSimilarity: typeof variance.semanticSimilarity === 'number' ? Math.round(variance.semanticSimilarity * 100) / 100 : statistical.semanticSimilarity,
-      actionConsistency: typeof variance.actionConsistency === 'number' ? Math.round(variance.actionConsistency * 100) / 100 : statistical.actionConsistency
+      toolUsageConsistency,        // PRIMARY metric (highest priority)
+      decisionConsistency,         // Secondary metric (functional outcomes)
+      semanticSimilarity: Math.round(semanticSimilarity * 100) / 100,  // Tertiary
+      structureConsistency,        // Lowest priority
+      responseCount: responses.length,
+      uniqueResponses,
+      exactMatches
     };
   }
 
   /**
-   * Perform fallback statistical analysis when grader LLM is unavailable
-   * @param {Array<string>} responses - Responses to analyze
-   * @param {Object} config - Evaluation configuration
-   * @param {Error} originalError - Original error that caused fallback
-   * @returns {Object} Statistical analysis result
+   * Calculate tool usage consistency with sophisticated analysis
+   * @param {Array<string|Object>} responses - Responses to analyze
+   * @returns {number} Tool usage consistency score (0.0 to 1.0)
    */
-  performFallbackAnalysis(responses, config, originalError = null) {
-    console.log('Performing fallback statistical analysis for determinism evaluation');
+  calculateToolUsageConsistency(responses) {
+    const responsesWithToolData = responses.filter(r =>
+      typeof r === 'object' && r.toolUsage
+    );
 
-    const variance = this.calculateStatisticalVariance(responses);
-    const score = this.calculateStatisticalScore(responses);
-    const grade = this.calculateStatisticalGrade(responses);
+    if (responsesWithToolData.length === 0) {
+      // No tool data available - assume perfect consistency for non-tool scenarios
+      return 1.0;
+    }
 
-    let reasoning = `Statistical analysis of ${responses.length} responses. `;
-    reasoning += `Found ${variance.uniqueResponses} unique variations. `;
-    reasoning += `Average length: ${variance.averageLength} characters. `;
-    reasoning += `Length variance: ${variance.lengthVariance}. `;
+    const responsesWithTools = responsesWithToolData.filter(r => r.toolUsage.hasToolUsage);
+    const toolUsageRate = responsesWithTools.length / responsesWithToolData.length;
 
-    if (originalError) {
-      reasoning += `Note: Grader LLM was unavailable (${originalError.message}), so this analysis is based on statistical measures only.`;
+    if (responsesWithTools.length === 0) {
+      // No tools used consistently - perfect consistency for non-tool scenarios
+      return 1.0;
+    }
+
+    if (responsesWithTools.length === responsesWithToolData.length) {
+      // All responses use tools - analyze tool selection patterns
+      const toolPatterns = responsesWithTools.map(r => {
+        if (!r.toolUsage.toolCalls || r.toolUsage.toolCalls.length === 0) {
+          return 'no-calls';
+        }
+
+        // Create a pattern based on tool names and their sequence
+        return r.toolUsage.toolCalls
+          .map(call => call.toolName || 'unknown')
+          .sort()
+          .join('|');
+      });
+
+      const uniquePatterns = new Set(toolPatterns);
+      const patternConsistency = 1 - (uniquePatterns.size - 1) / Math.max(1, toolPatterns.length - 1);
+
+      // Also check for input parameter consistency within same tool patterns
+      const patternGroups = {};
+      toolPatterns.forEach((pattern, index) => {
+        if (!patternGroups[pattern]) patternGroups[pattern] = [];
+        patternGroups[pattern].push(responsesWithTools[index]);
+      });
+
+      let inputConsistency = 1.0;
+      Object.values(patternGroups).forEach(group => {
+        if (group.length > 1) {
+          // Analyze input parameter consistency within this pattern group
+          const inputVariations = group.map(r =>
+            JSON.stringify(r.toolUsage.toolCalls?.map(call => call.input) || [])
+          );
+          const uniqueInputs = new Set(inputVariations).size;
+          const groupInputConsistency = 1 - (uniqueInputs - 1) / Math.max(1, inputVariations.length - 1);
+          inputConsistency = Math.min(inputConsistency, groupInputConsistency);
+        }
+      });
+
+      // Combine pattern and input consistency
+      return Math.round((patternConsistency * 0.7 + inputConsistency * 0.3) * 100) / 100;
     } else {
-      reasoning += 'Analysis based on response length and uniqueness patterns.';
+      // Mixed tool usage (some use tools, some don't) - lower consistency
+      // But not necessarily bad if the context justifies different approaches
+      return Math.max(0.1, Math.round((1 - Math.abs(toolUsageRate - 0.5) * 1.5) * 100) / 100);
+    }
+  }
+
+  /**
+   * Calculate decision consistency based on outcomes and conclusions
+   * @param {Array<string|Object>} responses - Responses to analyze
+   * @returns {number} Decision consistency score (0.0 to 1.0)
+   */
+  calculateDecisionConsistency(responses) {
+    // This is a simplified heuristic - in practice, this would need more sophisticated NLP
+    const responseTexts = responses.map(r =>
+      typeof r === 'string' ? r.trim() : (r.text || '').trim()
+    );
+
+    // Look for decision-indicating words and patterns
+    const decisionPatterns = responseTexts.map(text => {
+      const decisions = [];
+
+      // Extract recommendations, conclusions, actions
+      const recommendMatch = text.match(/recommend[s]?\s+([^.!?]+)/gi);
+      if (recommendMatch) decisions.push(...recommendMatch);
+
+      const concludeMatch = text.match(/conclude[s]?\s+([^.!?]+)/gi);
+      if (concludeMatch) decisions.push(...concludeMatch);
+
+      const shouldMatch = text.match(/should\s+([^.!?]+)/gi);
+      if (shouldMatch) decisions.push(...shouldMatch);
+
+      return decisions.join(' ').toLowerCase();
+    });
+
+    // Simple similarity check - in practice would use semantic similarity
+    const uniqueDecisionPatterns = new Set(decisionPatterns.filter(p => p.length > 0));
+
+    if (uniqueDecisionPatterns.size === 0) {
+      return 0.8; // No clear decisions found - moderate consistency
+    }
+
+    return Math.max(0.1, 1 - (uniqueDecisionPatterns.size - 1) / Math.max(1, decisionPatterns.length - 1));
+  }
+
+  /**
+   * Calculate structure consistency based on response format and organization
+   * @param {Array<string|Object>} responses - Responses to analyze
+   * @returns {number} Structure consistency score (0.0 to 1.0)
+   */
+  calculateStructureConsistency(responses) {
+    const responseTexts = responses.map(r =>
+      typeof r === 'string' ? r.trim() : (r.text || '').trim()
+    );
+
+    // Analyze structural patterns
+    const structures = responseTexts.map(text => {
+      const structure = {
+        hasNumberedList: /^\d+\./.test(text) || /\n\d+\./.test(text),
+        hasBulletList: /^[-*•]/.test(text) || /\n[-*•]/.test(text),
+        hasHeaders: /^#+\s/.test(text) || /\n#+\s/.test(text),
+        paragraphCount: text.split(/\n\s*\n/).length,
+        avgSentenceLength: text.split(/[.!?]+/).length
+      };
+
+      return JSON.stringify(structure);
+    });
+
+    const uniqueStructures = new Set(structures);
+    return Math.max(0.1, 1 - (uniqueStructures.size - 1) / Math.max(1, structures.length - 1));
+  }
+
+  /**
+   * Calculate unique responses count
+   * @param {Array<string|Object>} responses - Responses to analyze
+   * @returns {number} Number of unique responses
+   */
+  calculateUniqueResponses(responses) {
+    const responseTexts = responses.map(r =>
+      typeof r === 'string' ? r.trim() : (r.text || '').trim()
+    );
+    return new Set(responseTexts).size;
+  }
+
+  /**
+   * Calculate exact matches count
+   * @param {Array<string|Object>} responses - Responses to analyze
+   * @returns {number} Number of exact matches
+   */
+  calculateExactMatches(responses) {
+    const responseTexts = responses.map(r =>
+      typeof r === 'string' ? r.trim() : (r.text || '').trim()
+    );
+
+    if (responseTexts.length === 0) return 0;
+
+    const firstResponse = responseTexts[0];
+    return responseTexts.filter(text => text === firstResponse).length;
+  }
+
+  /**
+   * Identify notable variations with focus on tool usage patterns
+   * @param {Array<string|Object>} responses - Responses to analyze
+   * @returns {Array<string>} Array of notable variation descriptions
+   */
+  identifyNotableVariations(responses) {
+    const variations = [];
+    const toolUsageConsistency = this.calculateToolUsageConsistency(responses);
+
+    // Analyze tool usage patterns
+    const responsesWithToolData = responses.filter(r =>
+      typeof r === 'object' && r.toolUsage
+    );
+
+    if (responsesWithToolData.length > 0) {
+      const responsesWithTools = responsesWithToolData.filter(r => r.toolUsage.hasToolUsage);
+      const toolUsageRate = responsesWithTools.length / responsesWithToolData.length;
+
+      if (toolUsageRate > 0 && toolUsageRate < 1) {
+        variations.push(`Mixed tool usage: ${responsesWithTools.length}/${responsesWithToolData.length} responses used tools`);
+      }
+
+      if (responsesWithTools.length > 1) {
+        const toolPatterns = responsesWithTools.map(r =>
+          r.toolUsage.toolCalls?.map(call => call.toolName).sort().join(', ') || 'none'
+        );
+        const uniquePatterns = [...new Set(toolPatterns)];
+
+        if (uniquePatterns.length > 1) {
+          variations.push(`Different tool selection patterns: ${uniquePatterns.join(' vs ')}`);
+        }
+      }
+
+      if (toolUsageConsistency < 0.7) {
+        variations.push('Low tool usage consistency detected');
+      }
+    }
+
+    // Analyze response diversity
+    const responseTexts = responses.map(r =>
+      typeof r === 'string' ? r.trim() : (r.text || '').trim()
+    );
+    const uniqueTexts = new Set(responseTexts);
+    const uniqueRatio = uniqueTexts.size / responseTexts.length;
+
+    if (uniqueRatio > 0.7) {
+      variations.push(`High response diversity (${Math.round(uniqueRatio * 100)}% unique)`);
+    } else if (uniqueRatio < 0.3) {
+      variations.push(`Low response diversity (${Math.round(uniqueRatio * 100)}% unique)`);
+    }
+
+    // Analyze decision consistency
+    const decisionConsistency = this.calculateDecisionConsistency(responses);
+    if (decisionConsistency < 0.6) {
+      variations.push('Inconsistent decisions or recommendations detected');
+    }
+
+    return variations.length > 0 ? variations : ['Responses show consistent patterns'];
+  }
+
+  /**
+   * Perform enhanced fallback analysis when grader LLM fails
+   * @param {Array} responses - All responses (including throttled)
+   * @param {Object} config - Evaluation configuration
+   * @param {Error} originalError - The error that caused fallback
+   * @returns {Object} Fallback analysis result
+   */
+  performEnhancedFallbackAnalysis(responses, config, originalError) {
+    console.log('Performing enhanced fallback analysis for', responses.length, 'responses');
+
+    // Filter valid responses for analysis
+    const validResponses = responses.filter(response => {
+      if (typeof response === 'string') return response.trim().length > 0;
+      return response && !response.wasAbandoned && response.text && response.text.trim().length > 0;
+    });
+
+    if (validResponses.length === 0) {
+      return {
+        grade: 'F',
+        score: 0,
+        reasoning: 'No valid responses available for analysis',
+        metrics: {
+          toolUsageConsistency: 0,
+          decisionConsistency: 0,
+          semanticSimilarity: 0,
+          structureConsistency: 0,
+          responseCount: responses.length,
+          uniqueResponses: 0,
+          exactMatches: 0
+        },
+        notable_variations: ['No valid responses to analyze'],
+        isFallbackAnalysis: true,
+        fallbackReason: originalError.message,
+        responsesAnalyzed: 0,
+        responsesExcluded: responses.length
+      };
+    }
+
+    // Calculate enhanced metrics with tool usage priority
+    const metrics = this.calculateEnhancedMetrics(validResponses);
+
+    // Calculate overall score with tool usage as primary factor (50% weight)
+    const overallScore = Math.round(
+      (metrics.toolUsageConsistency * 0.5 +      // Tool usage is highest priority (50%)
+        metrics.decisionConsistency * 0.3 +      // Decision consistency (30%)
+        metrics.semanticSimilarity * 0.2) * 100  // Semantic similarity (20%)
+    );
+
+    // Determine grade based on tool usage focused scoring
+    let grade;
+    if (overallScore >= 90) grade = 'A';
+    else if (overallScore >= 70) grade = 'B';
+    else if (overallScore >= 50) grade = 'C';
+    else if (overallScore >= 30) grade = 'D';
+    else grade = 'F';
+
+    // Generate analysis notes with tool usage priority
+    const variations = [];
+
+    // Tool usage variations (highest priority)
+    const responsesWithToolData = validResponses.filter(r =>
+      typeof r === 'object' && r.toolUsage
+    );
+
+    if (responsesWithToolData.length > 0) {
+      const responsesWithTools = responsesWithToolData.filter(r => r.toolUsage.hasToolUsage);
+      const toolUsageRate = responsesWithTools.length / responsesWithToolData.length;
+
+      if (toolUsageRate > 0 && toolUsageRate < 1) {
+        variations.push(`Mixed tool usage: ${responsesWithTools.length}/${responsesWithToolData.length} responses used tools`);
+      }
+
+      if (metrics.toolUsageConsistency < 0.8) {
+        variations.push('Inconsistent tool usage patterns detected');
+      }
+    }
+
+    // Response diversity (secondary)
+    const responseTexts = validResponses.map(r =>
+      typeof r === 'string' ? r.trim() : (r.text || '').trim()
+    );
+    const uniqueTexts = new Set(responseTexts);
+    const uniqueRatio = uniqueTexts.size / responseTexts.length;
+
+    if (uniqueRatio > 0.5) {
+      variations.push(`High response diversity (${Math.round(uniqueRatio * 100)}% unique responses)`);
+    }
+
+    // Exact matches (informational)
+    if (metrics.exactMatches > 0) {
+      variations.push(`${metrics.exactMatches} exact duplicate responses found`);
     }
 
     return {
       grade,
-      score,
-      reasoning,
-      variance,
-      fallbackAnalysis: true,
-      originalError: originalError?.message,
-      timestamp: Date.now()
+      score: overallScore,
+      reasoning: `Statistical analysis of ${validResponses.length} responses with tool usage priority. ${metrics.toolUsageConsistency >= 0.8 ? 'Good tool usage consistency suggests deterministic behavior.' :
+        metrics.toolUsageConsistency >= 0.5 ? 'Moderate tool usage consistency with some variations.' :
+          'Low tool usage consistency indicates non-deterministic behavior.'
+        } Note: This is a simplified analysis due to grader LLM unavailability.`,
+      metrics,
+      notable_variations: variations.length > 0 ? variations : ['Responses show consistent patterns'],
+      isFallbackAnalysis: true,
+      fallbackReason: originalError.message,
+      responsesAnalyzed: validResponses.length,
+      responsesExcluded: responses.length - validResponses.length
     };
   }
 
   /**
-   * Calculate statistical variance metrics
+   * Calculate statistical grade based on response patterns with tool usage priority
    * @param {Array<string|Object>} responses - Responses to analyze
-   * @returns {Object} Variance metrics
-   */
-  calculateStatisticalVariance(responses) {
-    const responseCount = responses.length;
-
-    // Extract text from responses (handle both strings and objects)
-    const responseTexts = responses.map(r =>
-      typeof r === 'string' ? r.trim() : (r.text || '').trim()
-    );
-
-    const uniqueResponses = new Set(responseTexts).size;
-
-    const lengths = responseTexts.map(r => r.length);
-    const averageLength = Math.round(lengths.reduce((sum, len) => sum + len, 0) / lengths.length);
-
-    const lengthVariance = Math.round(Math.sqrt(
-      lengths.reduce((sum, len) => sum + Math.pow(len - averageLength, 2), 0) / lengths.length
-    ) * 100) / 100;
-
-    // Simple heuristics for semantic similarity and action consistency
-    const uniquenessRatio = uniqueResponses / responseCount;
-    const semanticSimilarity = Math.round((1 - uniquenessRatio) * 100) / 100;
-    const actionConsistency = Math.round((1 - (uniquenessRatio * 0.8)) * 100) / 100;
-
-    return {
-      responseCount,
-      uniqueResponses,
-      averageLength,
-      lengthVariance,
-      semanticSimilarity: Math.max(0, Math.min(1, semanticSimilarity)),
-      actionConsistency: Math.max(0, Math.min(1, actionConsistency))
-    };
-  }
-
-  /**
-   * Calculate statistical score based on response consistency
-   * @param {Array<string|Object>} responses - Responses to analyze
-   * @returns {number} Consistency score (0-100)
-   */
-  calculateStatisticalScore(responses) {
-    // Extract text from responses (handle both strings and objects)
-    const responseTexts = responses.map(r =>
-      typeof r === 'string' ? r.trim() : (r.text || '').trim()
-    );
-
-    const uniqueResponses = new Set(responseTexts).size;
-    const consistencyRatio = 1 - ((uniqueResponses - 1) / responses.length);
-    return Math.round(Math.max(0, Math.min(100, consistencyRatio * 100)));
-  }
-
-  /**
-   * Calculate statistical grade based on score
-   * @param {Array<string|Object>} responses - Responses to analyze
-   * @returns {string} Letter grade (A-F)
+   * @returns {string} Grade (A-F)
    */
   calculateStatisticalGrade(responses) {
-    const score = this.calculateStatisticalScore(responses);
+    const metrics = this.calculateEnhancedMetrics(responses);
 
-    if (score >= 90) return 'A';
-    if (score >= 70) return 'B';
-    if (score >= 50) return 'C';
-    if (score >= 30) return 'D';
+    // Tool usage consistency is primary factor
+    const primaryScore = metrics.toolUsageConsistency * 0.5 +
+      metrics.decisionConsistency * 0.3 +
+      metrics.semanticSimilarity * 0.2;
+
+    if (primaryScore >= 0.9) return 'A';
+    if (primaryScore >= 0.7) return 'B';
+    if (primaryScore >= 0.5) return 'C';
+    if (primaryScore >= 0.3) return 'D';
     return 'F';
   }
 
   /**
-   * Get grader prompt template for user customization
-   * @returns {string} Grader prompt template
+   * Calculate statistical score based on response patterns with tool usage priority
+   * @param {Array<string|Object>} responses - Responses to analyze
+   * @returns {number} Score (0-100)
    */
-  getGraderPromptTemplate() {
-    return DEFAULT_GRADER_PROMPT;
-  }
+  calculateStatisticalScore(responses) {
+    const metrics = this.calculateEnhancedMetrics(responses);
 
-  /**
-   * Validate custom grader prompt
-   * @param {string} customPrompt - Custom grader prompt to validate
-   * @returns {Object} Validation result
-   */
-  validateCustomGraderPrompt(customPrompt) {
-    if (!customPrompt || typeof customPrompt !== 'string') {
-      return { isValid: true, warnings: [] };
-    }
+    // Tool usage consistency is primary factor
+    const primaryScore = metrics.toolUsageConsistency * 0.5 +
+      metrics.decisionConsistency * 0.3 +
+      metrics.semanticSimilarity * 0.2;
 
-    const warnings = [];
-
-    if (customPrompt.length > 5000) {
-      warnings.push('Custom prompt is very long and may cause grader requests to fail');
-    }
-
-    if (customPrompt.toLowerCase().includes('json') && !customPrompt.includes('{')) {
-      warnings.push('Custom prompt mentions JSON but may not provide proper format example');
-    }
-
-    return {
-      isValid: true,
-      warnings
-    };
+    return Math.round(primaryScore * 100);
   }
 }
 

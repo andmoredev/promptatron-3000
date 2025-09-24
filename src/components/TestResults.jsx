@@ -10,6 +10,7 @@ import ToolUsageDisplay from './ToolUsageDisplay';
 import ToolConfigurationStatus from './ToolConfigurationStatus';
 import { uiErrorRecovery } from '../utils/uiErrorRecovery';
 import { useModelOutput } from '../hooks/useModelOutput';
+import { useDeterminismSettings } from '../hooks/useSettings';
 
 import PropTypes from 'prop-types';
 
@@ -107,6 +108,7 @@ const TestResults = ({
   isLoading,
   determinismEnabled,
   onEvaluationComplete,
+  shouldStartDeterminismEvaluation = false,
   isStreaming = false,
   streamingContent = '',
   streamingProgress = null,
@@ -866,6 +868,16 @@ const TestResults = ({
             </>
           )}
 
+          {/* Show response time if available */}
+          {displayResults.responseTime && (
+            <div className="text-center">
+              <div className="text-lg font-semibold text-orange-600">
+                {(displayResults.responseTime / 1000).toFixed(2)}s
+              </div>
+              <div className="text-xs text-gray-500">Response Time</div>
+            </div>
+          )}
+
           {/* Show streaming metrics if available */}
           {displayResults.streamingMetrics && (
             <>
@@ -896,6 +908,7 @@ const TestResults = ({
               testResult={displayResults}
               enabled={determinismEnabled}
               onEvaluationComplete={onEvaluationComplete}
+              shouldStartEvaluation={shouldStartDeterminismEvaluation}
             />
           </div>
         )}
@@ -916,6 +929,7 @@ TestResults.propTypes = {
     datasetOption: PropTypes.string,
     response: PropTypes.string,
     usage: PropTypes.object,
+    responseTime: PropTypes.number,
     isStreamed: PropTypes.bool,
     streamingMetrics: PropTypes.object,
     timestamp: PropTypes.string,
@@ -945,6 +959,7 @@ TestResults.propTypes = {
   isLoading: PropTypes.bool,
   determinismEnabled: PropTypes.bool,
   onEvaluationComplete: PropTypes.func,
+  shouldStartDeterminismEvaluation: PropTypes.bool,
   isStreaming: PropTypes.bool,
   streamingContent: PropTypes.string,
   streamingProgress: PropTypes.shape({

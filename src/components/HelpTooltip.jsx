@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import PropTypes from 'prop-types'
+import React, { useState } from 'react';
+import PropTypes from 'prop-types';
 
 /**
  * HelpTooltip component provides contextual help information
@@ -9,21 +9,21 @@ import PropTypes from 'prop-types'
  * @param {React.ReactNode} props.children - Optional custom trigger element
  */
 function HelpTooltip({ content, position = 'top', children }) {
-  const [isVisible, setIsVisible] = useState(false)
+  const [isVisible, setIsVisible] = useState(false);
 
   const positionClasses = {
     top: 'bottom-full left-1/2 transform -translate-x-1/2 mb-2',
     bottom: 'top-full left-1/2 transform -translate-x-1/2 mt-2',
     left: 'right-full top-1/2 transform -translate-y-1/2 mr-2',
     right: 'left-full top-1/2 transform -translate-y-1/2 ml-2'
-  }
+  };
 
   const arrowClasses = {
     top: 'top-full left-1/2 transform -translate-x-1/2 border-l-transparent border-r-transparent border-b-transparent border-t-gray-800',
     bottom: 'bottom-full left-1/2 transform -translate-x-1/2 border-l-transparent border-r-transparent border-t-transparent border-b-gray-800',
     left: 'left-full top-1/2 transform -translate-y-1/2 border-t-transparent border-b-transparent border-r-transparent border-l-gray-800',
     right: 'right-full top-1/2 transform -translate-y-1/2 border-t-transparent border-b-transparent border-l-transparent border-r-gray-800'
-  }
+  };
 
   return (
     <div className="relative inline-block">
@@ -54,7 +54,8 @@ function HelpTooltip({ content, position = 'top', children }) {
 
       {isVisible && (
         <div
-          className={`absolute z-50 px-3 py-2 text-sm text-white bg-gray-800 rounded-lg shadow-lg max-w-xs ${positionClasses[position]}`}
+          className={`absolute z-[60] px-3 py-2 text-sm text-white bg-gray-800 rounded-lg shadow-lg whitespace-normal ${positionClasses[position]}`}
+          style={{ width: '320px' }}
           role="tooltip"
         >
           {content}
@@ -64,13 +65,13 @@ function HelpTooltip({ content, position = 'top', children }) {
         </div>
       )}
     </div>
-  )
+  );
 }
 
 HelpTooltip.propTypes = {
   content: PropTypes.string.isRequired,
   position: PropTypes.oneOf(['top', 'bottom', 'left', 'right']),
   children: PropTypes.node
-}
+};
 
-export default HelpTooltip
+export default HelpTooltip;

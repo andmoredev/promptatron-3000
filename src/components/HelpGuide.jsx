@@ -165,8 +165,8 @@ Focus: Look for anomalies and trends`}
                 <kbd className="px-2 py-1 bg-gray-100 rounded text-xs">Esc</kbd>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                <span className="text-sm text-gray-600">Help Guide</span>
-                <kbd className="px-2 py-1 bg-gray-100 rounded text-xs">F1</kbd>
+                <span className="text-sm text-gray-600">Settings</span>
+                <kbd className="px-2 py-1 bg-gray-100 rounded text-xs">Ctrl+,</kbd>
               </div>
             </div>
           </div>

@@ -171,10 +171,16 @@ export class BedrockService {
       }
     }
 
+    // Track response time
+    const startTime = performance.now();
+
     try {
       // If tool configuration is provided, use tool use detection
       if (toolConfig && toolConfig.tools && toolConfig.tools.length > 0) {
-        return await this.invokeModelWithTools(modelId, systemPrompt, userPrompt, content, toolConfig);
+        const result = await this.invokeModelWithTools(modelId, systemPrompt, userPrompt, content, toolConfig);
+        const endTime = performance.now();
+        result.responseTime = endTime - startTime;
+        return result;
       }
 
       // Combine user prompt and content if content exists
@@ -214,8 +220,12 @@ export class BedrockService {
       const command = new ConverseCommand(converseParams);
       const response = await this.runtimeClient.send(command);
 
-      // Parse the Converse API response
-      return this.parseConverseResponse(response);
+      // Parse the Converse API response and add response time
+      const result = this.parseConverseResponse(response);
+      const endTime = performance.now();
+      result.responseTime = endTime - startTime;
+
+      return result;
 
     } catch (error) {
       throw new Error(`Failed to invoke model ${modelId}: ${error.message}`);
@@ -239,6 +249,9 @@ export class BedrockService {
         throw new Error(initResult.message);
       }
     }
+
+    // Track response time
+    const startTime = performance.now();
 
     try {
       // Combine user prompt and content if content exists
@@ -288,10 +301,12 @@ export class BedrockService {
       // Parse the basic response
       const basicResponse = this.parseConverseResponse(response);
 
-      // Return combined response with tool usage data
+      // Add response time and return combined response with tool usage data
+      const endTime = performance.now();
       return {
         ...basicResponse,
-        toolUsage: toolUsage
+        toolUsage: toolUsage,
+        responseTime: endTime - startTime
       };
 
     } catch (error) {
@@ -2382,33 +2397,60 @@ export class BedrockService {
   }
 
   /**
-   * Execute multiple requests for determinism evaluation
+   * Execute multiple requests for determinism evaluation with enhanced throttling management
+   *
+   * ENHANCEMENTS FOR DETERMINISM EVALUATION:
+   * - Configurable test counts from user settings
+   * - Conservative execution strategy (single request at a time, 2s delays)
+   * - Enhanced progress reporting with current phase and throttling status
+   * - Comprehensive throttling management with exponential backoff (5s, 10s, 20s)
+   * - Throttling abandonment after 3 consecutive attempts per request
+   * - Separate tracking of throttled responses (excluded from analysis but preserved for display)
+   * - Full response object preservation including tool usage data
+   * - Visual feedback for throttling events with retry countdown
+   *
    * @param {string} modelId - The model ID to invoke
    * @param {string} systemPrompt - The system prompt
    * @param {string} userPrompt - The user prompt
    * @param {string} content - Additional content/context
-   * @param {number} requestCount - Number of additional requests to make
-   * @param {Object} options - Execution options
-   * @returns {Promise<Object>} Batch execution results
+   * @param {number} requestCount - Number of additional requests to make (configurable from settings)
+   * @param {Object} options - Execution options including settings, throttling callbacks
+   * @returns {Promise<Object>} Batch execution results with full response objects and tool usage data
    */
   async executeBatchRequests(modelId, systemPrompt, userPrompt, content, requestCount, options = {}) {
     const {
-      concurrency = 1,
-      retryAttempts = 3,
-      retryDelay = 5000,
-      maxRetryDelay = 600000,
-      requestDelay = 2000,
+      concurrency = 1, // Conservative: single request at a time
+      retryAttempts = 3, // Configurable from settings
+      retryDelay = 5000, // Start with 5s delay
+      maxRetryDelay = 20000, // Cap at 20s for exponential backoff (5s, 10s, 20s)
+      requestDelay = 2000, // 2s delay between requests
       onProgress = null,
       onError = null,
-      toolConfig = null
+      onThrottling = null, // New: throttling status callback
+      toolConfig = null,
+      settings = null // Determinism settings from user preferences
     } = options;
+
+    // Apply settings if provided
+    const effectiveRetryAttempts = settings?.maxRetryAttempts || retryAttempts;
+    const effectiveRequestCount = requestCount; // Already configured from settings
 
     const results = {
       responses: [],
       errors: [],
+      throttledResponses: [], // Track throttled requests separately
       completed: 0,
       failed: 0,
-      totalRequests: requestCount,
+      throttled: 0,
+      totalRequests: effectiveRequestCount,
+      currentPhase: 'collecting', // 'collecting' or 'evaluating'
+      throttlingStatus: {
+        isThrottling: false,
+        throttleCount: 0,
+        consecutiveThrottles: 0,
+        lastThrottleTime: null,
+        nextRetryTime: null
+      },
       toolUsageStats: {
         totalRequestsWithTools: 0,
         totalToolCalls: 0,
@@ -2418,22 +2460,30 @@ export class BedrockService {
       }
     };
 
-    // Execute requests with controlled concurrency
-    for (let i = 0; i < requestCount; i += concurrency) {
+    // Execute requests with conservative strategy (single request at a time)
+    for (let i = 0; i < effectiveRequestCount; i += concurrency) {
       const batch = [];
-      const batchSize = Math.min(concurrency, requestCount - i);
+      const batchSize = Math.min(concurrency, effectiveRequestCount - i);
 
-      // Create batch of concurrent requests
+      // Create batch of concurrent requests (typically just 1)
       for (let j = 0; j < batchSize; j++) {
         const requestIndex = i + j;
-        batch.push(this.executeRequestWithRetry(
+        batch.push(this.executeRequestWithEnhancedRetry(
           modelId,
           systemPrompt,
           userPrompt,
           content,
           requestIndex,
-          { retryAttempts, retryDelay, maxRetryDelay, toolConfig },
-          onError
+          {
+            retryAttempts: effectiveRetryAttempts,
+            retryDelay,
+            maxRetryDelay,
+            toolConfig,
+            onThrottling,
+            settings
+          },
+          onError,
+          results
         ));
       }
 
@@ -2447,59 +2497,117 @@ export class BedrockService {
         if (result.status === 'fulfilled') {
           const response = result.value;
 
-          // Ensure tool usage data is properly structured for determinism evaluation
-          if (!response.toolUsage) {
-            response.toolUsage = {
-              hasToolUsage: false,
-              toolCalls: [],
-              toolCallCount: 0,
-              availableTools: toolConfig ? toolConfig.tools.map(tool => tool.toolSpec.name) : []
-            };
+          // Check if this was a throttled response
+          if (response.wasThrottled) {
+            results.throttledResponses.push(response);
+            results.throttled++;
+
+            // Update throttling status
+            results.throttlingStatus.throttleCount++;
+            results.throttlingStatus.lastThrottleTime = Date.now();
+
+            // Don't include throttled responses in main analysis but preserve for display
+            if (onThrottling) {
+              onThrottling({
+                type: 'throttled_response',
+                requestIndex,
+                throttleCount: results.throttlingStatus.throttleCount,
+                message: 'Request was throttled after maximum retry attempts'
+              });
+            }
+          } else {
+            // Ensure tool usage data is properly structured for determinism evaluation
+            if (!response.toolUsage) {
+              response.toolUsage = {
+                hasToolUsage: false,
+                toolCalls: [],
+                toolCallCount: 0,
+                availableTools: toolConfig ? toolConfig.tools.map(tool => tool.toolSpec.name) : [],
+                extractionSuccess: true,
+                extractionErrors: [],
+                extractionWarnings: []
+              };
+            }
+
+            // Update tool usage statistics for progress reporting
+            if (response.toolUsage.hasToolUsage) {
+              results.toolUsageStats.totalRequestsWithTools++;
+              results.toolUsageStats.totalToolCalls += response.toolUsage.toolCallCount || 0;
+
+              // Track unique tools used across all requests
+              if (response.toolUsage.toolCalls) {
+                response.toolUsage.toolCalls.forEach(toolCall => {
+                  if (toolCall.toolName) {
+                    results.toolUsageStats.uniqueToolsUsed.add(toolCall.toolName);
+                  }
+                });
+              }
+            }
+
+            // Track tool usage detection success/failure
+            if (response.toolUsage.extractionSuccess !== false) {
+              results.toolUsageStats.toolUsageDetectionSuccesses++;
+            } else {
+              results.toolUsageStats.toolUsageDetectionErrors++;
+            }
+
+            results.responses.push(response);
           }
 
-          // Update tool usage statistics for progress reporting
-          if (response.toolUsage.hasToolUsage) {
-            results.toolUsageStats.totalRequestsWithTools++;
-            results.toolUsageStats.totalToolCalls += response.toolUsage.toolCallCount || 0;
+          results.completed++;
+        } else {
+          // Handle failed requests
+          const error = result.reason;
+          const isThrottlingError = this.isRateLimitError(error);
 
-            // Track unique tools used across all requests
-            if (response.toolUsage.toolCalls) {
-              response.toolUsage.toolCalls.forEach(toolCall => {
-                if (toolCall.toolName) {
-                  results.toolUsageStats.uniqueToolsUsed.add(toolCall.toolName);
-                }
+          if (isThrottlingError) {
+            results.throttled++;
+            results.throttlingStatus.throttleCount++;
+            results.throttlingStatus.lastThrottleTime = Date.now();
+
+            if (onThrottling) {
+              onThrottling({
+                type: 'throttling_error',
+                requestIndex,
+                error: error.message,
+                throttleCount: results.throttlingStatus.throttleCount,
+                message: 'Request failed due to throttling'
               });
             }
           }
 
-          // Track tool usage detection success/failure
-          if (response.toolUsage.extractionSuccess !== false) {
-            results.toolUsageStats.toolUsageDetectionSuccesses++;
-          } else {
-            results.toolUsageStats.toolUsageDetectionErrors++;
-          }
-
-          results.responses.push(response);
-          results.completed++;
-        } else {
           results.errors.push({
             requestIndex,
-            error: result.reason
+            error: error,
+            isThrottlingError,
+            timestamp: new Date().toISOString()
           });
           results.failed++;
 
           if (onError) {
-            onError(result.reason, requestIndex);
+            onError(error, requestIndex);
           }
         }
 
-        // Report enhanced progress including tool use detection status
+        // Report enhanced progress with current phase and throttling status
         if (onProgress) {
           onProgress({
             completed: results.completed,
             failed: results.failed,
-            total: requestCount,
-            progress: (results.completed + results.failed) / requestCount,
+            throttled: results.throttled,
+            total: effectiveRequestCount,
+            progress: (results.completed + results.failed) / effectiveRequestCount,
+            currentPhase: results.currentPhase,
+            phaseMessage: results.currentPhase === 'collecting'
+              ? 'Collecting additional responses...'
+              : 'Evaluating determinism...',
+            throttlingStatus: {
+              ...results.throttlingStatus,
+              isThrottling: results.throttlingStatus.throttleCount > 0,
+              message: results.throttlingStatus.throttleCount > 0
+                ? `Handling rate limits... (${results.throttlingStatus.throttleCount} throttled)`
+                : null
+            },
             toolUsageStats: {
               ...results.toolUsageStats,
               uniqueToolsUsed: Array.from(results.toolUsageStats.uniqueToolsUsed)
@@ -2511,20 +2619,168 @@ export class BedrockService {
         }
       }
 
-      // Add delay between batches to avoid rate limiting
-      if (i + concurrency < requestCount && requestDelay > 0) {
-        await new Promise(resolve => setTimeout(resolve, requestDelay));
+      // Add conservative delay between batches (2s minimum)
+      if (i + concurrency < effectiveRequestCount) {
+        const delayTime = Math.max(requestDelay, 2000); // Ensure minimum 2s delay
+        await new Promise(resolve => setTimeout(resolve, delayTime));
       }
     }
 
+    // Update phase to evaluating (will be used by caller)
+    results.currentPhase = 'evaluating';
+
     // Convert Set to Array for final results
     results.toolUsageStats.uniqueToolsUsed = Array.from(results.toolUsageStats.uniqueToolsUsed);
+
+    // Add comprehensive summary with throttling information
+    results.summary = {
+      total: effectiveRequestCount,
+      successful: results.responses.length,
+      failed: results.failed,
+      throttled: results.throttled,
+      successRate: results.responses.length > 0 ? (results.responses.length / effectiveRequestCount) * 100 : 0,
+      throttleRate: results.throttled > 0 ? (results.throttled / effectiveRequestCount) * 100 : 0,
+      analysisReady: results.responses.length >= 3, // Need minimum 3 responses for analysis
+      throttlingImpact: results.throttled > 0 ? 'Some requests were throttled and excluded from analysis' : 'No throttling detected'
+    };
 
     return results;
   }
 
   /**
-   * Execute a single request with retry logic
+   * Execute a single request with enhanced retry logic and throttling management
+   * @param {string} modelId - The model ID
+   * @param {string} systemPrompt - The system prompt
+   * @param {string} userPrompt - The user prompt
+   * @param {string} content - Additional content
+   * @param {number} requestIndex - Request index for logging
+   * @param {Object} retryOptions - Retry configuration with throttling support
+   * @param {Function} onError - Error callback
+   * @param {Object} batchResults - Batch results object for throttling tracking
+   * @returns {Promise<Object>} The full response object with tool usage data
+   */
+  async executeRequestWithEnhancedRetry(modelId, systemPrompt, userPrompt, content, requestIndex, retryOptions, onError, batchResults) {
+    const { retryAttempts, retryDelay, maxRetryDelay, toolConfig, onThrottling, settings } = retryOptions;
+    let consecutiveThrottles = 0;
+
+    for (let attempt = 1; attempt <= retryAttempts; attempt++) {
+      try {
+        const response = await this.invokeModel(modelId, systemPrompt, userPrompt, content, toolConfig);
+
+        // Reset consecutive throttles on success
+        consecutiveThrottles = 0;
+        batchResults.throttlingStatus.consecutiveThrottles = 0;
+
+        // Ensure response has proper structure for determinism evaluation
+        if (!response.toolUsage) {
+          response.toolUsage = {
+            hasToolUsage: false,
+            toolCalls: [],
+            toolCallCount: 0,
+            availableTools: toolConfig ? toolConfig.tools.map(tool => tool.toolSpec.name) : [],
+            extractionSuccess: true,
+            extractionErrors: [],
+            extractionWarnings: []
+          };
+        }
+
+        // Add comprehensive metadata for batch processing tracking
+        response.batchMetadata = {
+          requestIndex,
+          attempt,
+          timestamp: new Date().toISOString(),
+          toolConfigProvided: !!toolConfig,
+          toolsAvailable: toolConfig ? toolConfig.tools.length : 0,
+          wasThrottled: false,
+          throttleAttempts: consecutiveThrottles
+        };
+
+        // Return the full response object to preserve all tool usage data for determinism evaluation
+        return response;
+
+      } catch (error) {
+        const isThrottlingError = this.isRateLimitError(error);
+        const isLastAttempt = attempt === retryAttempts;
+
+        if (isThrottlingError) {
+          consecutiveThrottles++;
+          batchResults.throttlingStatus.consecutiveThrottles = consecutiveThrottles;
+          batchResults.throttlingStatus.isThrottling = true;
+          batchResults.throttlingStatus.lastThrottleTime = Date.now();
+
+          // Notify about throttling with countdown
+          if (onThrottling) {
+            const nextRetryDelay = Math.min(retryDelay * Math.pow(2, attempt - 1), maxRetryDelay);
+            batchResults.throttlingStatus.nextRetryTime = Date.now() + nextRetryDelay;
+
+            onThrottling({
+              type: 'throttling_detected',
+              requestIndex,
+              attempt,
+              nextRetryIn: nextRetryDelay,
+              consecutiveThrottles,
+              message: `Rate limit hit on request ${requestIndex + 1}, attempt ${attempt}`,
+              willRetry: !isLastAttempt
+            });
+          }
+
+          // Abandon request after 3 consecutive throttling attempts
+          if (consecutiveThrottles >= 3) {
+            if (onThrottling) {
+              onThrottling({
+                type: 'throttling_abandoned',
+                requestIndex,
+                attempt,
+                consecutiveThrottles,
+                message: `Request ${requestIndex + 1} abandoned after ${consecutiveThrottles} throttling attempts`
+              });
+            }
+
+            // Return a throttled response marker
+            return {
+              text: '',
+              usage: null,
+              toolUsage: {
+                hasToolUsage: false,
+                toolCalls: [],
+                toolCallCount: 0,
+                availableTools: toolConfig ? toolConfig.tools.map(tool => tool.toolSpec.name) : []
+              },
+              wasThrottled: true,
+              throttleAttempts: consecutiveThrottles,
+              batchMetadata: {
+                requestIndex,
+                attempt,
+                timestamp: new Date().toISOString(),
+                toolConfigProvided: !!toolConfig,
+                toolsAvailable: toolConfig ? toolConfig.tools.length : 0,
+                wasThrottled: true,
+                throttleAttempts: consecutiveThrottles,
+                abandonedDueToThrottling: true
+              }
+            };
+          }
+        }
+
+        if (isLastAttempt) {
+          throw error;
+        }
+
+        // Calculate delay with exponential backoff (5s, 10s, 20s)
+        const delay = Math.min(retryDelay * Math.pow(2, attempt - 1), maxRetryDelay);
+
+        if (onError) {
+          onError(error, requestIndex, attempt);
+        }
+
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  /**
+   * Execute a single request with retry logic (legacy method for compatibility)
    * @param {string} modelId - The model ID
    * @param {string} systemPrompt - The system prompt
    * @param {string} userPrompt - The user prompt
