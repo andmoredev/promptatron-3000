@@ -2,102 +2,102 @@
 
 ## Introduction
 
-This feature adds determinism evaluation capabilities to the Promptatron 3000 application. When a user runs a test, the system will automatically execute the same prompt 30 times total (including the original request) and evaluate the consistency of responses using a grader LLM. The evaluation runs in the background using a service worker, displays real-time status updates, and provides a letter grade (A-F) indicating how deterministic the model's responses are for the given prompt combination.
+This feature provides enhanced determinism evaluation capabilities for the Promptatron 3000 application. When a user runs a test with the determinism checkbox enabled, the system will execute the same prompt multiple times (configurable number) and evaluate the consistency of responses using a grader LLM. The evaluation includes comprehensive throttling handling, improved metrics, better UI feedback, and configurable settings to make the feature more robust and user-friendly.
 
 ## Requirements
 
 ### Requirement 1
 
-**User Story:** As a prompt engineer, I want to automatically evaluate the determinism of my prompts so that I can understand how consistent a model's responses are for production use.
+**User Story:** As a prompt engineer, I want determinism evaluation to fire exactly once when I press the Run Test button with the determinism checkbox checked, so that I can reliably test response consistency without duplicate evaluations.
 
 #### Acceptance Criteria
 
-1. WHEN a user runs a test THEN the system SHALL automatically initiate a determinism evaluation in the background
-2. WHEN the determinism evaluation starts THEN the system SHALL execute the same prompt 29 additional times for a total of 30 executions
-3. WHEN the evaluation is running THEN the system SHALL display a status indicator showing "Evaluating determinism..." in the test results area
-4. WHEN all 30 executions are complete THEN the system SHALL send all responses to a grader LLM for evaluation
-5. WHEN the grader completes its analysis THEN the system SHALL display a letter grade (A-F) indicating determinism level
+1. WHEN a user runs a test with the determinism checkbox checked THEN the system SHALL initiate exactly one determinism evaluation
+2. WHEN the determinism evaluation starts THEN the system SHALL execute the same prompt additional times based on user settings (default 9 additional for total of 10)
+3. WHEN the evaluation is running THEN the system SHALL display clear status indicators showing current phase ("Collecting additional responses..." or "Evaluating determinism...")
+4. WHEN all executions are complete THEN the system SHALL send all responses to a grader LLM for evaluation
+5. WHEN the grader completes its analysis THEN the system SHALL display a letter grade (A-F) with improved metrics excluding exact matches
 
 ### Requirement 2
 
-**User Story:** As a user, I want to see detailed information about why a determinism grade was assigned so that I can understand the variance in my model's responses.
+**User Story:** As a user, I want to see all responses and tool use calls in the review modal so that I can understand exactly what variations occurred across multiple runs.
 
 #### Acceptance Criteria
 
 1. WHEN a determinism grade is displayed THEN the user SHALL be able to click on the grade to view detailed breakdown
-2. WHEN the user clicks the grade THEN the system SHALL show a modal or expanded view with evaluation details
-3. WHEN showing evaluation details THEN the system SHALL display variance analysis, consistency metrics, and sample response differences
-4. WHEN showing evaluation details THEN the system SHALL include the grader's reasoning for the assigned grade
+2. WHEN the user clicks the grade THEN the system SHALL show a modal displaying all individual responses from the evaluation
+3. WHEN showing evaluation details THEN the system SHALL display all tool use calls for each request alongside the text responses
+4. WHEN showing evaluation details THEN the system SHALL include improved semantic similarity metrics that exclude exact text matches
 5. WHEN the user closes the details view THEN the system SHALL return to the normal results display
 
 ### Requirement 3
 
-**User Story:** As a developer, I want the determinism evaluation to be non-intrusive to the existing codebase so that it can be easily maintained and doesn't break existing functionality.
+**User Story:** As a user, I want a system-wide settings dialog with a determinism section to control evaluation parameters so that I can customize the application behavior to my needs.
 
 #### Acceptance Criteria
 
-1. WHEN implementing the determinism evaluator THEN the system SHALL use minimal hooks into the existing codebase
-2. WHEN the evaluator is active THEN it SHALL NOT interfere with normal test execution or user interactions
-3. WHEN the evaluator component is removed THEN the existing application SHALL continue to function normally
-4. WHEN integrating with the UI THEN the component SHALL be injectable into the existing TestResults component
-5. WHEN the feature is disabled THEN no determinism evaluation SHALL occur and no UI elements SHALL be shown
+1. WHEN accessing application settings THEN the system SHALL provide a comprehensive settings dialog with a determinism section
+2. WHEN the user changes determinism settings THEN the system SHALL save all preferences and use them for future evaluations
+3. WHEN the user sets a test count THEN the system SHALL validate it's within reasonable bounds (minimum 3, maximum 50)
+4. WHEN settings are changed THEN the system SHALL persist all settings across browser sessions
+5. WHEN the feature is disabled via checkbox THEN no determinism evaluation SHALL occur and no UI elements SHALL be shown
 
 ### Requirement 4
 
-**User Story:** As a system administrator, I want the determinism evaluation to respect AWS throughput limits so that it doesn't cause rate limiting or service disruptions.
+**User Story:** As a user, I want clear visibility when deterministic tests are throttled so that I understand why evaluation is taking longer than expected.
 
 #### Acceptance Criteria
 
-1. WHEN starting determinism evaluation THEN the system SHALL query AWS SDK to determine model throughput limits
-2. WHEN executing multiple requests THEN the system SHALL run them as concurrently as possible while staying within safe limits
-3. WHEN rate limits are approached THEN the system SHALL implement appropriate backoff and retry mechanisms
-4. WHEN AWS returns throttling errors THEN the system SHALL gracefully handle them and continue evaluation
-5. WHEN throughput limits cannot be determined THEN the system SHALL use conservative default concurrency settings
+1. WHEN AWS throttling occurs THEN the system SHALL display a clear throttling indicator in the progress area
+2. WHEN throttling is detected THEN the system SHALL show "Handling rate limits..." status message
+3. WHEN requests are being throttled THEN the system SHALL implement responsible retry with exponential backoff
+4. WHEN throttling persists after 3 attempts THEN the system SHALL abandon that request and record it as throttled
+5. WHEN throttled requests occur THEN the system SHALL exclude them from semantic metrics but display them visually in the results
 
 ### Requirement 5
 
-**User Story:** As a user, I want the determinism evaluation to work seamlessly in the background so that I can continue using the application while evaluation is in progress.
+**User Story:** As a user, I want clear status indicators showing evaluation progress phases so that I understand what the system is currently doing.
 
 #### Acceptance Criteria
 
-1. WHEN determinism evaluation starts THEN it SHALL run in a service worker to avoid blocking the main UI thread
-2. WHEN evaluation is in progress THEN the user SHALL be able to navigate between tabs and perform other actions
-3. WHEN the user starts a new test THEN any previous determinism evaluation SHALL be cancelled or completed independently
-4. WHEN the browser tab is closed THEN the service worker SHALL continue evaluation and store results for later retrieval
-5. WHEN the user returns to a test with completed evaluation THEN the grade SHALL be immediately visible
+1. WHEN determinism evaluation starts THEN the system SHALL show "Collecting additional responses" status under the progress bar
+2. WHEN response collection completes THEN the system SHALL show "Evaluating determinism" status under the progress bar
+3. WHEN evaluation is in progress THEN the user SHALL see progress percentage and completed/total request counts
+4. WHEN the user starts a new test THEN any previous determinism evaluation SHALL be cancelled automatically
+5. WHEN evaluation completes THEN the system SHALL show final grade and allow access to detailed results
 
 ### Requirement 6
 
-**User Story:** As a prompt engineer, I want to use a customizable grader system prompt so that I can tailor the evaluation criteria to my specific use case.
+**User Story:** As a user, I want improved semantic similarity metrics that focus on meaningful differences rather than exact text matches so that I get more accurate determinism assessments.
 
 #### Acceptance Criteria
 
-1. WHEN implementing the grader LLM integration THEN the system SHALL use a configurable system prompt for evaluation
-2. WHEN the grader prompt is not configured THEN the system SHALL use a placeholder text that can be easily replaced
-3. WHEN sending responses to the grader THEN the system SHALL include all 30 responses and request a determinism analysis
-4. WHEN the grader responds THEN the system SHALL parse the letter grade and reasoning from the response
-5. WHEN the grader fails to respond or provides invalid output THEN the system SHALL display an appropriate error message
+1. WHEN calculating determinism metrics THEN the system SHALL exclude exact text matches from semantic similarity calculations
+2. WHEN evaluating responses THEN the system SHALL focus on semantic equivalence, decision consistency, and structural consistency
+3. WHEN sending responses to the grader THEN the system SHALL include all collected responses and request improved analysis
+4. WHEN the grader responds THEN the system SHALL parse enhanced metrics including tool usage consistency
+5. WHEN the grader fails to respond or provides invalid output THEN the system SHALL display an appropriate error message with fallback metrics
 
 ### Requirement 7
 
-**User Story:** As a user, I want the determinism evaluation results to be saved with my test history so that I can track determinism trends over time.
+**User Story:** As a developer, I want the determinism service to be simple, safe, and not over-engineered so that it's maintainable and reliable.
 
 #### Acceptance Criteria
 
-1. WHEN a determinism evaluation completes THEN the grade and details SHALL be saved with the original test result
-2. WHEN viewing test history THEN determinism grades SHALL be visible alongside other test metadata
-3. WHEN loading a test from history THEN the determinism grade SHALL be displayed if available
-4. WHEN comparing tests THEN determinism grades SHALL be included in the comparison view
-5. WHEN exporting or sharing test results THEN determinism data SHALL be included in the export
+1. WHEN implementing determinism features THEN the code SHALL follow simple, straightforward patterns without unnecessary complexity
+2. WHEN handling errors THEN the system SHALL fail gracefully and provide clear user feedback
+3. WHEN managing state THEN the system SHALL use minimal state management and avoid race conditions
+4. WHEN integrating with existing code THEN the system SHALL use established patterns and minimal coupling
+5. WHEN the feature is disabled THEN it SHALL have no impact on application performance or stability
 
 ### Requirement 8
 
-**User Story:** As a developer, I want comprehensive error handling for the determinism evaluation so that failures don't impact the user experience.
+**User Story:** As a user, I want robust error handling and throttling management so that determinism evaluation works reliably even under adverse conditions.
 
 #### Acceptance Criteria
 
-1. WHEN AWS API calls fail during evaluation THEN the system SHALL display appropriate error messages
-2. WHEN the grader LLM is unavailable THEN the system SHALL show a fallback message indicating evaluation could not be completed
-3. WHEN network connectivity is lost THEN the system SHALL pause evaluation and resume when connectivity returns
+1. WHEN AWS API calls fail during evaluation THEN the system SHALL retry responsibly up to 3 times with exponential backoff
+2. WHEN requests are consistently throttled THEN the system SHALL abandon further attempts and record throttled results
+3. WHEN throttled results occur THEN the system SHALL display them visually but exclude them from semantic analysis
 4. WHEN evaluation encounters errors THEN the original test result SHALL remain unaffected and fully functional
-5. WHEN partial evaluation data is available THEN the system SHALL indicate incomplete evaluation status rather than showing no grade
+5. WHEN partial evaluation data is available THEN the system SHALL complete analysis with available data and indicate incomplete status

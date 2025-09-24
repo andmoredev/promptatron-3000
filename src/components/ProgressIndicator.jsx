@@ -4,6 +4,7 @@ import PropTypes from 'prop-types'
 /**
  * Progress indicator component for determinism evaluation
  * Shows detailed progress with phases, time estimates, and visual indicators
+ * Optimized for performance and accessibility
  */
 function ProgressIndicator({
   status,
@@ -95,7 +96,14 @@ function ProgressIndicator({
           </span>
         </div>
 
-        <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+        <div
+          className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden"
+          role="progressbar"
+          aria-valuenow={Math.round(progress)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`Progress: ${Math.round(progress)}% complete`}
+        >
           <div
             className={`h-2.5 rounded-full transition-all duration-500 ease-out ${
               phaseInfo.color === 'blue' ? 'bg-primary-500' :

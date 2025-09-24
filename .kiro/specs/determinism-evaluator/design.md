@@ -2,9 +2,9 @@
 
 ## Overview
 
-The Determinism Evaluator is a non-intrusive feature that automatically assesses the consistency of LLM responses by running the same prompt 30 times and analyzing variance using a grader LLM. The system operates in the background using service workers, respects AWS Bedrock throughput limnd provides visual feedback through an injectable UI component.
+The Enhanced Determinism Evaluator provides robust, user-friendly assessment of LLM response consistency. The system executes configurable numbers of identical prompts (default 10 total), handles AWS throttling gracefully, and provides comprehensive feedback through improved UI components. The design emphasizes simplicity, reliability, and clear user communication.
 
-The design follows a modular architecture with minimal coupling to the existing codebase, ensuring easy maintenance and the ability to disable the feature without affecting core functionality.
+The architecture maintains minimal coupling to existing code while providing enhanced features like settings management, throttling visibility, improved metrics, and comprehensive response viewing.
 
 ## Architecture
 
@@ -12,175 +12,314 @@ The design follows a modular architecture with minimal coupling to the existing 
 
 ```mermaid
 graph TB
-    A[User Runs Test] --> B[TestResults Component]
+    A[User Runs Test with Checkbox] --> B[Single Evaluation Trigger]
     B --> C[DeterminismEvaluator Component]
-    C --> D[Service Worker]
-    D --> E[AWS Bedrock Service]
-    D --> F[Throughput Manager]
-    E --> G[Model Invocations x29]
-    G --> H[Grader LLM]
-    H --> I[Grade Display]
-    I --> J[Detailed Breakdown Modal]
+    C --> D[DeterminismService]
+    D --> E[BedrockService Batch Execution]
+    E --> F[Throttling Handler]
+    F --> G[Model Invocations x N]
+    G --> H[Enhanced Grader LLM]
+    H --> I[Improved Metrics Display]
+    I --> J[All Responses Modal]
 
-    subgraph "Background Processing"
-        D
-        F
-        G
-        H
-    end
+    K[Settings Dialog] --> L[Configurable Test Count]
+    L --> D
 
-    subgraph "UI Layer"
-        B
+    subgraph "Enhanced UI Features"
         C
         I
         J
+        K
+        M[Status Indicators]
+        N[Throttling Visibility]
+    end
+
+    subgraph "Robust Processing"
+        D
+        E
+        F
+        O[Retry Logic]
+        P[Error Recovery]
     end
 ```
 
-### Service Worker Architecture
+### Enhanced Evaluation Flow
 
 ```mermaid
 sequenceDiagram
-    participant UI as Main UI Thread
-    participant SW as Service Worker
-    participant AWS as AWS Bedrock
-    participant Grader as Grader LLM
+    participant User as User
+    participant UI as DeterminismEvaluator
+    participant Service as DeterminismService
+    participant Bedrock as BedrockService
+    participant Grader as Enhanced Grader
 
-    UI->>SW: Start Evaluation Request
-    SW->>AWS: Query Model Throughput Limits
-    SW->>AWS: Execute 29 Additional Requests (Concurrent)
-    AWS-->>SW: Response Batch
-    SW->>Grader: Send All 30 Responses for Analysis
-    Grader-->>SW: Determinism Grade & Analysis
-    SW->>UI: Update Status & Final Grade
+    User->>UI: Run Test (Checkbox Checked)
+    UI->>Service: Start Evaluation (Once Only)
+    Service->>UI: Status: "Collecting additional responses..."
+    Service->>Bedrock: Execute N Additional Requests
+
+    loop For Each Request
+        Bedrock->>Bedrock: Attempt Request
+        alt Success
+            Bedrock-->>Service: Response
+        else Throttled
+            Bedrock->>Bedrock: Retry with Backoff (3x max)
+            alt Still Throttled
+                Bedrock-->>Service: Throttled Result
+                Service->>UI: Show Throttling Indicator
+            end
+        end
+    end
+
+    Service->>UI: Status: "Evaluating determinism..."
+    Service->>Grader: All Responses + Tool Usage Data
+    Grader-->>Service: Enhanced Metrics (No Exact Matches)
+    Service->>UI: Final Grade + All Response Data
+    UI->>User: Display Results + Modal Access
 ```
 
 ## Components and Interfaces
 
-### 1. DeterminismEvaluator Component
+### 1. Enhanced DeterminismEvaluator Component
 
-**Purpose**: Injectable React component that displays evaluation status and results within TestResults.
+**Purpose**: Robust React component with improved status display, throttling visibility, and comprehensive results modal.
 
 **Props Interface**:
 ```typescript
 interface DeterminismEvaluatorProps {
   testResult: TestResult
-  onEvaluationComplete?: (grade: DeterminismGrade) => void
+  onEvaluationComplete?: (grade: EnhancedDeterminismGrade) => void
   enabled?: boolean
-  graderSystemPrompt?: string
+  settings?: DeterminismSettings
 }
 
-interface DeterminismGrade {
+interface EnhancedDeterminismGrade {
   grade: 'A' | 'B' | 'C' | 'D' | 'F'
   score: number
   reasoning: string
-  variance: VarianceAnalysis
+  metrics: EnhancedMetrics
+  allResponses: ResponseWithMetadata[]
+  throttledCount: number
   timestamp: string
 }
 
-interface VarianceAnalysis {
+interface EnhancedMetrics {
+  semanticSimilarity: number // Excludes exact matches
+  decisionConsistency: number
+  structureConsistency: number
+  toolUsageConsistency?: number
   responseCount: number
   uniqueResponses: number
-  averageLength: number
-  lengthVariance: number
-  semanticSimilarity: number
-  actionConsistency: number
+  exactMatches: number // Tracked but not used in scoring
+}
+
+interface ResponseWithMetadata {
+  text: string
+  toolUsage?: ToolUsageData
+  wasThrottled: boolean
+  retryCount: number
+  timestamp: string
+}
+
+interface DeterminismSettings {
+  testCount: number // 3-50, default 10
+  enableThrottlingAlerts: boolean
+  maxRetryAttempts: number
 }
 ```
 
-**States**:
+**Enhanced States**:
 - `idle`: No evaluation in progress
-- `evaluating`: Background evaluation running
-- `completed`: Evaluation finished with grade
-- `error`: Evaluation failed
+- `collecting`: Collecting additional responses (with progress)
+- `evaluating`: Analyzing responses for determinism
+- `completed`: Evaluation finished with comprehensive results
+- `error`: Evaluation failed with recovery options
+- `throttled`: Currently handling rate limits
 
-### 2. DeterminismService
+### 2. Enhanced DeterminismService
 
-**Purpose**: Manages the evaluation lifecycle and communicates with service worker.
+**Purpose**: Simplified, robust service that manages evaluation lifecycle with improved error handling and throttling management.
 
 **Key Methods**:
 ```typescript
 class DeterminismService {
+  // Core evaluation management
   async startEvaluation(testConfig: TestConfiguration): Promise<string>
-  async getEvaluationStatus(evaluationId: string): Promise<EvaluationStatus>
   async cancelEvaluation(evaluationId: string): Promise<void>
-  onStatusUpdate(callback: (status: EvaluationStatus) => void): void
+  onStatusUpdate(evaluationId: string, callback: (status: EvaluationStatus) => void): () => void
+
+  // Settings management
+  getSettings(): DeterminismSettings
+  updateSettings(settings: Partial<DeterminismSettings>): void
+
+  // State management (simplified)
+  private activeEvaluations: Map<string, EvaluationState>
+  private statusCallbacks: Map<string, Function[]>
+
+  // Throttling and retry logic
+  private handleThrottling(error: AWSError, attempt: number): Promise<boolean>
+  private shouldRetry(error: AWSError, attempt: number): boolean
+  private recordThrottledResult(evaluationId: string, requestIndex: number): void
 }
 ```
 
-### 3. Service Worker (determinism-worker.js)
+**Simplified Architecture**:
+- No service worker complexity - runs on main thread
+- Direct integration with existing BedrockService
+- Minimal state management to avoid race conditions
+- Clear error boundaries and recovery paths
 
-**Purpose**: Handles background processing of multiple model invocations and grading.
+### 3. System-Wide Settings Integration
 
-**Key Functions**:
-- `executeEvaluation(testConfig)`: Main evaluation orchestrator
-- `getThroughputLimits(modelId)`: Query AWS for model limits
-- `executeConcurrentRequests(requests, concurrencyLimit)`: Batch execution with rate limiting
-- `gradeResponses(responses, graderPrompt)`: Send to grader LLM
-- `parseGraderResponse(response)`: Extract grade and reasoning
+**Purpose**: Integrates determinism settings into a comprehensive application settings system.
 
-### 4. ThroughputManager
+**System Settings Architecture**:
+```typescript
+// Global Settings Dialog Component
+interface SettingsDialogProps {
+  isOpen: boolean
+  onClose: () => void
+  onSave: (settings: AppSettings) => void
+  currentSettings: AppSettings
+}
 
-**Purpose**: Manages AWS Bedrock rate limits and concurrent request execution.
+// Application Settings Structure
+interface AppSettings {
+  determinism: DeterminismSettings
+  ui: UISettings
+  aws: AWSSettings
+  // Future settings sections...
+}
 
-**Features**:
-- Query AWS Service Quotas API for model-specific limits
-- Implement exponential backoff for throttling
-- Dynamic concurrency adjustment based on response times
-- Conservative defaults when limits cannot be determined
+interface DeterminismSettings {
+  testCount: number // 3-50, default 10
+  enableThrottlingAlerts: boolean
+  maxRetryAttempts: number // 1-5, default 3
+  showDetailedProgress: boolean
+}
 
-**Default Limits** (when AWS limits unavailable):
-```javascript
-const DEFAULT_LIMITS = {
-  'anthropic.claude-3-5-sonnet': { requestsPerMinute: 50, tokensPerMinute: 40000 },
-  'anthropic.claude-3-haiku': { requestsPerMinute: 100, tokensPerMinute: 25000 },
-  'amazon.nova-pro': { requestsPerMinute: 30, tokensPerMinute: 30000 },
-  'meta.llama3-1-70b': { requestsPerMinute: 20, tokensPerMinute: 20000 },
-  default: { requestsPerMinute: 10, tokensPerMinute: 10000 }
+// Settings Service (System-Wide)
+class SettingsService {
+  static save(settings: AppSettings): void
+  static load(): AppSettings
+  static getDefaults(): AppSettings
+  static validateSection<T>(section: keyof AppSettings, data: T): ValidationResult<T>
 }
 ```
 
-### 5. GraderLLM Integration
+**Settings Dialog Sections**:
+- **Determinism**: Test count, throttling alerts, retry attempts, progress detail level
+- **UI**: Theme preferences, animation settings, default tab behavior
+- **AWS**: Region preferences, timeout settings, retry configurations
+- **Extensible**: Easy to add new sections as the application grows
 
-**Purpose**: Analyzes response variance and assigns determinism grades.
+**Integration Points**:
+- Settings button in main application header/menu
+- Quick access from determinism evaluator component
+- Keyboard shortcut support (Ctrl/Cmd + ,)
+- Settings persist across browser sessions with localStorage
 
-**Grader System Prompt Template**:
+### 4. Enhanced Throttling Management
+
+**Purpose**: Provides visible, responsible handling of AWS rate limits with clear user feedback and robust retry logic.
+
+**Throttling Strategy**:
+```typescript
+interface ThrottlingHandler {
+  // Retry logic with exponential backoff
+  async executeWithRetry<T>(
+    operation: () => Promise<T>,
+    maxAttempts: number,
+    baseDelay: number
+  ): Promise<T | ThrottledResult>
+
+  // Visual feedback for throttling
+  onThrottleDetected(callback: (info: ThrottleInfo) => void): void
+
+  // Abandonment after max attempts
+  shouldAbandon(attempt: number, error: AWSError): boolean
+}
+
+interface ThrottleInfo {
+  attempt: number
+  nextRetryIn: number
+  totalThrottled: number
+  message: string
+}
+
+interface ThrottledResult {
+  wasThrottled: true
+  attempts: number
+  finalError: AWSError
+  timestamp: string
+}
 ```
-You are an expert evaluator of LLM response determinism. Analyze the following 30 responses to the same prompt and evaluate how deterministic the model's behavior is.
 
-Evaluation Criteria:
-- Response consistency (identical or near-identical responses)
-- Length variance (similar response lengths)
-- Semantic similarity (same meaning, different wording)
-- Action consistency (same recommended actions/conclusions)
-- Format consistency (same output structure)
+**Conservative Approach**:
+- Single request at a time (concurrency: 1)
+- 2-second delay between requests
+- Exponential backoff: 5s, 10s, 20s for retries
+- Clear abandonment after 3 failed attempts
+- Visual indicators for all throttling events
 
-Assign a letter grade (A-F) where:
-- A: Highly deterministic (>90% consistency)
-- B: Good determinism (70-90% consistency)
-- C: Moderate determinism (50-70% consistency)
-- D: Low determinism (30-50% consistency)
-- F: Non-deterministic (<30% consistency)
+### 5. Enhanced Grader Integration
 
-Provide your analysis in this JSON format:
+**Purpose**: Provides improved analysis focusing on semantic differences while excluding exact matches from similarity calculations.
+
+**Enhanced Grader Prompt**:
+```
+You are an expert evaluator of LLM response determinism. Analyze the provided responses to evaluate how deterministic the model's behavior is.
+
+IMPORTANT: Focus on semantic and functional consistency rather than exact text matching. Identical responses should be noted but not heavily weighted in similarity calculations.
+
+Enhanced Evaluation Criteria:
+- Semantic equivalence (same meaning, different wording)
+- Decision consistency (same conclusions/recommendations)
+- Structure consistency (similar response format/organization)
+- Tool usage consistency (if applicable - same tools used appropriately)
+- Functional equivalence (same practical outcomes)
+
+Exclude from similarity scoring:
+- Exact text matches (note them separately)
+- Minor formatting differences
+- Trivial word order changes
+
+Assign grades based on meaningful variation:
+- A: Highly deterministic (>90% semantic consistency)
+- B: Good determinism (70-90% semantic consistency)
+- C: Moderate determinism (50-70% semantic consistency)
+- D: Low determinism (30-50% semantic consistency)
+- F: Non-deterministic (<30% semantic consistency)
+
+Required JSON response format:
 {
   "grade": "A",
   "score": 95,
-  "reasoning": "Detailed explanation of the grade",
-  "variance": {
-    "responseCount": 30,
-    "uniqueResponses": 3,
-    "averageLength": 245,
-    "lengthVariance": 12.5,
+  "reasoning": "Detailed explanation focusing on semantic consistency",
+  "metrics": {
     "semanticSimilarity": 0.94,
-    "actionConsistency": 0.98
-  }
+    "decisionConsistency": 0.98,
+    "structureConsistency": 0.92,
+    "toolUsageConsistency": 0.96,
+    "responseCount": 10,
+    "uniqueResponses": 3,
+    "exactMatches": 2
+  },
+  "notable_variations": [
+    "Different phrasing for same recommendation",
+    "Varied explanation depth but same conclusion"
+  ]
 }
 
-[PLACEHOLDER_FOR_USER_GRADER_PROMPT]
-
-Responses to analyze:
+Responses to analyze (excluding throttled responses):
 ```
+
+**Improved Analysis**:
+- Separates exact matches from semantic analysis
+- Focuses on meaningful variations
+- Includes tool usage consistency evaluation
+- Provides detailed breakdown of variation types
+- Excludes throttled responses from metrics
 
 ## Data Models
 
@@ -228,29 +367,32 @@ interface DeterminismResult {
 }
 ```
 
-## Error Handling
+## Enhanced Error Handling & User Experience
 
-### Error Categories and Responses
+### Comprehensive Error Management
 
-1. **AWS Rate Limiting**
-   - Implement exponential backoff (1s, 2s, 4s, 8s, 16s)
-   - Reduce concurrency automatically
-   - Display "Evaluation slowed due to rate limits" message
+1. **AWS Throttling (Primary Focus)**
+   - Immediate visual feedback: "Handling rate limits..." status
+   - Exponential backoff: 5s, 10s, 20s delays
+   - Clear abandonment after 3 attempts per request
+   - Throttled results tracked but excluded from analysis
+   - Progress bar shows throttling impact
 
-2. **Network Failures**
-   - Retry individual requests up to 3 times
-   - Pause evaluation if >50% of requests fail
-   - Resume when connectivity restored
+2. **Network and Service Failures**
+   - Graceful degradation with partial results
+   - Clear error messages with suggested actions
+   - Original test results remain unaffected
+   - Retry options with user control
 
-3. **Grader LLM Failures**
-   - Retry grading with simplified prompt
-   - Fallback to basic statistical analysis if grader unavailable
-   - Display "Evaluation completed with limited analysis" message
+3. **Grader LLM Issues**
+   - Fallback to basic statistical analysis
+   - Clear indication of limited analysis mode
+   - Preserve all response data for manual review
 
-4. **Service Worker Crashes**
-   - Detect worker termination
-   - Restart evaluation from last checkpoint
-   - Preserve partial results in IndexedDB
+4. **State Management Errors**
+   - Prevent duplicate evaluations with simple flags
+   - Clean cancellation of previous evaluations
+   - No complex state synchronization issues
 
 ### Error Recovery Strategies
 
@@ -277,24 +419,44 @@ const ERROR_RECOVERY = {
 }
 ```
 
-## Testing Strategy
+## UI/UX Enhancements
 
-### Unit Tests
+### Enhanced Status Display
 
-1. **DeterminismEvaluator Component**
-   - Render states (idle, evaluating, completed, error)
-   - Props handling and event callbacks
-   - Grade display and modal interactions
+1. **Progress Indicators**
+   - Clear phase messaging: "Collecting additional responses..." → "Evaluating determinism..."
+   - Progress percentage with completed/total counts
+   - Estimated time remaining based on current progress
+   - Throttling indicators with retry countdown
 
-2. **DeterminismService**
-   - Service worker communication
-   - Status update handling
-   - Error propagation
+2. **Results Modal Improvements**
+   - Display all individual responses with timestamps
+   - Show tool usage data for each response
+   - Highlight throttled responses (grayed out)
+   - Expandable sections for detailed analysis
+   - Export functionality for response data
 
-3. **ThroughputManager**
-   - Rate limit calculations
-   - Concurrency management
-   - Backoff algorithms
+3. **System Settings Integration**
+   - Global settings dialog accessible from main menu
+   - Dedicated determinism section within settings
+   - Quick settings access from determinism evaluator
+   - Inline validation with immediate feedback
+   - Settings persistence across sessions
+   - Clear impact explanation (more tests = better accuracy, longer time)
+
+### Simplified Architecture Benefits
+
+1. **Maintainability**
+   - No service worker complexity
+   - Direct integration with existing services
+   - Minimal new abstractions
+   - Clear error boundaries
+
+2. **Reliability**
+   - Fewer moving parts
+   - Predictable execution flow
+   - Simple state management
+   - Easy debugging and monitoring
 
 ### Browser Compatibility Tests
 

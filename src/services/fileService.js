@@ -170,14 +170,28 @@ export class FileService {
       }
 
       // Add ID and timestamp if not present
+      let newId = testResult.id || this.generateId();
+
+      // Load existing history to check for ID conflicts
+      const history = await this.loadHistory();
+
+      // Ensure ID uniqueness
+      const existingIds = new Set(history.map(item => item.id));
+      let idCounter = 1;
+      const originalId = newId;
+
+      while (existingIds.has(newId)) {
+        newId = `${originalId}-${idCounter}`;
+        idCounter++;
+      }
+
+      // Silently handle ID conflicts without logging
+
       const enrichedResult = {
-        id: testResult.id || this.generateId(),
+        id: newId,
         timestamp: testResult.timestamp || new Date().toISOString(),
         ...testResult
       };
-
-      // Load existing history
-      const history = await this.loadHistory();
 
       // Add new result to the beginning of the array (most recent first)
       history.unshift(enrichedResult);

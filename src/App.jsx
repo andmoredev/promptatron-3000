@@ -8,18 +8,19 @@ import Comparison from './components/Comparison';
 import ErrorBoundary from './components/ErrorBoundary';
 import BrowserCompatibility from './components/BrowserCompatibility';
 import UIErrorNotification from './components/UIErrorNotification';
-import HelpGuide from './components/HelpGuide';
 import LoadingSpinner from './components/LoadingSpinner';
 import ProgressBar from './components/ProgressBar';
 import ThemeProvider from './components/ThemeProvider';
 import { RobotGraphicContainer } from './components/RobotGraphic';
 import StreamingPerformanceMonitor from './components/StreamingPerformanceMonitor';
+import SettingsDialog from './components/SettingsDialog';
 import { bedrockService } from './services/bedrockService';
 import { datasetToolIntegrationService } from './services/datasetToolIntegrationService';
 import { useHistory } from './hooks/useHistory';
 import { useModelOutput } from './hooks/useModelOutput';
 import { useStatePersistence, useUIStatePersistence, useNavigationStatePersistence, useTestResultsStatePersistence } from './hooks/useStatePersistence';
 import { statePersistenceService } from './services/statePersistenceService';
+import { useSettings, useDeterminismSettings } from './hooks/useSettings';
 import { validateForm } from './utils/formValidation';
 import { handleError, retryWithBackoff } from './utils/errorHandling';
 import { loadFormState, saveFormState, createDebouncedSave, clearFormState, hasFormState } from './utils/formStateStorage';
@@ -27,6 +28,7 @@ import { gradientErrorRecovery } from './utils/gradientErrorRecovery';
 import { handleUIError, initializeUIErrorMonitoring, proactiveUICheck } from './utils/uiErrorIntegration';
 import { useUIErrorRecovery } from './hooks/useUIErrorRecovery';
 import { fileService } from './services/fileService';
+
 
 
 function App() {
@@ -87,13 +89,29 @@ function App() {
   const [isRobotDebugEnabled, setIsRobotDebugEnabled] = useState(false);
   const [isStreamingDebugEnabled, setIsStreamingDebugEnabled] = useState(false);
 
-
+  // Settings dialog state
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Determinism evaluation state (initialized from saved state)
   const [determinismEnabled, setDeterminismEnabled] = useState(savedFormState.determinismEnabled);
+  const [shouldStartDeterminismEvaluation, setShouldStartDeterminismEvaluation] = useState(false);
 
   // Streaming preference state (initialized from saved state)
   const [streamingEnabled, setStreamingEnabled] = useState(savedFormState.streamingEnabled);
+
+  // Initialize settings system
+  const {
+    allSettings,
+    isLoading: settingsLoading,
+    error: settingsError,
+    isInitialized: settingsInitialized
+  } = useSettings();
+
+  // Get determinism settings specifically
+  const {
+    settings: determinismSettings,
+    isInitialized: determinismSettingsInitialized
+  } = useDeterminismSettings();
 
   // Use the history hook for managing test history
   const { saveTestResult } = useHistory();
@@ -357,6 +375,24 @@ function App() {
     }
   }, [testResults, statePersistenceInitialized, savePersistentResults, saveModelOutputState]);
 
+  // Apply settings when they're loaded
+  useEffect(() => {
+    if (settingsInitialized && allSettings) {
+      if (allSettings.determinism?.enabled !== undefined) {
+        // If there's no saved form state, or if the saved state has the default value, apply settings
+        if (!hasFormState() || savedFormState.determinismEnabled === true) {
+          setDeterminismEnabled(allSettings.determinism.enabled);
+        }
+      }
+
+      // Apply UI settings
+      if (allSettings.ui?.defaultTab && !navigationState?.activeTab) {
+        // Only set default tab if no navigation state is restored
+        setActiveTab(allSettings.ui.defaultTab);
+      }
+    }
+  }, [settingsInitialized, allSettings, savedFormState.determinismEnabled, navigationState?.activeTab]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -386,12 +422,19 @@ function App() {
         handleTabSwitch('comparison');
       }
 
+      // Ctrl/Cmd + ,: Open Settings
+      if ((event.ctrlKey || event.metaKey) && event.key === ',') {
+        event.preventDefault();
+        setIsSettingsOpen(true);
+      }
+
       // Escape: Clear current selection or close modals
       if (event.key === "Escape") {
-        if (selectedForComparison.length > 0) {
+        if (isSettingsOpen) {
+          setIsSettingsOpen(false);
+        } else if (selectedForComparison.length > 0) {
           setSelectedForComparison([]);
-        }
-        if (error) {
+        } else if (error) {
           setError(null);
         }
       }
@@ -399,7 +442,7 @@ function App() {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isFormValid, isLoading, selectedForComparison.length, error]);
+  }, [isFormValid, isLoading, selectedForComparison.length, error, isSettingsOpen]);
 
   const validateTestConfiguration = () => {
     const formData = {
@@ -709,11 +752,13 @@ function App() {
             prompt: userPrompt, // Legacy field for backward compatibility
             datasetType: selectedDataset.type,
             datasetOption: selectedDataset.option,
+            datasetContent: selectedDataset.content, // Include dataset content for determinism evaluation
             response: response.text,
             usage: response.usage,
             isStreamed: streamingEnabled,
             streamingMetrics: streamingMetrics,
             toolUsage: response.toolUsage || null, // Include tool usage data from response
+            toolConfig: toolConfig, // Include tool configuration for determinism evaluation
             toolConfigurationStatus: toolConfigurationStatus, // Include tool configuration status
             timestamp: new Date().toISOString()
           };
@@ -738,6 +783,13 @@ function App() {
 
       setProgressStatus('Complete!');
       setProgressValue(100);
+
+      // Trigger determinism evaluation if enabled (single-fire logic)
+      if (determinismEnabled) {
+        setShouldStartDeterminismEvaluation(true);
+        // Reset the trigger after a short delay to ensure single-fire behavior
+        setTimeout(() => setShouldStartDeterminismEvaluation(false), 100);
+      }
 
       // Reset streaming state
       setIsStreaming(false);
@@ -1282,6 +1334,7 @@ function App() {
                         results={testResults}
                         isLoading={isLoading}
                         determinismEnabled={determinismEnabled}
+                        shouldStartDeterminismEvaluation={shouldStartDeterminismEvaluation}
                         onEvaluationComplete={async (grade) => {
                           // Handle determinism evaluation completion
                           if (testResults && grade) {
@@ -1334,8 +1387,18 @@ function App() {
                 </div>
               )}
 
-              {/* Help Guide */}
-              <HelpGuide />
+              {/* Floating Settings Button */}
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="fixed bottom-4 right-4 bg-primary-600 hover:bg-primary-700 text-white p-3 rounded-full shadow-lg transition-colors z-40"
+                title="Settings (Ctrl/Cmd + ,)"
+                aria-label="Open settings"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
 
               {/* Streaming Performance Monitor - Debug Mode */}
               {isStreamingDebugEnabled && (
@@ -1351,6 +1414,16 @@ function App() {
 
           {/* UI Error Notification System */}
           <UIErrorNotification />
+
+          {/* Settings Dialog */}
+          <SettingsDialog
+            isOpen={isSettingsOpen}
+            onClose={() => setIsSettingsOpen(false)}
+            onSave={(settings) => {
+              // Settings are automatically saved by the SettingsService
+              // This callback is for any additional actions needed
+            }}
+          />
         </BrowserCompatibility>
       </ThemeProvider>
     </ErrorBoundary>
