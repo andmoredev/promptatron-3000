@@ -2,86 +2,103 @@
 
 ## Introduction
 
-This feature adds tool use capabilities to the Bedrock LLM Analyzer, allowing AI models to interact with predefined tools during analysis and tracking their usage attempts. The system will provide dataset-specific tools that models can invoke, capture tool usage attempts, and display this information as part of the test results. This enables evaluation of models' ability to use tools appropriately for different use cases.
+This feature adds the capability for users to enable actual tool execution in the Bedrock LLM Analyzer, transforming it from a tool-tracking system to an interactive tool-using system. Users will be able to toggle between viewing tool calls (current behavior) and actually executing tools, with special handling for fraud detection tools and comprehensive workflow visualization.
 
 ## Requirements
 
 ### Requirement 1
 
-**User Story:** As a developer/researcher, I want models to have access to dataset-specific tools during analysis, so that I can evaluate their ability to take appropriate actions based on the data they analyze.
+**User Story:** As a user, I want to enable tool execution mode so that the LLM can actually use tools instead of just showing me what tools it would call.
 
 #### Acceptance Criteria
 
-1. WHEN I select a dataset type THEN the system SHALL automatically provide relevant tools for that dataset type to the model
-2. WHEN the fraud detection dataset is selected THEN the system SHALL provide a "freeze_account" tool with account_id, transaction_ids array, and reason string parameters
-3. WHEN other dataset types are selected THEN the system SHALL provide appropriate tools for those specific use cases
-4. WHEN no tools are defined for a dataset type THEN the system SHALL run the test without tool definitions
+1. WHEN I access the application THEN I SHALL see a toggle option to enable "Use Tools" mode
+2. WHEN "Use Tools" mode is disabled THEN the system SHALL behave as it currently does (showing tool calls without execution)
+3. WHEN "Use Tools" mode is enabled THEN the system SHALL actually execute the tools that the LLM requests
+4. WHEN I toggle between modes THEN the system SHALL clearly indicate which mode is active
+5. WHEN "Use Tools" mode is enabled THEN the interface SHALL show additional controls for tool execution settings
 
 ### Requirement 2
 
-**User Story:** As a developer/researcher, I want to see when models attempt to use tools, so that I can evaluate their decision-making process and tool usage patterns.
+**User Story:** As a user, I want determinism evaluation to be disabled when tool execution is enabled so that I don't get inconsistent results due to tool state changes.
 
 #### Acceptance Criteria
 
-1. WHEN a model attempts to use a tool during analysis THEN the system SHALL capture the tool name and parameters the model tried to pass without executing the tool
-2. WHEN a model makes multiple tool use attempts THEN the system SHALL capture all attempts in the order they occurred
-3. WHEN a model completes analysis without using tools THEN the system SHALL indicate that no tools were used
-4. WHEN tool usage is captured THEN the system SHALL store this information as part of the test result
-5. WHEN a model attempts to use tools THEN the system SHALL NOT continue the conversation or simulate tool execution
+1. WHEN "Use Tools" mode is enabled THEN the determinism evaluation option SHALL be disabled and hidden
+2. WHEN "Use Tools" mode is enabled AND I try to run determinism evaluation THEN the system SHALL prevent the operation and show an appropriate message
+3. WHEN I disable "Use Tools" mode THEN the determinism evaluation option SHALL become available again
+4. WHEN determinism evaluation is running THEN I SHALL NOT be able to enable "Use Tools" mode
 
 ### Requirement 3
 
-**User Story:** As a developer/researcher, I want to see tool usage information displayed clearly in test results, so that I can understand what actions the model wanted to take based on the data.
+**User Story:** As a user, I want to set a maximum iteration count for tool execution so that the system doesn't run indefinitely if the LLM gets stuck in a loop.
 
 #### Acceptance Criteria
 
-1. WHEN viewing test results THEN the system SHALL display a dedicated "Tool Usage" section showing any tool use attempts
-2. WHEN a tool was attempted THEN the system SHALL show the tool name and parameters the model tried to pass
-3. WHEN multiple tools were attempted THEN the system SHALL display them in chronological order with clear separation
-4. WHEN no tools were used THEN the system SHALL display "No tools used" in the tool usage section
-5. WHEN displaying tool attempts THEN the system SHALL clearly indicate these were attempted but not executed
+1. WHEN "Use Tools" mode is enabled THEN I SHALL see a setting for maximum iteration count
+2. WHEN I set the maximum iteration count THEN the system SHALL enforce this limit during tool execution
+3. WHEN the iteration count is exceeded THEN the system SHALL stop execution and display a clear message about reaching the limit
+4. WHEN execution stops due to iteration limit THEN I SHALL see the partial results and workflow up to that point
+5. WHEN I configure the iteration count THEN the system SHALL validate that it's a positive integer between 1 and 50
 
 ### Requirement 4
 
-**User Story:** As a developer/researcher, I want tool usage information included in test history and comparisons, so that I can analyze tool usage patterns across different models and configurations.
+**User Story:** As a user, I want the fraud detection tools to actually function when tool execution is enabled so that I can see real analysis results.
 
 #### Acceptance Criteria
 
-1. WHEN a test with tool usage is saved to history THEN the system SHALL include tool usage data in the stored test result
-2. WHEN viewing historical test results THEN the system SHALL display tool usage information alongside other test details
-3. WHEN comparing test results THEN the system SHALL include tool usage comparison in the side-by-side view
-4. WHEN searching or filtering history THEN the system SHALL allow filtering by tool usage (used tools vs no tools used)
+1. WHEN the LLM requests to use a fraud detection tool THEN the system SHALL execute the tool against the appropriate dataset
+2. WHEN fraud tools are executed THEN the system SHALL update local storage or IndexedDB with any state changes
+3. WHEN fraud tools process data THEN the system SHALL return actual analysis results to the LLM
+4. WHEN fraud tools encounter errors THEN the system SHALL handle them gracefully and report meaningful error messages
+5. WHEN fraud tools complete successfully THEN the results SHALL be available for the LLM to use in subsequent reasoning
 
 ### Requirement 5
 
-**User Story:** As a developer/researcher, I want the fraud detection freeze_account tool to capture realistic account management scenarios, so that I can evaluate models' ability to make appropriate fraud prevention decisions.
+**User Story:** As a user, I want to see the entire workflow of LLM tool usage in a timeline view so that I can understand the sequence of operations and decision-making process.
 
 #### Acceptance Criteria
 
-1. WHEN the freeze_account tool is defined THEN the system SHALL require account_id as a string parameter
-2. WHEN the freeze_account tool is defined THEN the system SHALL require transaction_ids as an array parameter
-3. WHEN the freeze_account tool is defined THEN the system SHALL require reason as a string parameter explaining why the account should be frozen
-4. WHEN the model attempts to use freeze_account THEN the system SHALL capture the parameters the model provided without validation or execution
+1. WHEN tool execution is running THEN I SHALL see a timeline view showing each step of the workflow
+2. WHEN the LLM makes a tool call THEN the timeline SHALL show the tool name, parameters, and timestamp
+3. WHEN a tool returns results THEN the timeline SHALL show the results and execution time
+4. WHEN the LLM processes tool results THEN the timeline SHALL show the reasoning or next steps
+5. WHEN execution completes THEN I SHALL be able to review the complete timeline of all operations
+6. WHEN I view the timeline THEN I SHALL be able to expand/collapse individual steps for detailed information
+7. WHEN errors occur during execution THEN the timeline SHALL clearly mark the error point and show error details
 
 ### Requirement 6
 
-**User Story:** As a developer/researcher, I want tool usage to be included in determinism evaluation with high weighting, so that I can assess whether models consistently make the same tool usage decisions across multiple runs.
+**User Story:** As a user, I want clear visual feedback during tool execution so that I understand what's happening and can monitor progress.
 
 #### Acceptance Criteria
 
-1. WHEN determinism evaluation is performed THEN the system SHALL include tool usage data as a major factor in the determinism score
-2. WHEN comparing tool usage for determinism THEN the system SHALL check if the same tools were attempted with the same parameters
-3. WHEN tool usage differs between runs THEN the system SHALL significantly impact the determinism score due to high weighting
-4. WHEN tool parameters vary between runs THEN the system SHALL treat this as a determinism failure even if tool names match
-5. WHEN one run uses tools and another doesn't THEN the system SHALL mark this as a major determinism inconsistency
+1. WHEN tool execution starts THEN I SHALL see a clear indication that tools are being executed
+2. WHEN each tool is called THEN I SHALL see real-time updates showing which tool is running
+3. WHEN tools are processing THEN I SHALL see appropriate loading indicators
+4. WHEN execution completes THEN I SHALL see a clear completion status
+5. WHEN I need to stop execution THEN I SHALL have a cancel/stop button available
 
 ### Requirement 7
 
-**User Story:** As a developer/researcher, I want tool definitions to be easily extensible for new dataset types, so that I can add appropriate tools for different analysis scenarios without complex code changes.
+**User Story:** As a user, I want tool execution results to be saved in history so that I can review and compare tool-enabled tests.
 
 #### Acceptance Criteria
 
-1. WHEN new dataset types are added THEN the system SHALL allow easy configuration of tools specific to those dataset types
-2. WHEN tool definitions are modified THEN the system SHALL not require application restart to use updated tool definitions
-3. WHEN tools are configured THEN the system SHALL validate tool definitions to ensure they have proper structure and required fields
-4. WHEN invalid tool definitions are detected THEN the system SHALL log appropriate warnings and continue without those tools
+1. WHEN a tool-enabled test completes THEN it SHALL be saved to the test history
+2. WHEN I view history THEN I SHALL be able to distinguish between tool-enabled and tool-disabled tests
+3. WHEN I compare results THEN I SHALL be able to compare tool-enabled tests with regular tests
+4. WHEN I view a historical tool-enabled test THEN I SHALL be able to see the complete workflow timeline
+5. WHEN tool execution data is saved THEN it SHALL include all tool calls, results, and timeline information
+
+### Requirement 8
+
+**User Story:** As a user, I want proper error handling during tool execution so that failures don't crash the application and I can understand what went wrong.
+
+#### Acceptance Criteria
+
+1. WHEN a tool execution fails THEN the system SHALL continue running and show a clear error message
+2. WHEN network errors occur during tool execution THEN the system SHALL handle them gracefully with retry logic
+3. WHEN tool parameters are invalid THEN the system SHALL validate them and provide helpful error messages
+4. WHEN the maximum iteration limit is reached THEN the system SHALL stop gracefully and preserve partial results
+5. WHEN errors occur THEN the timeline SHALL show where the error happened and what caused it

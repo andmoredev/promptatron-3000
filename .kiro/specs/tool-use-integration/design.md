@@ -2,354 +2,450 @@
 
 ## Overview
 
-The tool use integration feature extends the Bedrock LLM Analyzer to support AWS Bedrock's tool use (function calling) capabilities. This enhancement allows AI models to be presented with predefined tools during analysis and captures their usage attempts without executing the tools. The system records what tools the model wanted to use and what parameters it tried to pass, providing insights into the model's decision-making process. The feature includes strong integration with the determinism evaluation system, where tool usage consistency is weighted heavily in determinism scoring.
+This design document outlines the implementation of tool execution functionality in the Bedrock LLM Analyzer. The system will be enhanced to support actual tool execution in addition to the current tool detection and display capabilities. The design focuses on creating a toggle between "tool tracking" mode (current behavior) and "tool execution" mode (new functionality), with comprehensive workflow visualization and proper iteration control.
 
 ## Architecture
 
-### Core Components
+### High-Level Architecture
 
-1. **Tool Configuration System**: Manages dataset-specific tool definitions
-2. **Enhanced Bedrock Service**: Extended to support tool use in Converse API calls
-3. **Tool Usage Tracking**: Captures and stores tool usage attempts and parameters
-4. **UI Enhancement**: Displays tool usage information in test results and history
-5. **Determinism Integration**: Includes tool usage in determinism evaluation with high weighting
-
-### Data Flow
+The tool execution system will be built as an extension to the existing architecture, maintaining backward compatibility while adding new execution capabilities:
 
 ```
-Dataset Selection → Tool Configuration → Model Invocation with Tools → Tool Usage Detection → Result Display → History Storage → Determinism Evaluation
+┌─────────────────────────────────────────────────────────────────┐
+│                        Frontend (React)                         │
+├─────────────────────────────────────────────────────────────────┤
+│  App.jsx (Main Controller)                                     │
+│  ├─ Tool Execution Toggle                                      │
+│  ├─ Max Iteration Control                                      │
+│  └─ Determinism Evaluation Disabling Logic                    │
+├─────────────────────────────────────────────────────────────────┤
+│  Components                                                     │
+│  ├─ ToolExecutionSettings (New)                               │
+│  ├─ WorkflowTimeline (New)                                    │
+│  ├─ ToolUsageDisplay (Enhanced)                               │
+│  └─ TestResults (Enhanced)                                    │
+├─────────────────────────────────────────────────────────────────┤
+│  Services                                                       │
+│  ├─ toolExecutionService (New)                                │
+│  ├─ fraudToolsService (New)                                   │
+│  ├─ workflowTrackingService (New)                             │
+│  └─ bedrockService (Enhanced)                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  Storage Layer                                                  │
+│  ├─ Local Storage (Tool execution state)                      │
+│  ├─ IndexedDB (Workflow history, tool results)                │
+│  └─ Session Storage (Temporary execution state)               │
+└─────────────────────────────────────────────────────────────────┘
 ```
+
+### Tool Execution Flow
+
+The tool execution system will implement Bedrock's multi-turn conversation pattern:
+
+```
+1. Send Initial Request + Tool Definitions → Bedrock
+2. Bedrock Response: stopReason="tool_use" + toolUse blocks
+3. Our App: Execute Tools Locally → Get Results  
+4. Send toolResult Messages → Bedrock
+5. Bedrock: Final Response with stopReason="end_turn"
+   (Repeat 2-5 until max iterations or end_turn)
+```
+
+**Key Points:**
+- Bedrock NEVER executes tools directly - it only requests tool usage
+- Our application executes tools locally and sends results back
+- This follows Bedrock's documented tool use pattern exactly
 
 ## Components and Interfaces
 
-### Tool Configuration Service
+### New Components
 
-**Location**: `src/services/toolConfigService.js`
+#### 1. ToolExecutionSettings Component
 
-```javascript
-export class ToolConfigService {
-  // Get tool definitions for a specific dataset type
-  getToolsForDatasetType(datasetType)
+**Purpose**: Provides UI controls for tool execution configuration
 
-  // Validate tool definitions
-  validateToolDefinition(toolDef)
-
-  // Get all available tool configurations
-  getAllToolConfigurations()
+**Props**:
+```typescript
+interface ToolExecutionSettingsProps {
+  useToolsEnabled: boolean;
+  onUseToolsToggle: (enabled: boolean) => void;
+  maxIterations: number;
+  onMaxIterationsChange: (count: number) => void;
+  determinismEnabled: boolean;
+  onDeterminismToggle: (enabled: boolean) => void;
+  isExecuting: boolean;
 }
 ```
 
-**Tool Definition Structure**:
-```javascript
-{
-  datasetType: "fraud-detection",
-  tools: [
-    {
-      name: "freeze_account",
-      description: "Freeze an account due to suspected fraud",
-      inputSchema: {
-        type: "object",
-        properties: {
-          account_id: { type: "string", description: "Account ID to freeze" },
-          transaction_ids: {
-            type: "array",
-            items: { type: "string" },
-            description: "Array of transaction IDs related to fraud"
-          },
-          reason: { type: "string", description: "Reason for freezing the account" }
-        },
-        required: ["account_id", "transaction_ids", "reason"]
-      }
-    }
-  ]
+**Features**:
+- Toggle switch for "Use Tools" mode
+- Numeric input for maximum iteration count (1-50)
+- Automatic disabling of determinism evaluation when tools are enabled
+- Visual indicators for current execution state
+
+#### 2. WorkflowTimeline Component
+
+**Purpose**: Displays the complete workflow of LLM tool usage in chronological order
+
+**Props**:
+```typescript
+interface WorkflowTimelineProps {
+  workflow: WorkflowStep[];
+  isExecuting: boolean;
+  onStepExpand: (stepId: string) => void;
+  onCopyStep: (stepId: string) => void;
+}
+
+interface WorkflowStep {
+  id: string;
+  type: 'llm_request' | 'llm_response' | 'tool_call' | 'tool_result' | 'error';
+  timestamp: string;
+  duration?: number;
+  content: any;
+  metadata?: any;
+  status: 'pending' | 'in_progress' | 'completed' | 'error';
 }
 ```
 
-### Enhanced Bedrock Service
+**Features**:
+- Chronological timeline view with timestamps
+- Expandable steps for detailed information
+- Real-time updates during execution
+- Error highlighting and recovery information
+- Copy functionality for individual steps
 
-**Extensions to**: `src/services/bedrockService.js`
+#### 3. ToolExecutionMonitor Component
 
-```javascript
-// New methods to add:
-async invokeModelWithTools(modelId, systemPrompt, userPrompt, content, toolConfig)
-async invokeModelStreamWithTools(modelId, systemPrompt, userPrompt, content, toolConfig, onToken, onComplete, onError)
-parseToolUseFromMessageContent(messageContent)
-extractToolUsageAttempts(response)
-formatToolUsageForDisplay(toolUsage)
-```
+**Purpose**: Provides real-time monitoring during tool execution
 
-**Tool Use Processing Flow**:
-1. Send initial message with tool configuration to model
-2. Check response.output.message.content for tool use blocks
-3. Extract toolUse items: `{ toolUse: { name, input, toolUseId } }`
-4. Record tool usage attempts without execution
-5. Return response with captured tool usage data (no conversation continuation)
-
-### Tool Usage Data Structure
-
-Based on Bedrock Converse API response structure:
-
-```javascript
-{
-  toolUse: {
-    name: "freeze_account",
-    toolUseId: "tooluse_abc123", // From toolUse.toolUseId
-    input: { // From toolUse.input (raw parameters from model)
-      account_id: "ACC-12345",
-      transaction_ids: ["TXN-001", "TXN-002"],
-      reason: "Suspicious large transactions from foreign IP"
-    },
-    attempted: true, // Indicates this was attempted but not executed
-    timestamp: "2024-01-15T10:30:15Z"
-  }
+**Props**:
+```typescript
+interface ToolExecutionMonitorProps {
+  currentIteration: number;
+  maxIterations: number;
+  activeTools: string[];
+  executionStatus: 'idle' | 'executing' | 'completed' | 'error' | 'cancelled';
+  onCancel: () => void;
 }
 ```
 
-### UI Components
+**Features**:
+- Progress indicator showing current iteration
+- List of currently executing tools
+- Cancel button for stopping execution
+- Status indicators and error states
 
-**Enhanced Test Results Display**:
-- New "Tool Usage" section in test results
-- Clear formatting of tool attempts with par
- Visual indicators for tool usage status
+### Enhanced Components
 
-**History Integration**:
-- Tool usage information stored with each test result
-- Searchable and filterable by tool usage
-- Comparison view includes tool usage differences
+#### 1. TestResults Component (Enhanced)
 
-**Component Updates**:
-- `src/components/TestResults.jsx`: Add tool usage display section
-- `src/components/History.jsx`: Add tool usage filtering and display
-- `src/components/Comparison.jsx`: Add tool usage comparison
+**New Features**:
+- Integration with WorkflowTimeline component
+- Display of tool execution results vs. tool detection results
+- Enhanced history saving with workflow data
 
-### Determinism Integration
+#### 2. ToolUsageDisplay Component (Enhanced)
 
-**Enhanced Determinism Service**:
-```javascript
-// Extensions to src/services/determinismService.js
-evaluateToolUsageConsistency(responses)
-calculateToolUsageScore(toolUsageData)
-```
-
-**Tool Usage Determinism Criteria**:
-1. **Tool Selection Consistency**: Same tools used across runs (weight: 30%)
-2. **Parameter Consistency**: Identical parameters for same tools (weight: 40%)
-3. **Usage Pattern Consistency**: Same number and sequence of tool calls (weight: 30%)
-
-**Scoring Algorithm**:
-- Perfect match: 100% score
-- Same tools, different parameters: 40% score
-- Different tools used: 0% score
-- Mixed usage (some runs with tools, some without): 10% score
+**New Features**:
+- Display actual tool execution results
+- Show tool execution status (attempted vs. executed)
+- Integration with workflow timeline
 
 ## Data Models
 
-### Tool Configuration Model
+### Tool Execution State
 
-```javascript
-{
-  id: "fraud-detection-tools",
-  datasetType: "fraud-detection",
-  version: "1.0",
-  tools: [
-    {
-      toolSpec: {
-        name: "freeze_account",
-        description: "Put a freeze on a specific account and mark why it was frozen",
-        inputSchema: {
-          json: {
-            type: "object",
-            properties: {
-              account_id: {
-                type: "string",
-                description: "The account ID to freeze"
-              },
-              transaction_ids: {
-                type: "array",
-                items: { type: "string" },
-                description: "Array of transaction IDs that led to this decision"
-              },
-              reason: {
-                type: "string",
-                description: "Detailed reason for freezing the account"
-              }
-            },
-            required: ["account_id", "transaction_ids", "reason"]
-          }
-        }
-      }
-    }
-  ]
+```typescript
+interface ToolExecutionState {
+  enabled: boolean;
+  maxIterations: number;
+  currentIteration: number;
+  status: 'idle' | 'executing' | 'completed' | 'error' | 'cancelled';
+  workflow: WorkflowStep[];
+  executionId: string;
+  startTime: string;
+  endTime?: string;
+  totalDuration?: number;
 }
 ```
 
-### Enhanced Test Result Model
+### Workflow Step
 
-```javascript
-{
-  // Existing fields...
-  id: "test_123",
-  timestamp: "2024-01-15T10:30:00Z",
-  modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
-  systemPrompt: "...",
-  userPrompt: "...",
-  content: "...",
-  response: "...",
-  usage: { ... },
-
-  // New tool usage fields (matches Bedrock response structure)
-  toolUsage: {
-    hasToolUsage: true,
-    toolCalls: [
-      {
-        toolName: "freeze_account",
-        toolUseId: "tooluse_abc123",
-        input: { // Raw input from model (matches toolUse.input)
-          account_id: "ACC-12345",
-          transaction_ids: ["TXN-001", "TXN-002"],
-          reason: "Multiple high-value transactions from suspicious locations"
-        },
-        attempted: true,
-        timestamp: "2024-01-15T10:30:15Z"
-      }
-    ],
-    toolCallCount: 1,
-    availableTools: ["freeze_account"] // Tools that were available to model
-  },
-
-  // Enhanced determinism data
-  determinismData: {
-    // Existing fields...
-    toolUsageConsistency: {
-      score: 0.85,
-      details: {
-        toolSelectionConsistency: 0.9,
-        parameterConsistency: 0.8,
-        usagePatternConsistency: 0.85,
-        iterationConsistency: 0.9
-      }
-    }
-  }
+```typescript
+interface WorkflowStep {
+  id: string;
+  executionId: string;
+  type: 'llm_request' | 'llm_response' | 'tool_call' | 'tool_result' | 'error';
+  timestamp: string;
+  duration?: number;
+  iteration: number;
+  content: {
+    // For llm_request
+    messages?: ConversationMessage[];
+    // For llm_response
+    response?: string;
+    toolCalls?: ToolCall[];
+    // For tool_call
+    toolName?: string;
+    parameters?: any;
+    // For tool_result
+    result?: any;
+    success?: boolean;
+    // For error
+    error?: string;
+    errorType?: string;
+  };
+  metadata?: {
+    modelId?: string;
+    usage?: TokenUsage;
+    executionTime?: number;
+    retryCount?: number;
+  };
+  status: 'pending' | 'in_progress' | 'completed' | 'error';
 }
 ```
+
+### Tool Execution Result
+
+```typescript
+interface ToolExecutionResult {
+  toolName: string;
+  parameters: any;
+  result: any;
+  success: boolean;
+  error?: string;
+  executionTime: number;
+  timestamp: string;
+}
+```
+
+## Services
+
+### 1. ToolExecutionService
+
+**Purpose**: Orchestrates the tool execution workflow
+
+**Key Methods**:
+```typescript
+class ToolExecutionService {
+  async executeWorkflow(
+    modelId: string,
+    systemPrompt: string,
+    userPrompt: string,
+    content: string,
+    toolConfig: ToolConfig,
+    options: ExecutionOptions
+  ): Promise<ExecutionResult>;
+  
+  async executeTool(
+    toolName: string,
+    parameters: any,
+    context: ExecutionContext
+  ): Promise<ToolExecutionResult>;
+  
+  cancelExecution(executionId: string): void;
+  
+  getExecutionStatus(executionId: string): ToolExecutionState;
+}
+```
+
+**Features**:
+- Multi-turn conversation management
+- Iteration counting and limits
+- Tool execution orchestration
+- Error handling and recovery
+- Cancellation support
+
+### 2. FraudToolsService
+
+**Purpose**: Implements the actual fraud detection tool functionality
+
+**Key Methods**:
+```typescript
+class FraudToolsService {
+  async freezeAccount(parameters: FreezeAccountParams): Promise<FreezeAccountResult>;
+  async flagSuspiciousTransaction(parameters: FlagTransactionParams): Promise<FlagTransactionResult>;
+  async createFraudAlert(parameters: CreateAlertParams): Promise<CreateAlertResult>;
+  async updateRiskProfile(parameters: UpdateRiskParams): Promise<UpdateRiskResult>;
+  
+  // Storage operations
+  async saveToStorage(operation: string, data: any): Promise<void>;
+  async getFromStorage(key: string): Promise<any>;
+}
+```
+
+**Features**:
+- Implementation of all fraud detection tools from the JSON configuration
+- Local storage/IndexedDB integration for state persistence
+- Validation of tool parameters
+- Realistic result generation for demonstration purposes
+
+### 3. WorkflowTrackingService
+
+**Purpose**: Manages workflow state and timeline data
+
+**Key Methods**:
+```typescript
+class WorkflowTrackingService {
+  createExecution(executionId: string): void;
+  addStep(executionId: string, step: WorkflowStep): void;
+  updateStep(executionId: string, stepId: string, updates: Partial<WorkflowStep>): void;
+  getWorkflow(executionId: string): WorkflowStep[];
+  saveWorkflow(executionId: string): Promise<void>;
+  loadWorkflow(executionId: string): Promise<WorkflowStep[]>;
+}
+```
+
+**Features**:
+- Real-time workflow tracking
+- Persistent storage of workflow history
+- Step-by-step execution monitoring
+- Timeline reconstruction for historical analysis
 
 ## Error Handling
 
-### Tool Configuration Errors
-- Invalid tool definitions: Log warning, continue without tools
-- Missing tool configurations: Graceful degradation to no-tool mode
-- Tool validation failures: Clear error messages to user
+### Error Types and Handling Strategies
 
-### Runtime Tool Errors
-- Model tool use parsing errors: Capture and display as "attempted but failed to parse"
-- Tool usage detection errors: Show parsing errors in tool usage display
-- Tool parameter extraction errors: Display extraction status in results
+1. **Tool Execution Errors**
+   - Invalid parameters: Show validation errors, allow retry
+   - Tool unavailable: Graceful degradation, continue workflow
+   - Execution timeout: Cancel tool, continue with partial results
 
-### Determinism Evaluation Errors
-- Tool usage comparison failures: Fallback to text-only determinism evaluation
-- Inconsistent tool data: Handle gracefully with appropriate scoring
+2. **Iteration Limit Errors**
+   - Max iterations reached: Stop execution, show partial results
+   - Infinite loop detection: Early termination with warning
+
+3. **Network/Service Errors**
+   - Bedrock API errors: Retry with exponential backoff
+   - Storage errors: Fallback to session storage
+
+4. **Validation Errors**
+   - Invalid tool configuration: Disable tool execution mode
+   - Missing required parameters: Show detailed error messages
+
+### Error Recovery Mechanisms
+
+- **Graceful Degradation**: Continue execution without failed tools
+- **Partial Results**: Save and display results up to the point of failure
+- **Retry Logic**: Automatic retry for transient errors
+- **User Intervention**: Allow manual retry or cancellation
 
 ## Testing Strategy
 
-### Unit Tests
-- Tool configuration service validation
-- Tool usage parsing from Bedrock responses
-- Determinism scoring algorithms
-- UI component rendering with tool usage data
+### Unit Testing
 
-### Integration Tests
-- End-to-end tool use flow with mock Bedrock responses
-- Tool usage storage and retrieval from history
-- Determinism evaluation with tool usage data
-- UI interactions with tool usage features
+1. **Service Layer Testing**
+   - ToolExecutionService workflow orchestration
+   - FraudToolsService tool implementations
+   - WorkflowTrackingService state management
+
+2. **Component Testing**
+   - ToolExecutionSettings user interactions
+   - WorkflowTimeline display and navigation
+   - ToolExecutionMonitor real-time updates
+
+### Integration Testing
+
+1. **End-to-End Workflow Testing**
+   - Complete tool execution workflows
+   - Multi-iteration scenarios
+   - Error handling and recovery
+
+2. **Storage Integration Testing**
+   - Local storage persistence
+   - IndexedDB operations
+   - State restoration
 
 ### Manual Testing Scenarios
-1. **Basic Tool Use**: Test fraud detection with freeze_account tool
-2. **No Tool Use**: Verify graceful handling when model doesn't use tools
-3. **Multiple Tool Calls**: Test scenarios with multiple tool usage attempts
-4. **Determinism with Tools**: Verify tool usage affects determinism scoring
-5. **History and Comparison**: Test tool usage display in history and comparison views
 
-### Test Data
-- Mock Bedrock responses with tool use
-- Sample tool configurations for different dataset types
-- Test cases for various tool usage patterns
+1. **Basic Tool Execution**
+   - Enable tool execution mode
+   - Run test with fraud detection tools
+   - Verify tool results and workflow timeline
 
-## Implementation Phases
+2. **Iteration Limits**
+   - Set low iteration limit
+   - Trigger scenario that would exceed limit
+   - Verify graceful termination
 
-### Phase 1: Core Tool Infrastructure
-1. Create tool configuration service
-2. Extend Bedrock service for tool use support
-3. Implement tool usage data structures
-4. Add basic tool usage parsing
-
-### Phase 2: UI Integration
-1. Enhance test results display with tool usage section
-2. Update history component to show tool usage
-3. Add tool usage to comparison view
-4. Implement tool usage filtering in history
-
-### Phase 3: Determinism Integration
-1. Extend determinism service for tool usage evaluation
-2. Implement tool usage consistency scoring
-3. Update determinism UI to show tool usage scores
-4. Add tool usage weighting to overall determinism score
-
-### Phase 4: Dataset-Specific Tools
-1. Implement fraud detection freeze_account tool
-2. Create extensible system for adding new dataset tools
-3. Add tool configuration validation
-4. Document tool configuration format
-
-## Security Considerations
-
-### Tool Detection Safety
-- Tools are detected but never executed
-- No real account freezing or external system calls
-- Tool usage detection is for analysis and display only
-
-### Data Privacy
-- Tool parameters may contain sensitive data (account IDs, transaction IDs)
-- Ensure proper handling in storage and display
-- Consider data masking for demo purposes
-
-### Input Validation
-- Validate all tool parameters against schema
-- Sanitize tool usage data for display
-- Prevent injection attacks through tool parameters
+3. **Error Scenarios**
+   - Invalid tool parameters
+   - Network failures during execution
+   - Tool execution timeouts
 
 ## Performance Considerations
 
-### Tool Configuration Loading
-- Cache tool configurations to avoid repeated file reads
-- Lazy load tool definitions only when needed
-- Optimize tool validation for large configurations
+### Optimization Strategies
 
-### Tool Usage Processing
-- Efficient parsing of tool usage from Bedrock responses
-- Minimize impact on existing model invocation performance
-- Optimize tool usage storage and retrieval
+1. **Lazy Loading**
+   - Load tool configurations only when needed
+   - Defer workflow timeline rendering for large workflows
 
-### Determinism Evaluation
-- Efficient comparison algorithms for tool usage data
-- Parallel processing where possible
-- Optimize for large numbers of tool usage comparisons
+2. **Caching**
+   - Cache tool execution results for identical parameters
+   - Cache workflow data in memory during execution
 
-## Future Extensibility
+3. **Batch Operations**
+   - Batch storage operations for workflow steps
+   - Optimize IndexedDB writes
 
-### Additional Dataset Types
-- Customer service tools (escalate_ticket, transfer_agent)
-- Financial analysis tools (calculate_risk, generate_report)
-- Content moderation tools (flag_content, escalate_review)
+4. **Memory Management**
+   - Clean up completed executions
+   - Limit stored workflow history
 
-### Advanced Tool Features
-- Tool chaining and dependencies
-- Conditional tool availability
-- Tool usage analytics and insights
+### Monitoring and Metrics
+
+- Execution time tracking
 - Tool performance metrics
+- Memory usage monitoring
+- Error rate tracking
 
-### Integration Enhancements
-- Real tool execution in controlled environments
-- Tool usage export and reporting
-- Advanced tool usage visualization
-- Tool usage-based model comparison metrics
+## Security Considerations
+
+### Data Protection
+
+1. **Sensitive Data Handling**
+   - Sanitize tool parameters before storage
+   - Encrypt sensitive workflow data
+   - Clear temporary data after execution
+
+2. **Input Validation**
+   - Validate all tool parameters
+   - Sanitize user inputs
+   - Prevent injection attacks
+
+### Access Control
+
+1. **Feature Gating**
+   - Control access to tool execution mode
+   - Validate user permissions for tool usage
+
+2. **Audit Logging**
+   - Log all tool executions
+   - Track user actions and decisions
+
+## Migration Strategy
+
+### Backward Compatibility
+
+1. **Existing Functionality**
+   - Maintain current tool detection behavior
+   - Preserve existing test history
+   - Support legacy data formats
+
+2. **Gradual Rollout**
+   - Feature flag for tool execution mode
+   - Optional migration of existing data
+   - Fallback to detection mode on errors
+
+### Data Migration
+
+1. **Storage Schema Updates**
+   - Extend existing test result schema
+   - Add workflow data structures
+   - Maintain compatibility with old data
+
+2. **User Experience**
+   - Smooth transition between modes
+   - Clear indication of new capabilities
+   - Help documentation and tutorials
