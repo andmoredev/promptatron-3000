@@ -1,4 +1,5 @@
 import { determinismStorageService } from './determinismStorageService.js'
+import { workflowDataPersistenceService } from './workflowDataPersistenceService.js'
 
 /**
  * Service class for local file operations
@@ -318,6 +319,375 @@ export class FileService {
   }
 
   /**
+   * Save tool execution workflow data associated with a test result
+   * @param {string} testId - Test ID to associate workflow with
+   * @param {Object} workflowData - Complete workflow data from workflowTrackingService
+   * @returns {Promise<boolean>} True if saved successfully
+   */
+  async saveToolExecutionWorkflow(testId, workflowData) {
+    try {
+      if (!testId || !workflowData) {
+        throw new Error('testId and workflowData are required');
+      }
+
+      // Initialize workflow data persistence service if needed
+      if (!workflowDataPersistenceService.isInitialized) {
+        await workflowDataPersistenceService.initialize();
+      }
+
+      // Try to save to IndexedDB first (preferred for large workflow data)
+      const savedToIndexedDB = await workflowDataPersistenceService.storeWorkflowData(testId, workflowData);
+
+      if (savedToIndexedDB) {
+        return true;
+      }
+
+      // Fallback to localStorage for smaller workflows
+      const workflowKey = `tool-workflow-${testId}`;
+      const workflowToStore = {
+        testId,
+        executionId: workflowData.executionId,
+        timestamp: new Date().toISOString(),
+        workflow: workflowData
+      };
+
+      if (this.isLocalStorageAvailable()) {
+        localStorage.setItem(workflowKey, JSON.stringify(workflowToStore));
+      } else {
+        // Final fallback to in-memory storage
+        if (!this._inMemoryWorkflows) {
+          this._inMemoryWorkflows = new Map();
+        }
+        this._inMemoryWorkflows.set(workflowKey, workflowToStore);
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Failed to save tool execution workflow:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get tool execution workflow data for a test
+   * @param {string} testId - Test ID to get workflow for
+   * @returns {Promise<Object|null>} Workflow data or null if not found
+   */
+  async getToolExecutionWorkflow(testId) {
+    try {
+      if (!testId) {
+        return null;
+      }
+
+      // Try IndexedDB first (preferred for complete workflow data)
+      if (workflowDataPersistenceService.isInitialized) {
+        const workflowData = await workflowDataPersistenceService.getWorkflowDataByTestId(testId);
+        if (workflowData) {
+          return {
+            testId,
+            executionId: workflowData.executionId,
+            timestamp: workflowData.startTime,
+            workflow: workflowData
+          };
+        }
+      }
+
+      // Fallback to localStorage
+      const workflowKey = `tool-workflow-${testId}`;
+
+      if (this.isLocalStorageAvailable()) {
+        const workflowData = localStorage.getItem(workflowKey);
+        if (workflowData) {
+          return JSON.parse(workflowData);
+        }
+      }
+
+      // Final fallback to in-memory storage
+      if (this._inMemoryWorkflows && this._inMemoryWorkflows.has(workflowKey)) {
+        return this._inMemoryWorkflows.get(workflowKey);
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Failed to get tool execution workflow:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get all tool execution workflow data for indexing and querying
+   * @returns {Promise<Array>} Array of workflow data with test associations
+   */
+  async getAllToolExecutionWorkflows() {
+    try {
+      const workflows = [];
+
+      // Get workflows from IndexedDB first (preferred)
+      if (workflowDataPersistenceService.isInitialized) {
+        const metadata = await workflowDataPersistenceService.getWorkflowMetadata();
+        for (const meta of metadata) {
+          workflows.push({
+            testId: meta.testId,
+            executionId: meta.executionId,
+            timestamp: meta.timestamp,
+            workflow: {
+              executionId: meta.executionId,
+              status: meta.status,
+              startTime: meta.startTime,
+              endTime: meta.endTime,
+              totalDuration: meta.totalDuration,
+              currentIteration: meta.currentIteration,
+              maxIterations: meta.maxIterations,
+              modelId: meta.modelId,
+              steps: [] // Steps available separately if needed
+            }
+          });
+        }
+      }
+
+      // Add workflows from localStorage (for backward compatibility)
+      if (this.isLocalStorageAvailable()) {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('tool-workflow-')) {
+            try {
+              const workflowData = JSON.parse(localStorage.getItem(key));
+              // Check if we already have this workflow from IndexedDB
+              const existingWorkflow = workflows.find(w => w.executionId === workflowData.executionId);
+              if (!existingWorkflow) {
+                workflows.push(workflowData);
+              }
+            } catch (parseError) {
+              console.warn(`Failed to parse workflow data for key ${key}:`, parseError);
+            }
+          }
+        }
+      }
+
+      // Add in-memory workflows
+      if (this._inMemoryWorkflows) {
+        for (const [key, workflowData] of this._inMemoryWorkflows) {
+          if (key.startsWith('tool-workflow-')) {
+            const existingWorkflow = workflows.find(w => w.executionId === workflowData.executionId);
+            if (!existingWorkflow) {
+              workflows.push(workflowData);
+            }
+          }
+        }
+      }
+
+      // Sort by timestamp (newest first)
+      workflows.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+      return workflows;
+    } catch (error) {
+      console.error('Failed to get all tool execution workflows:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Clean up old tool execution workflow data
+   * @param {number} maxAge - Maximum age in milliseconds (default: 30 days)
+   * @returns {Promise<number>} Number of workflows cleaned up
+   */
+  async cleanupToolExecutionWorkflows(maxAge = 30 * 24 * 60 * 60 * 1000) {
+    try {
+      let totalCleanedCount = 0;
+
+      // Clean up IndexedDB workflows (preferred storage)
+      if (workflowDataPersistenceService.isInitialized) {
+        const indexedDBResults = await workflowDataPersistenceService.cleanupOldWorkflows();
+        totalCleanedCount += indexedDBResults.deletedCount;
+      }
+
+      // Clean up localStorage workflows (legacy/fallback storage)
+      const cutoffTime = Date.now() - maxAge;
+      let localStorageCleanedCount = 0;
+
+      if (this.isLocalStorageAvailable()) {
+        const keysToDelete = [];
+
+        // Find old workflow keys
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('tool-workflow-')) {
+            try {
+              const workflowData = JSON.parse(localStorage.getItem(key));
+              const workflowTime = new Date(workflowData.timestamp).getTime();
+              if (workflowTime < cutoffTime) {
+                keysToDelete.push(key);
+              }
+            } catch (parseError) {
+              // If we can't parse it, it's probably corrupted, so delete it
+              keysToDelete.push(key);
+            }
+          }
+        }
+
+        // Delete old workflows
+        keysToDelete.forEach(key => {
+          localStorage.removeItem(key);
+          localStorageCleanedCount++;
+        });
+      }
+
+      // Clean up in-memory workflows
+      if (this._inMemoryWorkflows) {
+        const keysToDelete = [];
+        for (const [key, workflowData] of this._inMemoryWorkflows) {
+          if (key.startsWith('tool-workflow-')) {
+            const workflowTime = new Date(workflowData.timestamp).getTime();
+            if (workflowTime < cutoffTime) {
+              keysToDelete.push(key);
+            }
+          }
+        }
+
+        keysToDelete.forEach(key => {
+          this._inMemoryWorkflows.delete(key);
+          localStorageCleanedCount++;
+        });
+      }
+
+      totalCleanedCount += localStorageCleanedCount;
+
+      if (totalCleanedCount > 0) {
+        console.log(`Cleaned up ${totalCleanedCount} old tool execution workflows`);
+      }
+
+      return totalCleanedCount;
+    } catch (error) {
+      console.error('Failed to cleanup tool execution workflows:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get detailed workflow information including steps
+   * @param {string} testId - Test ID to get detailed workflow for
+   * @returns {Promise<Object|null>} Detailed workflow data or null if not found
+   */
+  async getDetailedToolExecutionWorkflow(testId) {
+    try {
+      if (!testId) {
+        return null;
+      }
+
+      // Try to get from IndexedDB first (has detailed step information)
+      if (workflowDataPersistenceService.isInitialized) {
+        const workflowData = await workflowDataPersistenceService.getWorkflowDataByTestId(testId);
+        if (workflowData) {
+          return workflowData;
+        }
+      }
+
+      // Fallback to basic workflow data from localStorage/memory
+      const basicWorkflow = await this.getToolExecutionWorkflow(testId);
+      return basicWorkflow ? basicWorkflow.workflow : null;
+    } catch (error) {
+      console.error('Failed to get detailed tool execution workflow:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get workflow statistics for tool execution analysis
+   * @param {Object} filters - Statistics filters
+   * @returns {Promise<Object>} Workflow statistics
+   */
+  async getToolExecutionWorkflowStatistics(filters = {}) {
+    try {
+      // Get statistics from IndexedDB if available (more detailed)
+      if (workflowDataPersistenceService.isInitialized) {
+        return await workflowDataPersistenceService.getWorkflowStatistics(filters);
+      }
+
+      // Fallback to basic statistics from localStorage/memory
+      const workflows = await this.getAllToolExecutionWorkflows();
+
+      let filteredWorkflows = workflows;
+
+      // Apply filters
+      if (filters.status) {
+        filteredWorkflows = filteredWorkflows.filter(w => w.workflow?.status === filters.status);
+      }
+
+      if (filters.modelId) {
+        filteredWorkflows = filteredWorkflows.filter(w => w.workflow?.modelId === filters.modelId);
+      }
+
+      if (filters.startDate) {
+        const startDate = new Date(filters.startDate);
+        filteredWorkflows = filteredWorkflows.filter(w => new Date(w.timestamp) >= startDate);
+      }
+
+      if (filters.endDate) {
+        const endDate = new Date(filters.endDate);
+        filteredWorkflows = filteredWorkflows.filter(w => new Date(w.timestamp) <= endDate);
+      }
+
+      // Calculate basic statistics
+      const stats = {
+        totalWorkflows: filteredWorkflows.length,
+        statusBreakdown: {},
+        modelBreakdown: {},
+        averageDuration: 0,
+        averageIterations: 0,
+        averageStepCount: 0,
+        totalDataSize: 0,
+        dateRange: null
+      };
+
+      if (filteredWorkflows.length > 0) {
+        // Status breakdown
+        filteredWorkflows.forEach(w => {
+          const status = w.workflow?.status || 'unknown';
+          stats.statusBreakdown[status] = (stats.statusBreakdown[status] || 0) + 1;
+        });
+
+        // Model breakdown
+        filteredWorkflows.forEach(w => {
+          const modelId = w.workflow?.modelId;
+          if (modelId) {
+            stats.modelBreakdown[modelId] = (stats.modelBreakdown[modelId] || 0) + 1;
+          }
+        });
+
+        // Calculate averages
+        const workflowsWithDuration = filteredWorkflows.filter(w => w.workflow?.totalDuration);
+        if (workflowsWithDuration.length > 0) {
+          stats.averageDuration = workflowsWithDuration.reduce((sum, w) => sum + w.workflow.totalDuration, 0) / workflowsWithDuration.length;
+        }
+
+        stats.averageIterations = filteredWorkflows.reduce((sum, w) => sum + (w.workflow?.currentIteration || 0), 0) / filteredWorkflows.length;
+        stats.averageStepCount = filteredWorkflows.reduce((sum, w) => sum + (w.workflow?.steps?.length || 0), 0) / filteredWorkflows.length;
+
+        // Date range
+        const sortedByDate = filteredWorkflows.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        stats.dateRange = {
+          earliest: sortedByDate[0].timestamp,
+          latest: sortedByDate[sortedByDate.length - 1].timestamp
+        };
+      }
+
+      return stats;
+    } catch (error) {
+      console.error('Failed to get tool execution workflow statistics:', error);
+      return {
+        totalWorkflows: 0,
+        statusBreakdown: {},
+        modelBreakdown: {},
+        averageDuration: 0,
+        averageIterations: 0,
+        averageStepCount: 0,
+        totalDataSize: 0,
+        dateRange: null
+      };
+    }
+  }
+
+  /**
    * Get detailed validation errors for a test result
    * @param {Object} testResult - The test result to validate
    * @returns {Array} Array of validation error messages
@@ -396,6 +766,41 @@ export class FileService {
       }
     }
 
+    // Validate tool execution structure if present
+    if (testResult.toolExecution !== null && testResult.toolExecution !== undefined) {
+      if (typeof testResult.toolExecution !== 'object') {
+        errors.push('toolExecution must be an object if provided');
+      } else {
+        if (testResult.toolExecution.enabled !== undefined && typeof testResult.toolExecution.enabled !== 'boolean') {
+          errors.push('toolExecution.enabled must be a boolean if provided');
+        }
+
+        if (testResult.toolExecution.executionId !== undefined && typeof testResult.toolExecution.executionId !== 'string') {
+          errors.push('toolExecution.executionId must be a string if provided');
+        }
+
+        if (testResult.toolExecution.maxIterations !== undefined && typeof testResult.toolExecution.maxIterations !== 'number') {
+          errors.push('toolExecution.maxIterations must be a number if provided');
+        }
+
+        if (testResult.toolExecution.actualIterations !== undefined && typeof testResult.toolExecution.actualIterations !== 'number') {
+          errors.push('toolExecution.actualIterations must be a number if provided');
+        }
+
+        if (testResult.toolExecution.status !== undefined && typeof testResult.toolExecution.status !== 'string') {
+          errors.push('toolExecution.status must be a string if provided');
+        }
+
+        if (testResult.toolExecution.totalDuration !== undefined && typeof testResult.toolExecution.totalDuration !== 'number') {
+          errors.push('toolExecution.totalDuration must be a number if provided');
+        }
+
+        if (testResult.toolExecution.workflowSummary !== undefined && typeof testResult.toolExecution.workflowSummary !== 'object') {
+          errors.push('toolExecution.workflowSummary must be an object if provided');
+        }
+      }
+    }
+
     return errors;
   }
 
@@ -441,12 +846,31 @@ export class FileService {
         throw new Error('No history to export');
       }
 
-      // Include determinism evaluations in export
+      // Include determinism evaluations and tool execution workflows in export
+      const toolExecutionWorkflows = await this.getAllToolExecutionWorkflows();
+
+      // Get detailed workflow data if available
+      const detailedWorkflows = [];
+      for (const workflow of toolExecutionWorkflows) {
+        const detailedWorkflow = await this.getDetailedToolExecutionWorkflow(workflow.testId);
+        if (detailedWorkflow) {
+          detailedWorkflows.push({
+            testId: workflow.testId,
+            executionId: workflow.executionId,
+            timestamp: workflow.timestamp,
+            workflow: detailedWorkflow
+          });
+        } else {
+          detailedWorkflows.push(workflow);
+        }
+      }
+
       const exportData = {
-        version: '1.1', // Version to track export format
+        version: '1.3', // Version to track export format
         exportDate: new Date().toISOString(),
         testHistory: history,
-        determinismEvaluations: await determinismStorageService.getAllEvaluations()
+        determinismEvaluations: await determinismStorageService.getAllEvaluations(),
+        toolExecutionWorkflows: detailedWorkflows
       }
 
       const dataStr = JSON.stringify(exportData, null, 2);
@@ -489,15 +913,17 @@ export class FileService {
 
       let importedHistory = []
       let importedEvaluations = []
+      let importedWorkflows = []
 
-      // Handle both old format (array) and new format (object with version)
+      // Handle different format versions
       if (Array.isArray(importedData)) {
         // Old format - just test history
         importedHistory = importedData
       } else if (importedData.version && importedData.testHistory) {
-        // New format - includes determinism evaluations
+        // New format - includes determinism evaluations and possibly workflows
         importedHistory = importedData.testHistory || []
         importedEvaluations = importedData.determinismEvaluations || []
+        importedWorkflows = importedData.toolExecutionWorkflows || []
       } else {
         throw new Error('Invalid history file format')
       }
@@ -505,8 +931,8 @@ export class FileService {
       // Validate test history records
       const validRecords = importedHistory.filter(record => this.validateTestResult(record));
 
-      if (validRecords.length === 0 && importedEvaluations.length === 0) {
-        throw new Error('No valid test results or evaluations found in the file');
+      if (validRecords.length === 0 && importedEvaluations.length === 0 && importedWorkflows.length === 0) {
+        throw new Error('No valid test results, evaluations, or workflows found in the file');
       }
 
       // Load existing history
@@ -539,8 +965,34 @@ export class FileService {
         }
       }
 
-      const totalImported = newRecords.length + importedEvaluationCount
-      console.log(`Imported ${newRecords.length} test records and ${importedEvaluationCount} evaluations`)
+      // Import tool execution workflows
+      let importedWorkflowCount = 0
+      if (importedWorkflows.length > 0) {
+        // Initialize workflow data persistence service if needed
+        if (!workflowDataPersistenceService.isInitialized) {
+          try {
+            await workflowDataPersistenceService.initialize();
+          } catch (initError) {
+            console.warn('Failed to initialize workflow data persistence service:', initError.message);
+          }
+        }
+
+        for (const workflowData of importedWorkflows) {
+          try {
+            if (workflowData.testId && workflowData.workflow) {
+              const saved = await this.saveToolExecutionWorkflow(workflowData.testId, workflowData.workflow)
+              if (saved) {
+                importedWorkflowCount++
+              }
+            }
+          } catch (workflowError) {
+            console.warn('Failed to import workflow:', workflowData.testId, workflowError.message)
+          }
+        }
+      }
+
+      const totalImported = newRecords.length + importedEvaluationCount + importedWorkflowCount
+      console.log(`Imported ${newRecords.length} test records, ${importedEvaluationCount} evaluations, and ${importedWorkflowCount} workflows`)
 
       return totalImported;
     } catch (error) {
@@ -607,6 +1059,42 @@ export class FileService {
       }
     }
 
+    // Validate tool execution data if present
+    if (testResult.toolExecution !== null && testResult.toolExecution !== undefined) {
+      if (typeof testResult.toolExecution !== 'object') {
+        return false;
+      }
+
+      // Validate tool execution structure
+      if (testResult.toolExecution.enabled !== undefined && typeof testResult.toolExecution.enabled !== 'boolean') {
+        return false;
+      }
+
+      if (testResult.toolExecution.executionId !== undefined && typeof testResult.toolExecution.executionId !== 'string') {
+        return false;
+      }
+
+      if (testResult.toolExecution.maxIterations !== undefined && typeof testResult.toolExecution.maxIterations !== 'number') {
+        return false;
+      }
+
+      if (testResult.toolExecution.actualIterations !== undefined && typeof testResult.toolExecution.actualIterations !== 'number') {
+        return false;
+      }
+
+      if (testResult.toolExecution.status !== undefined && typeof testResult.toolExecution.status !== 'string') {
+        return false;
+      }
+
+      if (testResult.toolExecution.totalDuration !== undefined && typeof testResult.toolExecution.totalDuration !== 'number') {
+        return false;
+      }
+
+      if (testResult.toolExecution.workflowSummary !== undefined && typeof testResult.toolExecution.workflowSummary !== 'object') {
+        return false;
+      }
+    }
+
     return true;
   }
 
@@ -627,27 +1115,75 @@ export class FileService {
 
   /**
    * Get storage information
-   * @returns {Object} Storage status and usage information
+   * @returns {Promise<Object>} Storage status and usage information
    */
-  getStorageInfo() {
+  async getStorageInfo() {
     try {
       const historyData = localStorage.getItem('bedrock-test-history');
       const historySize = historyData ? new Blob([historyData]).size : 0;
 
+      // Get workflow storage information
+      let workflowInfo = {
+        workflowCount: 0,
+        workflowSize: 0,
+        workflowSizeFormatted: '0 B',
+        indexedDBSupported: false,
+        indexedDBInitialized: false
+      };
+
+      try {
+        // Check IndexedDB workflow storage
+        if (workflowDataPersistenceService.isInitialized) {
+          const workflowStats = await workflowDataPersistenceService.getWorkflowStatistics();
+          workflowInfo.workflowCount = workflowStats.totalWorkflows;
+          workflowInfo.workflowSize = workflowStats.totalDataSize;
+          workflowInfo.workflowSizeFormatted = this.formatBytes(workflowStats.totalDataSize);
+          workflowInfo.indexedDBSupported = true;
+          workflowInfo.indexedDBInitialized = true;
+        } else {
+          workflowInfo.indexedDBSupported = 'indexedDB' in window;
+        }
+
+        // Add localStorage workflow count for fallback storage
+        let localStorageWorkflowCount = 0;
+        if (this.isLocalStorageAvailable()) {
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('tool-workflow-')) {
+              localStorageWorkflowCount++;
+            }
+          }
+        }
+
+        if (localStorageWorkflowCount > 0 && !workflowInfo.indexedDBInitialized) {
+          workflowInfo.workflowCount = localStorageWorkflowCount;
+        }
+      } catch (workflowError) {
+        console.warn('Failed to get workflow storage info:', workflowError);
+      }
+
       return {
         supported: this.isSupported,
-        storageType: 'localStorage',
+        storageType: 'localStorage + IndexedDB',
         historySize: historySize,
         historySizeFormatted: this.formatBytes(historySize),
-        recordCount: historyData ? JSON.parse(historyData).length : 0
+        recordCount: historyData ? JSON.parse(historyData).length : 0,
+        workflow: workflowInfo
       };
     } catch (error) {
       return {
         supported: this.isSupported,
-        storageType: 'localStorage',
+        storageType: 'localStorage + IndexedDB',
         historySize: 0,
         historySizeFormatted: '0 B',
         recordCount: 0,
+        workflow: {
+          workflowCount: 0,
+          workflowSize: 0,
+          workflowSizeFormatted: '0 B',
+          indexedDBSupported: false,
+          indexedDBInitialized: false
+        },
         error: error.message
       };
     }

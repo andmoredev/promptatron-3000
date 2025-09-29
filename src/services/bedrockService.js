@@ -817,6 +817,8 @@ export class BedrockService {
       // Extract tool usage attempts from the response
       const toolUsage = this.extractToolUsageAttempts(response, toolConfig);
 
+
+
       // Parse the basic response
       const basicResponse = this.parseConverseResponse(response);
 
@@ -849,8 +851,11 @@ export class BedrockService {
     };
 
     if (!messageContent || !Array.isArray(messageContent)) {
+
       return result;
     }
+
+
 
     for (const contentBlock of messageContent) {
       if (contentBlock.text) {
@@ -862,8 +867,11 @@ export class BedrockService {
           toolUseId: contentBlock.toolUse.toolUseId,
           input: contentBlock.toolUse.input
         });
+
       }
     }
+
+
 
     return result;
   }

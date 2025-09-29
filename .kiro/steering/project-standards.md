@@ -2,6 +2,14 @@
 
 This document outlines the coding standards, patterns, and conventions used in the Bedrock LLM Analyzer project.
 
+## Code Formatting Guidelines
+
+- **DO NOT** apply automatic formatting to entire files unless explicitly requested
+- **DO NOT** reformat existing code when making small changes
+- **ONLY** format the specific lines or sections being modified
+- Preserve existing indentation and formatting patterns in the codebase
+- When making targeted changes, maintain the existing code style around the modification
+
 ## Technology Stack
 
 - **Frontend Framework**: React 19 with Vite

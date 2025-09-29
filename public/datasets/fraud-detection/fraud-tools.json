@@ -26,14 +26,14 @@
             "properties": {
               "account_id": {
                 "type": "string",
-                "pattern": "^ACC-[0-9]{6}$",
-                "description": "Account ID in format ACC-123456"
+                "pattern": "^A[0-9]{4}$",
+                "description": "Account ID in format A1234"
               },
               "transaction_ids": {
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "pattern": "^TXN-[0-9]{8}$"
+                  "pattern": "^T[0-9]{4}$"
                 },
                 "minItems": 1,
                 "description": "List of suspicious transaction IDs that triggered this action"
@@ -73,13 +73,13 @@
             "properties": {
               "transaction_id": {
                 "type": "string",
-                "pattern": "^TXN-[0-9]{8}$",
-                "description": "Transaction ID in format TXN-12345678"
+                "pattern": "^T[0-9]{4}$",
+                "description": "Transaction ID in format T1234"
               },
               "account_id": {
                 "type": "string",
-                "pattern": "^ACC-[0-9]{6}$",
-                "description": "Associated account ID"
+                "pattern": "^A[0-9]{4}$",
+                "description": "Associated account ID in format A1234"
               },
               "fraud_indicators": {
                 "type": "array",
@@ -142,7 +142,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "pattern": "^ACC-[0-9]{6}$"
+                  "pattern": "^A[0-9]{4}$"
                 },
                 "minItems": 1,
                 "description": "List of accounts involved in the fraud pattern"
@@ -151,7 +151,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "pattern": "^TXN-[0-9]{8}$"
+                  "pattern": "^T[0-9]{4}$"
                 },
                 "description": "List of transactions related to this fraud pattern"
               },
@@ -190,7 +190,7 @@
             "properties": {
               "account_id": {
                 "type": "string",
-                "pattern": "^ACC-[0-9]{6}$",
+                "pattern": "^A[0-9]{4}$",
                 "description": "Account ID to update"
               },
               "risk_level": {
