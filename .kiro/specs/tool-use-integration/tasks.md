@@ -28,21 +28,21 @@
   - Implement timeline reconstruction for historical analysis
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [ ] 2. Enhance BedrockService for tool execution support
+- [x] 2. Enhance BedrockService for tool execution support
 
   - Extend the existing BedrockService to support actual tool execution workflows
   - Implement multi-turn conversation handling with tool results
   - Add proper integration with the new tool execution services
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-- [ ] 2.1 Add multi-turn conversation support to BedrockService
+- [x] 2.1 Add multi-turn conversation support to BedrockService
 
   - Extend `src/services/bedrockService.js` with `executeToolWorkflow` method
   - Implement conversation state management for tool execution rounds (Bedrock returns tool_use, we execute tools, send toolResult back)
   - Add proper handling of tool results in conversation context using Bedrock's toolResult message format
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-- [ ] 2.2 Integrate tool execution with existing Bedrock methods
+- [x] 2.2 Integrate tool execution with existing Bedrock methods
 
   - Modify existing `invokeModelWithTools` method to support actual execution
   - Add execution mode parameter to control detection vs. execution behavior
