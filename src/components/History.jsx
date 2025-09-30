@@ -1,7 +1,11 @@
-import React, { useState, useRef } from 'react'
-import { useHistory } from '../hooks/useHistory.js'
+import React, { useState, useRef } from "react";
+import { useHistory } from "../hooks/useHistory.js";
 
-const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = [] }) => {
+const History = ({
+  onLoadFromHistory,
+  onCompareTests,
+  selectedForComparison = [],
+}) => {
   const {
     history,
     loading,
@@ -9,203 +13,245 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
     clearHistory,
     exportHistory,
     importHistory,
-    getHistoryStats
-  } = useHistory()
+    getHistoryStats,
+  } = useHistory();
 
-  const [selectedItem, setSelectedItem] = useState(null)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterModel, setFilterModel] = useState('')
-  const [filterToolUsage, setFilterToolUsage] = useState('')
-  const [showStats, setShowStats] = useState(false)
-  const [showManagement, setShowManagement] = useState(false)
-  const [rerunDialog, setRerunDialog] = useState(null)
-  const [comparisonMode, setComparisonMode] = useState(false)
-  const [determinismModal, setDeterminismModal] = useState(null)
-  const fileInputRef = useRef(null)
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterModel, setFilterModel] = useState("");
+  const [filterToolUsage, setFilterToolUsage] = useState("");
+  const [filterToolExecution, setFilterToolExecution] = useState("");
+  const [showStats, setShowStats] = useState(false);
+  const [showManagement, setShowManagement] = useState(false);
+  const [rerunDialog, setRerunDialog] = useState(null);
+  const [comparisonMode, setComparisonMode] = useState(false);
+  const [determinismModal, setDeterminismModal] = useState(null);
+  const fileInputRef = useRef(null);
 
   // Ensure unique IDs and clean up history data
   const cleanedHistory = React.useMemo(() => {
-    const seenIds = new Set()
-    let duplicateCount = 0
-    let missingIdCount = 0
+    const seenIds = new Set();
+    let duplicateCount = 0;
+    let missingIdCount = 0;
 
     const cleaned = history.filter((item, index) => {
       // Generate a fallback ID if missing
       if (!item.id) {
-        missingIdCount++
-        item.id = `history-${index}-${item.timestamp || Date.now()}`
+        missingIdCount++;
+        item.id = `history-${index}-${item.timestamp || Date.now()}`;
       }
 
       // Check for duplicate IDs
       if (seenIds.has(item.id)) {
-        duplicateCount++
-        item.id = `${item.id}-duplicate-${index}`
+        duplicateCount++;
+        item.id = `${item.id}-duplicate-${index}`;
       }
 
-      seenIds.add(item.id)
-      return true
-    })
+      seenIds.add(item.id);
+      return true;
+    });
 
     // Silently clean data without logging
 
-    return cleaned
-  }, [history])
+    return cleaned;
+  }, [history]);
 
   // Get unique models for filtering (with error handling)
   const uniqueModels = React.useMemo(() => {
     try {
-      return [...new Set(cleanedHistory.map(item => item.modelId).filter(Boolean))].sort()
+      return [
+        ...new Set(cleanedHistory.map((item) => item.modelId).filter(Boolean)),
+      ].sort();
     } catch (error) {
-      console.error('Error processing unique models:', error)
-      return []
+      console.error("Error processing unique models:", error);
+      return [];
     }
-  }, [cleanedHistory])
+  }, [cleanedHistory]);
 
   // Filter history based on search, model filter, and tool usage filter (with error handling)
   const filteredHistory = React.useMemo(() => {
     try {
-      return cleanedHistory.filter(item => {
-        if (!item) return false
+      return cleanedHistory.filter((item) => {
+        if (!item) return false;
 
-        const matchesSearch = !searchTerm ||
+        const matchesSearch =
+          !searchTerm ||
           item.systemPrompt?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.userPrompt?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.prompt?.toLowerCase().includes(searchTerm.toLowerCase()) || // Legacy prompt field for backward compatibility
           item.datasetType?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.datasetOption?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.datasetOption
+            ?.toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
           item.response?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           // Include tool usage in search
-          (item.toolUsage?.toolCalls?.some(call =>
-            call.toolName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            JSON.stringify(call.input)?.toLowerCase().includes(searchTerm.toLowerCase())
-          ))
+          item.toolUsage?.toolCalls?.some(
+            (call) =>
+              call.toolName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              JSON.stringify(call.input)
+                ?.toLowerCase()
+                .includes(searchTerm.toLowerCase())
+          );
 
-        const matchesModel = !filterModel || item.modelId === filterModel
+        const matchesModel = !filterModel || item.modelId === filterModel;
 
-        const matchesToolUsage = !filterToolUsage ||
-          (filterToolUsage === 'used' && item.toolUsage?.hasToolUsage) ||
-          (filterToolUsage === 'not-used' && !item.toolUsage?.hasToolUsage)
+        const matchesToolUsage =
+          !filterToolUsage ||
+          (filterToolUsage === "used" && item.toolUsage?.hasToolUsage) ||
+          (filterToolUsage === "not-used" && !item.toolUsage?.hasToolUsage);
 
-        return matchesSearch && matchesModel && matchesToolUsage
-      })
+        const matchesToolExecution =
+          !filterToolExecution ||
+          (filterToolExecution === "executed" &&
+            item.toolExecutionEnabled &&
+            item.workflowData) ||
+          (filterToolExecution === "detected" &&
+            (!item.toolExecutionEnabled || !item.workflowData));
+
+        return (
+          matchesSearch &&
+          matchesModel &&
+          matchesToolUsage &&
+          matchesToolExecution
+        );
+      });
     } catch (error) {
-      console.error('Error filtering history:', error)
-      return []
+      console.error("Error filtering history:", error);
+      return [];
     }
-  }, [cleanedHistory, searchTerm, filterModel, filterToolUsage])
+  }, [cleanedHistory, searchTerm, filterModel, filterToolUsage]);
 
   const formatTimestamp = (timestamp) => {
-    return new Date(timestamp).toLocaleString()
-  }
+    return new Date(timestamp).toLocaleString();
+  };
 
   const truncateText = (text, maxLength = 100) => {
-    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
-  }
+    return text.length > maxLength
+      ? text.substring(0, maxLength) + "..."
+      : text;
+  };
 
   const handleLoadTest = (item) => {
-    onLoadFromHistory(item)
-  }
+    onLoadFromHistory(item);
+  };
 
   const handleRerunTest = (item) => {
-    setRerunDialog(item)
-  }
+    setRerunDialog(item);
+  };
 
   const handleConfirmRerun = (modifiedItem) => {
-    onLoadFromHistory(modifiedItem)
-    setRerunDialog(null)
-  }
+    onLoadFromHistory(modifiedItem);
+    setRerunDialog(null);
+  };
 
   const handleCancelRerun = () => {
-    setRerunDialog(null)
-  }
+    setRerunDialog(null);
+  };
 
   const handleToggleComparison = (item) => {
-    if (selectedForComparison.find(test => test.id === item.id)) {
+    if (selectedForComparison.find((test) => test.id === item.id)) {
       // Remove from comparison
-      onCompareTests(selectedForComparison.filter(test => test.id !== item.id))
+      onCompareTests(
+        selectedForComparison.filter((test) => test.id !== item.id)
+      );
     } else {
       // Add to comparison (limit to 4 tests)
       if (selectedForComparison.length < 4) {
-        onCompareTests([...selectedForComparison, item])
+        onCompareTests([...selectedForComparison, item]);
       }
     }
-  }
+  };
 
   const isSelectedForComparison = (item) => {
-    return selectedForComparison.find(test => test.id === item.id) !== undefined
-  }
+    return (
+      selectedForComparison.find((test) => test.id === item.id) !== undefined
+    );
+  };
 
   const handleClearComparison = () => {
-    onCompareTests([])
-    setComparisonMode(false)
-  }
+    onCompareTests([]);
+    setComparisonMode(false);
+  };
 
   const handleViewDetails = (item) => {
-    setSelectedItem(selectedItem?.id === item.id ? null : item)
-  }
+    setSelectedItem(selectedItem?.id === item.id ? null : item);
+  };
 
   const handleClearHistory = async () => {
-    if (window.confirm('Are you sure you want to clear all test history? This action cannot be undone.')) {
-      await clearHistory()
+    if (
+      window.confirm(
+        "Are you sure you want to clear all test history? This action cannot be undone."
+      )
+    ) {
+      await clearHistory();
     }
-  }
+  };
 
   const handleExportHistory = async () => {
-    await exportHistory()
-  }
+    await exportHistory();
+  };
 
   const handleImportHistory = async (event) => {
-    const file = event.target.files[0]
+    const file = event.target.files[0];
     if (file) {
       try {
-        const importedCount = await importHistory(file)
-        alert(`Successfully imported ${importedCount} records.`)
+        const importedCount = await importHistory(file);
+        alert(`Successfully imported ${importedCount} records.`);
       } catch (err) {
-        alert(`Failed to import history: ${err.message}`)
+        alert(`Failed to import history: ${err.message}`);
       }
       // Reset file input
-      event.target.value = ''
+      event.target.value = "";
     }
-  }
+  };
 
   const handleDeterminismGradeClick = (item) => {
     if (item.determinismGrade) {
       setDeterminismModal({
         testItem: item,
-        grade: item.determinismGrade
-      })
+        grade: item.determinismGrade,
+      });
     }
-  }
+  };
 
-  const stats = getHistoryStats()
+  const stats = getHistoryStats();
 
   if (loading) {
     return (
       <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Test History</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          Test History
+        </h3>
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading history...</p>
         </div>
       </div>
-    )
+    );
   }
 
   if (error) {
     return (
       <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Test History</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          Test History
+        </h3>
         <div className="text-center py-12">
           <div className="mx-auto h-12 w-12 text-red-400 mb-4">
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+              />
             </svg>
           </div>
           <p className="text-red-600 mb-2">Error loading history</p>
           <p className="text-sm text-gray-500">{error}</p>
         </div>
       </div>
-    )
+    );
   }
 
   if (!cleanedHistory || cleanedHistory.length === 0) {
@@ -223,11 +269,18 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
         <div className="text-center py-12">
           <div className="mx-auto h-12 w-12 text-gray-400 mb-4">
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
           </div>
           <p className="text-gray-600">No test history yet</p>
-          <p className="text-sm text-gray-500 mt-1">Run some tests to see your history here</p>
+          <p className="text-sm text-gray-500 mt-1">
+            Run some tests to see your history here
+          </p>
         </div>
         <input
           ref={fileInputRef}
@@ -237,7 +290,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
           className="hidden"
         />
       </div>
-    )
+    );
   }
 
   return (
@@ -251,11 +304,11 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
               onClick={() => setComparisonMode(!comparisonMode)}
               className={`text-sm font-medium ${
                 comparisonMode
-                  ? 'text-blue-600 hover:text-blue-700'
-                  : 'text-gray-600 hover:text-gray-700'
+                  ? "text-blue-600 hover:text-blue-700"
+                  : "text-gray-600 hover:text-gray-700"
               }`}
             >
-              {comparisonMode ? 'Exit Compare' : 'Compare Tests'}
+              {comparisonMode ? "Exit Compare" : "Compare Tests"}
             </button>
             {selectedForComparison.length > 0 && (
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -266,7 +319,7 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
               onClick={() => setShowStats(!showStats)}
               className="text-sm text-gray-600 hover:text-gray-700 font-medium"
             >
-              {showStats ? 'Hide Stats' : 'Show Stats'}
+              {showStats ? "Hide Stats" : "Show Stats"}
             </button>
             <button
               onClick={() => setShowManagement(!showManagement)}
@@ -294,13 +347,16 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                 </div>
                 <div>
                   <span className="text-gray-600">Unique Datasets:</span>
-                  <span className="ml-2 font-medium">{stats.uniqueDatasets}</span>
+                  <span className="ml-2 font-medium">
+                    {stats.uniqueDatasets}
+                  </span>
                 </div>
                 {stats.dateRange && (
                   <div>
                     <span className="text-gray-600">Date Range:</span>
                     <span className="ml-2 font-medium text-xs">
-                      {stats.dateRange.earliest.toLocaleDateString()} - {stats.dateRange.latest.toLocaleDateString()}
+                      {stats.dateRange.earliest.toLocaleDateString()} -{" "}
+                      {stats.dateRange.latest.toLocaleDateString()}
                     </span>
                   </div>
                 )}
@@ -309,25 +365,86 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
               {/* Tool Usage Stats */}
               {stats.toolUsageStats && (
                 <div className="border-t border-gray-200 pt-3">
-                  <h5 className="font-medium text-gray-800 mb-2">Tool Usage Statistics</h5>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <h5 className="font-medium text-gray-800 mb-2">
+                    Tool Usage Statistics
+                  </h5>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
                     <div>
                       <span className="text-gray-600">Tests with Tools:</span>
-                      <span className="ml-2 font-medium text-orange-600">{stats.toolUsageStats.testsWithTools}</span>
+                      <span className="ml-2 font-medium text-orange-600">
+                        {stats.toolUsageStats.testsWithTools}
+                      </span>
                     </div>
                     <div>
-                      <span className="text-gray-600">Tests without Tools:</span>
-                      <span className="ml-2 font-medium">{stats.toolUsageStats.testsWithoutTools}</span>
+                      <span className="text-gray-600">
+                        Tests without Tools:
+                      </span>
+                      <span className="ml-2 font-medium">
+                        {stats.toolUsageStats.testsWithoutTools}
+                      </span>
                     </div>
                     <div>
                       <span className="text-gray-600">Total Tool Calls:</span>
-                      <span className="ml-2 font-medium text-orange-600">{stats.toolUsageStats.totalToolCalls}</span>
+                      <span className="ml-2 font-medium text-orange-600">
+                        {stats.toolUsageStats.totalToolCalls}
+                      </span>
                     </div>
                     <div>
                       <span className="text-gray-600">Unique Tools:</span>
-                      <span className="ml-2 font-medium">{stats.toolUsageStats.uniqueTools}</span>
+                      <span className="ml-2 font-medium">
+                        {stats.toolUsageStats.uniqueTools}
+                      </span>
                     </div>
                   </div>
+
+                  {/* Tool Execution Stats */}
+                  {(() => {
+                    const toolExecutionStats = cleanedHistory.reduce(
+                      (acc, item) => {
+                        if (item.toolUsage?.hasToolUsage) {
+                          if (item.toolExecutionEnabled && item.workflowData) {
+                            acc.executed++;
+                          } else {
+                            acc.detected++;
+                          }
+                        }
+                        return acc;
+                      },
+                      { executed: 0, detected: 0 }
+                    );
+
+                    if (
+                      toolExecutionStats.executed > 0 ||
+                      toolExecutionStats.detected > 0
+                    ) {
+                      return (
+                        <div className="border-t border-gray-100 pt-2">
+                          <h6 className="text-xs font-medium text-gray-700 mb-2">
+                            Tool Execution Mode
+                          </h6>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <span className="text-gray-600">
+                                Tool Execution:
+                              </span>
+                              <span className="ml-2 font-medium text-green-600">
+                                {toolExecutionStats.executed}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">
+                                Tool Detection:
+                              </span>
+                              <span className="ml-2 font-medium text-orange-600">
+                                {toolExecutionStats.detected}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
               )}
             </div>
@@ -337,7 +454,9 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
         {/* Management Options */}
         {showManagement && (
           <div className="mb-4 p-4 bg-blue-50 rounded-lg">
-            <h4 className="font-medium text-gray-900 mb-3">History Management</h4>
+            <h4 className="font-medium text-gray-900 mb-3">
+              History Management
+            </h4>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={handleExportHistory}
@@ -362,9 +481,12 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
         )}
 
         {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <div>
-            <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="search"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               Search
             </label>
             <input
@@ -377,7 +499,10 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
             />
           </div>
           <div>
-            <label htmlFor="model-filter" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="model-filter"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               Filter by Model
             </label>
             <select
@@ -388,12 +513,17 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
             >
               <option value="">All models</option>
               {uniqueModels.map((model, index) => (
-                <option key={`model-${index}-${model}`} value={model}>{model}</option>
+                <option key={`model-${index}-${model}`} value={model}>
+                  {model}
+                </option>
               ))}
             </select>
           </div>
           <div>
-            <label htmlFor="tool-usage-filter" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="tool-usage-filter"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               Filter by Tool Usage
             </label>
             <select
@@ -405,6 +535,24 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
               <option value="">All tests</option>
               <option value="used">Used tools</option>
               <option value="not-used">No tools used</option>
+            </select>
+          </div>
+          <div>
+            <label
+              htmlFor="tool-execution-filter"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
+              Filter by Tool Mode
+            </label>
+            <select
+              id="tool-execution-filter"
+              value={filterToolExecution}
+              onChange={(e) => setFilterToolExecution(e.target.value)}
+              className="select-field"
+            >
+              <option value="">All modes</option>
+              <option value="executed">Tool execution enabled</option>
+              <option value="detected">Tool detection only</option>
             </select>
           </div>
         </div>
@@ -419,7 +567,9 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center space-x-3 mb-2">
-                  <h4 className="font-medium text-blue-900">Comparison Mode Active</h4>
+                  <h4 className="font-medium text-blue-900">
+                    Comparison Mode Active
+                  </h4>
                   {/* Progress indicator */}
                   <div className="flex space-x-1">
                     {[1, 2, 3, 4].map((step) => (
@@ -427,21 +577,32 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                         key={step}
                         className={`w-2 h-2 rounded-full ${
                           selectedForComparison.length >= step
-                            ? 'bg-blue-500'
-                            : 'bg-blue-200'
+                            ? "bg-blue-500"
+                            : "bg-blue-200"
                         }`}
-                        title={`Test ${step}${selectedForComparison.length >= step ? ' selected' : ''}`}
+                        title={`Test ${step}${
+                          selectedForComparison.length >= step
+                            ? " selected"
+                            : ""
+                        }`}
                       />
                     ))}
                   </div>
                 </div>
                 <p className="text-sm text-blue-700 mb-2">
-                  {selectedForComparison.length === 0 && "Select up to 4 tests to compare."}
-                  {selectedForComparison.length === 1 && "Select 1 more test to start comparison."}
-                  {selectedForComparison.length >= 2 && selectedForComparison.length < 4 &&
-                    `${selectedForComparison.length} tests selected. You can select ${4 - selectedForComparison.length} more or start comparison now.`
-                  }
-                  {selectedForComparison.length === 4 && "Maximum 4 tests selected. Ready to compare!"}
+                  {selectedForComparison.length === 0 &&
+                    "Select up to 4 tests to compare."}
+                  {selectedForComparison.length === 1 &&
+                    "Select 1 more test to start comparison."}
+                  {selectedForComparison.length >= 2 &&
+                    selectedForComparison.length < 4 &&
+                    `${
+                      selectedForComparison.length
+                    } tests selected. You can select ${
+                      4 - selectedForComparison.length
+                    } more or start comparison now.`}
+                  {selectedForComparison.length === 4 &&
+                    "Maximum 4 tests selected. Ready to compare!"}
                   {selectedForComparison.length >= 2 && (
                     <span className="block text-xs text-blue-600 mt-1">
                       💡 Tip: Press Ctrl+C to quickly navigate to comparison
@@ -451,21 +612,66 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
 
                 {/* Selected tests preview */}
                 {selectedForComparison.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {selectedForComparison.map((test, index) => (
-                      <span
-                        key={test.id || `comparison-${index}-${test.timestamp}`}
-                        className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                      >
-                        {String.fromCharCode(65 + index)}: {test.modelId?.split('.')[0] || 'Unknown'}
-                        <button
-                          onClick={() => handleToggleComparison(test)}
-                          className="ml-1 text-blue-600 hover:text-blue-800"
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-1">
+                      {selectedForComparison.map((test, index) => (
+                        <span
+                          key={
+                            test.id || `comparison-${index}-${test.timestamp}`
+                          }
+                          className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
                         >
-                          ×
-                        </button>
-                      </span>
-                    ))}
+                          {String.fromCharCode(65 + index)}:{" "}
+                          {test.modelId?.split(".")[0] || "Unknown"}
+                          {test.toolExecutionEnabled && test.workflowData && (
+                            <span
+                              className="ml-1 text-green-600"
+                              title="Tool execution enabled"
+                            >
+                              ⚡
+                            </span>
+                          )}
+                          {test.toolUsage?.hasToolUsage &&
+                            (!test.toolExecutionEnabled ||
+                              !test.workflowData) && (
+                              <span
+                                className="ml-1 text-orange-600"
+                                title="Tool detection only"
+                              >
+                                👁️
+                              </span>
+                            )}
+                          <button
+                            onClick={() => handleToggleComparison(test)}
+                            className="ml-1 text-blue-600 hover:text-blue-800"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Mixed mode warning */}
+                    {(() => {
+                      const hasExecutionTests = selectedForComparison.some(
+                        (test) => test.toolExecutionEnabled && test.workflowData
+                      );
+                      const hasDetectionTests = selectedForComparison.some(
+                        (test) =>
+                          test.toolUsage?.hasToolUsage &&
+                          (!test.toolExecutionEnabled || !test.workflowData)
+                      );
+
+                      if (hasExecutionTests && hasDetectionTests) {
+                        return (
+                          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                            ⚠️ Comparing tests with different tool modes
+                            (execution vs detection)
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                 )}
               </div>
@@ -495,12 +701,15 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
       {/* History List */}
       <div className="space-y-4">
         {filteredHistory.map((item, index) => (
-          <div key={item.id || `history-item-${index}-${item.timestamp}`} className="card">
+          <div
+            key={item.id || `history-item-${index}-${item.timestamp}`}
+            className="card"
+          >
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center space-x-3 mb-2">
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    {item.modelId?.split('.')[0] || 'Unknown'}
+                    {item.modelId?.split(".")[0] || "Unknown"}
                   </span>
                   {item.determinismGrade && (
                     <DeterminismGradeBadge
@@ -516,9 +725,19 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                   )}
                   {/* Tool usage indicator */}
                   {item.toolUsage?.hasToolUsage && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                      🔧 Used {item.toolUsage.toolCallCount} tool{item.toolUsage.toolCallCount !== 1 ? 's' : ''}
-                    </span>
+                    <>
+                      {item.toolExecutionEnabled && item.workflowData ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          ⚡ Executed {item.toolUsage.toolCallCount} tool
+                          {item.toolUsage.toolCallCount !== 1 ? "s" : ""}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                          👁️ Detected {item.toolUsage.toolCallCount} tool
+                          {item.toolUsage.toolCallCount !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </>
                   )}
                   <span className="text-sm text-gray-500">
                     {formatTimestamp(item.timestamp)}
@@ -544,7 +763,9 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 mr-2 flex-shrink-0">
                             System
                           </span>
-                          <span className="text-gray-700">{truncateText(item.systemPrompt, 60)}</span>
+                          <span className="text-gray-700">
+                            {truncateText(item.systemPrompt, 60)}
+                          </span>
                         </div>
                       )}
                       {(item.userPrompt || item.prompt) && (
@@ -552,12 +773,18 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 mr-2 flex-shrink-0">
                             User
                           </span>
-                          <span className="text-gray-700">{truncateText(item.userPrompt || item.prompt, 60)}</span>
+                          <span className="text-gray-700">
+                            {truncateText(item.userPrompt || item.prompt, 60)}
+                          </span>
                         </div>
                       )}
-                      {!item.systemPrompt && !item.userPrompt && !item.prompt && (
-                        <span className="text-gray-500 italic">No prompts available</span>
-                      )}
+                      {!item.systemPrompt &&
+                        !item.userPrompt &&
+                        !item.prompt && (
+                          <span className="text-gray-500 italic">
+                            No prompts available
+                          </span>
+                        )}
                     </div>
                   </div>
                 </div>
@@ -566,7 +793,9 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                   <div className="mt-4 space-y-3">
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <h5 className="font-medium text-gray-700">Full Prompts:</h5>
+                        <h5 className="font-medium text-gray-700">
+                          Full Prompts:
+                        </h5>
                         {!item.systemPrompt && item.prompt && (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                             Legacy Format
@@ -601,10 +830,13 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                               User Prompt
                             </span>
                             <span className="text-xs text-gray-500">
-                              {(item.userPrompt || item.prompt).length} characters
+                              {(item.userPrompt || item.prompt).length}{" "}
+                              characters
                             </span>
                             {!item.userPrompt && item.prompt && (
-                              <span className="ml-2 text-xs text-gray-400">(from legacy format)</span>
+                              <span className="ml-2 text-xs text-gray-400">
+                                (from legacy format)
+                              </span>
                             )}
                           </div>
                           <div className="bg-blue-50 border border-blue-200 rounded p-3">
@@ -616,42 +848,88 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                       )}
 
                       {/* No prompts available */}
-                      {!item.systemPrompt && !item.userPrompt && !item.prompt && (
-                        <div className="text-center py-4 text-gray-500 italic">
-                          No prompts available for this test
-                        </div>
-                      )}
+                      {!item.systemPrompt &&
+                        !item.userPrompt &&
+                        !item.prompt && (
+                          <div className="text-center py-4 text-gray-500 italic">
+                            No prompts available for this test
+                          </div>
+                        )}
                     </div>
 
                     <div>
-                      <h5 className="font-medium text-gray-700 mb-1">Model Details:</h5>
+                      <h5 className="font-medium text-gray-700 mb-1">
+                        Model Details:
+                      </h5>
                       <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-3">
                         <div className="text-sm text-gray-800 space-y-1">
-                          <p><span className="font-medium">Model ID:</span> {item.modelId}</p>
+                          <p>
+                            <span className="font-medium">Model ID:</span>{" "}
+                            {item.modelId}
+                          </p>
                           {item.datasetType && (
-                            <p><span className="font-medium">Dataset:</span> {item.datasetType}/{item.datasetOption}</p>
+                            <p>
+                              <span className="font-medium">Dataset:</span>{" "}
+                              {item.datasetType}/{item.datasetOption}
+                            </p>
                           )}
-                          <p><span className="font-medium">Timestamp:</span> {formatTimestamp(item.timestamp)}</p>
+                          <p>
+                            <span className="font-medium">Timestamp:</span>{" "}
+                            {formatTimestamp(item.timestamp)}
+                          </p>
 
                           {/* Streaming Information */}
                           <div className="pt-2 border-t border-gray-300">
-                            <p><span className="font-medium">Response Mode:</span> {item.isStreamed ? 'Streaming' : 'Standard'}</p>
+                            <p>
+                              <span className="font-medium">
+                                Response Mode:
+                              </span>{" "}
+                              {item.isStreamed ? "Streaming" : "Standard"}
+                            </p>
 
                             {/* Streaming Metrics */}
                             {item.isStreamed && item.streamingMetrics && (
                               <div className="mt-2 space-y-1">
-                                <p className="font-medium text-gray-700">Streaming Performance:</p>
+                                <p className="font-medium text-gray-700">
+                                  Streaming Performance:
+                                </p>
                                 {item.streamingMetrics.totalTokens && (
-                                  <p className="text-xs"><span className="font-medium">Total Tokens:</span> {item.streamingMetrics.totalTokens}</p>
+                                  <p className="text-xs">
+                                    <span className="font-medium">
+                                      Total Tokens:
+                                    </span>{" "}
+                                    {item.streamingMetrics.totalTokens}
+                                  </p>
                                 )}
                                 {item.streamingMetrics.streamDuration && (
-                                  <p className="text-xs"><span className="font-medium">Duration:</span> {(item.streamingMetrics.streamDuration / 1000).toFixed(1)}s</p>
+                                  <p className="text-xs">
+                                    <span className="font-medium">
+                                      Duration:
+                                    </span>{" "}
+                                    {(
+                                      item.streamingMetrics.streamDuration /
+                                      1000
+                                    ).toFixed(1)}
+                                    s
+                                  </p>
                                 )}
-                                {item.streamingMetrics.averageTokensPerSecond && (
-                                  <p className="text-xs"><span className="font-medium">Speed:</span> {item.streamingMetrics.averageTokensPerSecond.toFixed(1)} tokens/sec</p>
+                                {item.streamingMetrics
+                                  .averageTokensPerSecond && (
+                                  <p className="text-xs">
+                                    <span className="font-medium">Speed:</span>{" "}
+                                    {item.streamingMetrics.averageTokensPerSecond.toFixed(
+                                      1
+                                    )}{" "}
+                                    tokens/sec
+                                  </p>
                                 )}
                                 {item.streamingMetrics.firstTokenLatency && (
-                                  <p className="text-xs"><span className="font-medium">First Token:</span> {item.streamingMetrics.firstTokenLatency}ms</p>
+                                  <p className="text-xs">
+                                    <span className="font-medium">
+                                      First Token:
+                                    </span>{" "}
+                                    {item.streamingMetrics.firstTokenLatency}ms
+                                  </p>
                                 )}
                               </div>
                             )}
@@ -659,10 +937,27 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                             {/* Token Usage */}
                             {item.usage && (
                               <div className="mt-2 space-y-1">
-                                <p className="font-medium text-gray-700">Token Usage:</p>
-                                <p className="text-xs"><span className="font-medium">Input:</span> {item.usage.input_tokens || item.usage.inputTokens || 'N/A'}</p>
-                                <p className="text-xs"><span className="font-medium">Output:</span> {item.usage.output_tokens || item.usage.outputTokens || 'N/A'}</p>
-                                <p className="text-xs"><span className="font-medium">Total:</span> {item.usage.total_tokens || item.usage.totalTokens || 'N/A'}</p>
+                                <p className="font-medium text-gray-700">
+                                  Token Usage:
+                                </p>
+                                <p className="text-xs">
+                                  <span className="font-medium">Input:</span>{" "}
+                                  {item.usage.input_tokens ||
+                                    item.usage.inputTokens ||
+                                    "N/A"}
+                                </p>
+                                <p className="text-xs">
+                                  <span className="font-medium">Output:</span>{" "}
+                                  {item.usage.output_tokens ||
+                                    item.usage.outputTokens ||
+                                    "N/A"}
+                                </p>
+                                <p className="text-xs">
+                                  <span className="font-medium">Total:</span>{" "}
+                                  {item.usage.total_tokens ||
+                                    item.usage.totalTokens ||
+                                    "N/A"}
+                                </p>
                               </div>
                             )}
                           </div>
@@ -671,53 +966,81 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                     </div>
 
                     <div>
-                      <h5 className="font-medium text-gray-700 mb-1">Response:</h5>
+                      <h5 className="font-medium text-gray-700 mb-1">
+                        Response:
+                      </h5>
                       <div className="bg-gray-50 border border-gray-200 rounded p-3 max-h-64 overflow-y-auto">
                         <div className="text-sm text-gray-800 whitespace-pre-wrap">
-                          {item.response || 'No response available'}
+                          {item.response || "No response available"}
                         </div>
                       </div>
                     </div>
 
                     {/* Tool Usage Section */}
                     <div>
-                      <h5 className="font-medium text-gray-700 mb-1">Tool Usage:</h5>
+                      <h5 className="font-medium text-gray-700 mb-1">
+                        Tool Usage:
+                      </h5>
                       <div className="bg-orange-50 border border-orange-200 rounded p-3">
                         {item.toolUsage?.hasToolUsage ? (
                           <div className="space-y-3">
                             <div className="flex items-center justify-between">
                               <span className="text-sm font-medium text-orange-800">
-                                {item.toolUsage.toolCallCount} tool call{item.toolUsage.toolCallCount !== 1 ? 's' : ''} attempted
+                                {item.toolUsage.toolCallCount} tool call
+                                {item.toolUsage.toolCallCount !== 1
+                                  ? "s"
+                                  : ""}{" "}
+                                attempted
                               </span>
                               {item.toolUsage.availableTools && (
                                 <span className="text-xs text-orange-600">
-                                  Available: {item.toolUsage.availableTools.join(', ')}
+                                  Available:{" "}
+                                  {item.toolUsage.availableTools.join(", ")}
                                 </span>
                               )}
                             </div>
-                            {item.toolUsage.toolCalls?.map((toolCall, index) => (
-                              <div key={`tool-${item.id || index}-${index}-${toolCall.toolName || 'unknown'}`} className="border border-orange-300 rounded p-2 bg-white">
-                                <div className="flex items-center justify-between mb-2">
-                                  <span className="font-medium text-orange-900">{toolCall.toolName}</span>
-                                  <span className="text-xs text-orange-600">
-                                    {toolCall.attempted ? 'Attempted' : 'Called'}
-                                  </span>
+                            {item.toolUsage.toolCalls?.map(
+                              (toolCall, index) => (
+                                <div
+                                  key={`tool-${item.id || index}-${index}-${
+                                    toolCall.toolName || "unknown"
+                                  }`}
+                                  className="border border-orange-300 rounded p-2 bg-white"
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="font-medium text-orange-900">
+                                      {toolCall.toolName}
+                                    </span>
+                                    <span className="text-xs text-orange-600">
+                                      {toolCall.attempted
+                                        ? "Attempted"
+                                        : "Called"}
+                                    </span>
+                                  </div>
+                                  {toolCall.input && (
+                                    <div className="text-xs text-gray-700">
+                                      <div className="font-medium mb-1">
+                                        Parameters:
+                                      </div>
+                                      <pre className="bg-gray-100 p-2 rounded text-xs overflow-x-auto">
+                                        {JSON.stringify(
+                                          toolCall.input,
+                                          null,
+                                          2
+                                        )}
+                                      </pre>
+                                    </div>
+                                  )}
+                                  {toolCall.timestamp && (
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      {new Date(
+                                        toolCall.timestamp
+                                      ).toLocaleTimeString()}
+                                    </div>
+                                  )}
                                 </div>
-                                {toolCall.input && (
-                                  <div className="text-xs text-gray-700">
-                                    <div className="font-medium mb-1">Parameters:</div>
-                                    <pre className="bg-gray-100 p-2 rounded text-xs overflow-x-auto">
-                                      {JSON.stringify(toolCall.input, null, 2)}
-                                    </pre>
-                                  </div>
-                                )}
-                                {toolCall.timestamp && (
-                                  <div className="text-xs text-gray-500 mt-1">
-                                    {new Date(toolCall.timestamp).toLocaleTimeString()}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
+                              )
+                            )}
                           </div>
                         ) : (
                           <div className="text-sm text-gray-600 italic">
@@ -735,7 +1058,9 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                   onClick={() => handleViewDetails(item)}
                   className="text-sm text-primary-600 hover:text-primary-700 font-medium"
                 >
-                  {selectedItem?.id === item.id ? 'Hide Details' : 'View Details'}
+                  {selectedItem?.id === item.id
+                    ? "Hide Details"
+                    : "View Details"}
                 </button>
 
                 {comparisonMode ? (
@@ -743,13 +1068,19 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
                     onClick={() => handleToggleComparison(item)}
                     className={`text-sm font-medium ${
                       isSelectedForComparison(item)
-                        ? 'text-blue-600 hover:text-blue-700'
-                        : 'text-gray-600 hover:text-gray-700'
+                        ? "text-blue-600 hover:text-blue-700"
+                        : "text-gray-600 hover:text-gray-700"
                     }`}
-                    disabled={!isSelectedForComparison(item) && selectedForComparison.length >= 4}
+                    disabled={
+                      !isSelectedForComparison(item) &&
+                      selectedForComparison.length >= 4
+                    }
                   >
-                    {isSelectedForComparison(item) ? '✓ Selected' :
-                     selectedForComparison.length >= 4 ? 'Max Reached' : 'Select'}
+                    {isSelectedForComparison(item)
+                      ? "✓ Selected"
+                      : selectedForComparison.length >= 4
+                      ? "Max Reached"
+                      : "Select"}
                   </button>
                 ) : (
                   <>
@@ -773,21 +1104,23 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
         ))}
       </div>
 
-      {filteredHistory.length === 0 && cleanedHistory && cleanedHistory.length > 0 && (
-        <div className="card text-center py-8">
-          <p className="text-gray-600">No tests match your current filters</p>
-          <button
-            onClick={() => {
-              setSearchTerm('')
-              setFilterModel('')
-              setFilterToolUsage('')
-            }}
-            className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-2"
-          >
-            Clear filters
-          </button>
-        </div>
-      )}
+      {filteredHistory.length === 0 &&
+        cleanedHistory &&
+        cleanedHistory.length > 0 && (
+          <div className="card text-center py-8">
+            <p className="text-gray-600">No tests match your current filters</p>
+            <button
+              onClick={() => {
+                setSearchTerm("");
+                setFilterModel("");
+                setFilterToolUsage("");
+              }}
+              className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-2"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
 
       {/* Hidden file input for import */}
       <input
@@ -814,11 +1147,25 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
             onClick={() => onCompareTests(selectedForComparison, true)}
             className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 sm:p-4 shadow-lg hover:shadow-xl transition-all duration-200 flex items-center space-x-2"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 00-2 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 00-2 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z"
+              />
             </svg>
-            <span className="font-medium hidden sm:inline">Compare {selectedForComparison.length} Tests</span>
-            <span className="font-medium sm:hidden">{selectedForComparison.length}</span>
+            <span className="font-medium hidden sm:inline">
+              Compare {selectedForComparison.length} Tests
+            </span>
+            <span className="font-medium sm:hidden">
+              {selectedForComparison.length}
+            </span>
           </button>
         </div>
       )}
@@ -832,47 +1179,48 @@ const History = ({ onLoadFromHistory, onCompareTests, selectedForComparison = []
         />
       )}
     </div>
-  )
-}
+  );
+};
 
 // Rerun Dialog Component
 const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
   const [modifiedItem, setModifiedItem] = useState({
-    modelId: testItem.modelId || '',
-    systemPrompt: testItem.systemPrompt || '',
-    userPrompt: testItem.userPrompt || testItem.prompt || '', // Handle legacy prompt field
-    datasetType: testItem.datasetType || '',
-    datasetOption: testItem.datasetOption || ''
-  })
-  const [showAdvanced, setShowAdvanced] = useState(false)
+    modelId: testItem.modelId || "",
+    systemPrompt: testItem.systemPrompt || "",
+    userPrompt: testItem.userPrompt || testItem.prompt || "", // Handle legacy prompt field
+    datasetType: testItem.datasetType || "",
+    datasetOption: testItem.datasetOption || "",
+  });
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const handleConfirm = () => {
-    onConfirm(modifiedItem)
-  }
+    onConfirm(modifiedItem);
+  };
 
   const handleSystemPromptChange = (e) => {
-    setModifiedItem(prev => ({
+    setModifiedItem((prev) => ({
       ...prev,
-      systemPrompt: e.target.value
-    }))
-  }
+      systemPrompt: e.target.value,
+    }));
+  };
 
   const handleUserPromptChange = (e) => {
-    setModifiedItem(prev => ({
+    setModifiedItem((prev) => ({
       ...prev,
-      userPrompt: e.target.value
-    }))
-  }
+      userPrompt: e.target.value,
+    }));
+  };
 
   const isModified = () => {
     return (
       modifiedItem.modelId !== testItem.modelId ||
-      modifiedItem.systemPrompt !== (testItem.systemPrompt || '') ||
-      modifiedItem.userPrompt !== (testItem.userPrompt || testItem.prompt || '') ||
+      modifiedItem.systemPrompt !== (testItem.systemPrompt || "") ||
+      modifiedItem.userPrompt !==
+        (testItem.userPrompt || testItem.prompt || "") ||
       modifiedItem.datasetType !== testItem.datasetType ||
       modifiedItem.datasetOption !== testItem.datasetOption
-    )
-  }
+    );
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -886,8 +1234,18 @@ const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
               onClick={onCancel}
               className="text-gray-400 hover:text-gray-600"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -897,9 +1255,17 @@ const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
             <div className="bg-gray-50 rounded-lg p-4">
               <h4 className="font-medium text-gray-900 mb-2">Original Test</h4>
               <div className="text-sm text-gray-600 space-y-1">
-                <p><span className="font-medium">Model:</span> {testItem.modelId}</p>
-                <p><span className="font-medium">Dataset:</span> {testItem.datasetType}/{testItem.datasetOption}</p>
-                <p><span className="font-medium">Date:</span> {new Date(testItem.timestamp).toLocaleString()}</p>
+                <p>
+                  <span className="font-medium">Model:</span> {testItem.modelId}
+                </p>
+                <p>
+                  <span className="font-medium">Dataset:</span>{" "}
+                  {testItem.datasetType}/{testItem.datasetOption}
+                </p>
+                <p>
+                  <span className="font-medium">Date:</span>{" "}
+                  {new Date(testItem.timestamp).toLocaleString()}
+                </p>
               </div>
             </div>
 
@@ -911,37 +1277,47 @@ const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
                   onClick={() => setShowAdvanced(!showAdvanced)}
                   className="text-sm text-primary-600 hover:text-primary-700"
                 >
-                  {showAdvanced ? 'Hide Advanced' : 'Show Advanced'}
+                  {showAdvanced ? "Hide Advanced" : "Show Advanced"}
                 </button>
               </div>
 
               {/* Quick Actions */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                 <button
-                  onClick={() => setModifiedItem({
-                    modelId: testItem.modelId || '',
-                    systemPrompt: testItem.systemPrompt || '',
-                    userPrompt: testItem.userPrompt || testItem.prompt || '',
-                    datasetType: testItem.datasetType || '',
-                    datasetOption: testItem.datasetOption || ''
-                  })}
+                  onClick={() =>
+                    setModifiedItem({
+                      modelId: testItem.modelId || "",
+                      systemPrompt: testItem.systemPrompt || "",
+                      userPrompt: testItem.userPrompt || testItem.prompt || "",
+                      datasetType: testItem.datasetType || "",
+                      datasetOption: testItem.datasetOption || "",
+                    })
+                  }
                   className="p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50"
                 >
                   <div className="font-medium text-gray-900">Exact Rerun</div>
-                  <div className="text-sm text-gray-600">Use identical configuration</div>
+                  <div className="text-sm text-gray-600">
+                    Use identical configuration
+                  </div>
                 </button>
                 <button
-                  onClick={() => setModifiedItem({
-                    modelId: testItem.modelId || '',
-                    systemPrompt: testItem.systemPrompt || '',
-                    userPrompt: testItem.userPrompt || testItem.prompt || '',
-                    datasetType: testItem.datasetType || '',
-                    datasetOption: testItem.datasetOption || ''
-                  })}
+                  onClick={() =>
+                    setModifiedItem({
+                      modelId: testItem.modelId || "",
+                      systemPrompt: testItem.systemPrompt || "",
+                      userPrompt: testItem.userPrompt || testItem.prompt || "",
+                      datasetType: testItem.datasetType || "",
+                      datasetOption: testItem.datasetOption || "",
+                    })
+                  }
                   className="p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50"
                 >
-                  <div className="font-medium text-gray-900">Modify & Rerun</div>
-                  <div className="text-sm text-gray-600">Edit before running</div>
+                  <div className="font-medium text-gray-900">
+                    Modify & Rerun
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Edit before running
+                  </div>
                 </button>
               </div>
 
@@ -955,7 +1331,12 @@ const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
                     <input
                       type="text"
                       value={modifiedItem.modelId}
-                      onChange={(e) => setModifiedItem(prev => ({ ...prev, modelId: e.target.value }))}
+                      onChange={(e) =>
+                        setModifiedItem((prev) => ({
+                          ...prev,
+                          modelId: e.target.value,
+                        }))
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
                       placeholder="Enter model ID"
                     />
@@ -968,7 +1349,12 @@ const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
                     <input
                       type="text"
                       value={modifiedItem.datasetType}
-                      onChange={(e) => setModifiedItem(prev => ({ ...prev, datasetType: e.target.value }))}
+                      onChange={(e) =>
+                        setModifiedItem((prev) => ({
+                          ...prev,
+                          datasetType: e.target.value,
+                        }))
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
                       placeholder="Enter dataset type"
                     />
@@ -981,7 +1367,12 @@ const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
                     <input
                       type="text"
                       value={modifiedItem.datasetOption}
-                      onChange={(e) => setModifiedItem(prev => ({ ...prev, datasetOption: e.target.value }))}
+                      onChange={(e) =>
+                        setModifiedItem((prev) => ({
+                          ...prev,
+                          datasetOption: e.target.value,
+                        }))
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
                       placeholder="Enter dataset option"
                     />
@@ -1019,8 +1410,18 @@ const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
               {isModified() && (
                 <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <div className="flex items-center">
-                    <svg className="w-5 h-5 text-yellow-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                    <svg
+                      className="w-5 h-5 text-yellow-400 mr-2"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                      />
                     </svg>
                     <span className="text-sm text-yellow-800">
                       Configuration has been modified from the original test
@@ -1043,47 +1444,61 @@ const RerunDialog = ({ testItem, onConfirm, onCancel }) => {
               onClick={handleConfirm}
               className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
             >
-              {isModified() ? 'Load Modified Configuration' : 'Load Original Configuration'}
+              {isModified()
+                ? "Load Modified Configuration"
+                : "Load Original Configuration"}
             </button>
           </div>
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
 // Determinism Grade Modal Component
 const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
   const formatTimestamp = (timestamp) => {
-    return new Date(timestamp).toLocaleString()
-  }
+    return new Date(timestamp).toLocaleString();
+  };
 
   const getGradeDescription = (gradeValue) => {
     switch (gradeValue) {
-      case 'A': return 'Highly Deterministic (>90% consistency)'
-      case 'B': return 'Good Determinism (70-90% consistency)'
-      case 'C': return 'Moderate Determinism (50-70% consistency)'
-      case 'D': return 'Low Determinism (30-50% consistency)'
-      case 'F': return 'Non-deterministic (<30% consistency)'
-      default: return 'Unknown grade'
+      case "A":
+        return "Highly Deterministic (>90% consistency)";
+      case "B":
+        return "Good Determinism (70-90% consistency)";
+      case "C":
+        return "Moderate Determinism (50-70% consistency)";
+      case "D":
+        return "Low Determinism (30-50% consistency)";
+      case "F":
+        return "Non-deterministic (<30% consistency)";
+      default:
+        return "Unknown grade";
     }
-  }
+  };
 
   const getGradeColor = (gradeValue) => {
     switch (gradeValue) {
-      case 'A': return 'bg-green-50 border-green-200 text-green-800'
-      case 'B': return 'bg-blue-50 border-blue-200 text-blue-800'
-      case 'C': return 'bg-yellow-50 border-yellow-200 text-yellow-800'
-      case 'D': return 'bg-orange-50 border-orange-200 text-orange-800'
-      case 'F': return 'bg-red-50 border-red-200 text-red-800'
-      default: return 'bg-gray-50 border-gray-200 text-gray-800'
+      case "A":
+        return "bg-green-50 border-green-200 text-green-800";
+      case "B":
+        return "bg-blue-50 border-blue-200 text-blue-800";
+      case "C":
+        return "bg-yellow-50 border-yellow-200 text-yellow-800";
+      case "D":
+        return "bg-orange-50 border-orange-200 text-orange-800";
+      case "F":
+        return "bg-red-50 border-red-200 text-red-800";
+      default:
+        return "bg-gray-50 border-gray-200 text-gray-800";
     }
-  }
+  };
 
   const formatPercentage = (value) => {
-    if (typeof value !== 'number' || isNaN(value)) return 'N/A'
-    return `${(value * 100).toFixed(1)}%`
-  }
+    if (typeof value !== "number" || isNaN(value)) return "N/A";
+    return `${(value * 100).toFixed(1)}%`;
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -1097,8 +1512,18 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -1106,9 +1531,15 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
         {/* Content */}
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
           {/* Grade Summary */}
-          <div className={`p-6 rounded-lg border-2 mb-6 ${getGradeColor(grade.grade)}`}>
+          <div
+            className={`p-6 rounded-lg border-2 mb-6 ${getGradeColor(
+              grade.grade
+            )}`}
+          >
             <div className="text-center mb-4">
-              <div className="text-4xl font-bold mb-2">Grade: {grade.grade}</div>
+              <div className="text-4xl font-bold mb-2">
+                Grade: {grade.grade}
+              </div>
               <div className="text-lg opacity-90">
                 {getGradeDescription(grade.grade)}
               </div>
@@ -1122,15 +1553,17 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
             )}
           </div>
 
-
-
           {/* Consistency Metrics */}
           {grade.metrics ? (
             <div className="mb-6">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4">Detailed Analysis</h4>
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">
+                Detailed Analysis
+              </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
-                  <div className="text-sm font-medium text-blue-800 mb-1">Decision Consistency</div>
+                  <div className="text-sm font-medium text-blue-800 mb-1">
+                    Decision Consistency
+                  </div>
                   <div className="text-2xl font-bold text-blue-900">
                     {formatPercentage(grade.metrics.decisionConsistency)}
                   </div>
@@ -1140,7 +1573,9 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
                 </div>
 
                 <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
-                  <div className="text-sm font-medium text-green-800 mb-1">Structure Consistency</div>
+                  <div className="text-sm font-medium text-green-800 mb-1">
+                    Structure Consistency
+                  </div>
                   <div className="text-2xl font-bold text-green-900">
                     {formatPercentage(grade.metrics.structureConsistency)}
                   </div>
@@ -1150,7 +1585,9 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
                 </div>
 
                 <div className="bg-purple-50 border border-purple-200 p-4 rounded-lg">
-                  <div className="text-sm font-medium text-purple-800 mb-1">Semantic Equivalence</div>
+                  <div className="text-sm font-medium text-purple-800 mb-1">
+                    Semantic Equivalence
+                  </div>
                   <div className="text-2xl font-bold text-purple-900">
                     {formatPercentage(grade.metrics.semanticSimilarity)}
                   </div>
@@ -1160,9 +1597,16 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
                 </div>
 
                 <div className="bg-orange-50 border border-orange-200 p-4 rounded-lg">
-                  <div className="text-sm font-medium text-orange-800 mb-1">Exact Text Match</div>
+                  <div className="text-sm font-medium text-orange-800 mb-1">
+                    Exact Text Match
+                  </div>
                   <div className="text-2xl font-bold text-orange-900">
-                    {formatPercentage(grade.metrics.exactMatches ? grade.metrics.exactMatches / grade.metrics.responseCount : 0)}
+                    {formatPercentage(
+                      grade.metrics.exactMatches
+                        ? grade.metrics.exactMatches /
+                            grade.metrics.responseCount
+                        : 0
+                    )}
                   </div>
                   <div className="text-xs text-orange-700 mt-1">
                     How often responses were identical
@@ -1172,31 +1616,47 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
 
               <div className="bg-gray-50 border border-gray-200 p-3 rounded-lg text-center">
                 <div className="text-sm text-gray-600">Analyzed Responses</div>
-                <div className="text-xl font-bold text-gray-900">{grade.metrics.responseCount || grade.metrics.n_runs || 0}</div>
+                <div className="text-xl font-bold text-gray-900">
+                  {grade.metrics.responseCount || grade.metrics.n_runs || 0}
+                </div>
               </div>
             </div>
           ) : (
             <div className="mb-6">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4">Analysis Summary</h4>
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">
+                Analysis Summary
+              </h4>
               <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
                 <div className="text-sm text-blue-800">
-                  <p className="mb-2"><strong>Grade:</strong> {grade.grade}</p>
-                  {grade.reasoning && <p><strong>Analysis:</strong> {grade.reasoning}</p>}
+                  <p className="mb-2">
+                    <strong>Grade:</strong> {grade.grade}
+                  </p>
+                  {grade.reasoning && (
+                    <p>
+                      <strong>Analysis:</strong> {grade.reasoning}
+                    </p>
+                  )}
                 </div>
               </div>
               {grade.variance && (
                 <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
                   <div className="bg-gray-50 border border-gray-200 p-3 rounded-lg text-center">
                     <div className="text-sm text-gray-600">Responses</div>
-                    <div className="text-lg font-bold text-gray-900">{grade.variance.responseCount}</div>
+                    <div className="text-lg font-bold text-gray-900">
+                      {grade.variance.responseCount}
+                    </div>
                   </div>
                   <div className="bg-gray-50 border border-gray-200 p-3 rounded-lg text-center">
                     <div className="text-sm text-gray-600">Unique</div>
-                    <div className="text-lg font-bold text-gray-900">{grade.variance.uniqueResponses}</div>
+                    <div className="text-lg font-bold text-gray-900">
+                      {grade.variance.uniqueResponses}
+                    </div>
                   </div>
                   <div className="bg-gray-50 border border-gray-200 p-3 rounded-lg text-center">
                     <div className="text-sm text-gray-600">Avg Length</div>
-                    <div className="text-lg font-bold text-gray-900">{grade.variance.averageLength}</div>
+                    <div className="text-lg font-bold text-gray-900">
+                      {grade.variance.averageLength}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1204,47 +1664,74 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
           )}
 
           {/* Tool Usage Consistency Section */}
-          {grade.metrics && grade.metrics.tool_consistency_rate !== undefined && (
-            <div className="mb-6">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-                <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                <span>Tool Usage Consistency</span>
-              </h4>
+          {grade.metrics &&
+            grade.metrics.tool_consistency_rate !== undefined && (
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+                  <svg
+                    className="w-5 h-5 text-primary-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                    />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                  </svg>
+                  <span>Tool Usage Consistency</span>
+                </h4>
 
-              {/* Tool Usage Score from Grader */}
-              <div className="bg-gradient-to-r from-primary-50 to-secondary-50 border border-primary-200 p-4 rounded-lg mb-4 card-with-gradient">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm font-medium text-primary-800">Tool Usage Consistency</div>
-                  <div className="text-2xl font-bold text-primary-900">
-                    {formatPercentage(grade.metrics.toolUsageConsistency)}
+                {/* Tool Usage Score from Grader */}
+                <div className="bg-gradient-to-r from-primary-50 to-secondary-50 border border-primary-200 p-4 rounded-lg mb-4 card-with-gradient">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-sm font-medium text-primary-800">
+                      Tool Usage Consistency
+                    </div>
+                    <div className="text-2xl font-bold text-primary-900">
+                      {formatPercentage(grade.metrics.toolUsageConsistency)}
+                    </div>
+                  </div>
+                  <div className="text-xs text-primary-700">
+                    Evaluated by grader LLM as part of overall determinism
+                    assessment
+                  </div>
+                  <div className="w-full bg-primary-200 rounded-full h-2 mt-2">
+                    <div
+                      className="h-2 bg-primary-600 rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(0, grade.metrics.tool_consistency_rate * 100)
+                        )}%`,
+                      }}
+                    />
                   </div>
                 </div>
-                <div className="text-xs text-primary-700">
-                  Evaluated by grader LLM as part of overall determinism assessment
-                </div>
-                <div className="w-full bg-primary-200 rounded-full h-2 mt-2">
-                  <div
-                    className="h-2 bg-primary-600 rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(100, Math.max(0, grade.metrics.tool_consistency_rate * 100))}%` }}
-                  />
-                </div>
               </div>
-            </div>
-          )}
-
-
+            )}
 
           {/* Notable Variations */}
           {grade.notable_variations && grade.notable_variations.length > 0 && (
             <div className="mb-6">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4">Notable Variations</h4>
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">
+                Notable Variations
+              </h4>
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                 <ul className="text-sm text-yellow-800 space-y-1">
                   {grade.notable_variations.map((variation, index) => (
-                    <li key={`variation-${index}-${variation.substring(0, 20)}`} className="flex items-start">
+                    <li
+                      key={`variation-${index}-${variation.substring(0, 20)}`}
+                      className="flex items-start"
+                    >
                       <span className="text-yellow-600 mr-2">•</span>
                       {variation}
                     </li>
@@ -1258,7 +1745,8 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
           {grade.timestamp && (
             <div className="mb-6 border-t border-gray-200 pt-4">
               <div className="text-sm text-gray-600 text-center">
-                <span className="font-medium">Evaluation completed:</span> {formatTimestamp(grade.timestamp)}
+                <span className="font-medium">Evaluation completed:</span>{" "}
+                {formatTimestamp(grade.timestamp)}
               </div>
             </div>
           )}
@@ -1268,15 +1756,26 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex items-start">
                 <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  <svg
+                    className="h-5 w-5 text-yellow-400"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
                   </svg>
                 </div>
                 <div className="ml-3">
-                  <h5 className="text-sm font-medium text-yellow-800">Statistical Analysis</h5>
+                  <h5 className="text-sm font-medium text-yellow-800">
+                    Statistical Analysis
+                  </h5>
                   <p className="text-sm text-yellow-700 mt-1">
-                    This evaluation was performed using statistical analysis because the grader LLM was unavailable.
-                    The results are based on response uniqueness and length variance patterns.
+                    This evaluation was performed using statistical analysis
+                    because the grader LLM was unavailable. The results are
+                    based on response uniqueness and length variance patterns.
                   </p>
                 </div>
               </div>
@@ -1296,49 +1795,68 @@ const DeterminismGradeModal = ({ testItem, grade, onClose }) => {
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
 // Determinism Grade Badge Component
 const DeterminismGradeBadge = ({ grade, onClick }) => {
-  if (!grade) return null
+  if (!grade) return null;
 
   const getGradeColor = (gradeValue) => {
     switch (gradeValue) {
-      case 'A': return 'bg-primary-100 text-primary-800 border-primary-200'
-      case 'B': return 'bg-secondary-100 text-secondary-800 border-secondary-200'
-      case 'C': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-      case 'D': return 'bg-orange-100 text-orange-800 border-orange-200'
-      case 'F': return 'bg-red-100 text-red-800 border-red-200'
-      default: return 'bg-gray-100 text-gray-800 border-gray-200'
+      case "A":
+        return "bg-primary-100 text-primary-800 border-primary-200";
+      case "B":
+        return "bg-secondary-100 text-secondary-800 border-secondary-200";
+      case "C":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      case "D":
+        return "bg-orange-100 text-orange-800 border-orange-200";
+      case "F":
+        return "bg-red-100 text-red-800 border-red-200";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
     }
-  }
+  };
 
   const getGradeTitle = (gradeValue) => {
-    const baseTitle = `Determinism Grade: ${gradeValue}`
+    const baseTitle = `Determinism Grade: ${gradeValue}`;
     switch (gradeValue) {
-      case 'A': return `${baseTitle} - Highly deterministic`
-      case 'B': return `${baseTitle} - Good determinism`
-      case 'C': return `${baseTitle} - Moderate determinism`
-      case 'D': return `${baseTitle} - Low determinism`
-      case 'F': return `${baseTitle} - Non-deterministic`
-      default: return baseTitle
+      case "A":
+        return `${baseTitle} - Highly deterministic`;
+      case "B":
+        return `${baseTitle} - Good determinism`;
+      case "C":
+        return `${baseTitle} - Moderate determinism`;
+      case "D":
+        return `${baseTitle} - Low determinism`;
+      case "F":
+        return `${baseTitle} - Non-deterministic`;
+      default:
+        return baseTitle;
     }
-  }
+  };
 
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${getGradeColor(grade.grade)}`}
+      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${getGradeColor(
+        grade.grade
+      )}`}
       title={getGradeTitle(grade.grade)}
     >
       <span className="mr-1">🎯</span>
       <span className="font-bold">{grade.grade}</span>
       {grade.fallbackAnalysis && (
-        <span className="ml-1" title="Statistical analysis (grader LLM unavailable)">*</span>
+        <span
+          className="ml-1"
+          title="Statistical analysis (grader LLM unavailable)"
+        >
+          *
+        </span>
       )}
     </button>
-  )
-}
+  );
+};
 
-export default History
+export default History;

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fileService } from '../services/fileService.js';
 import { determinismStorageService } from '../services/determinismStorageService.js';
+import { workflowDataPersistenceService } from '../services/workflowDataPersistenceService.js';
 
 /**
  * Custom React hook for managing test history
@@ -24,26 +25,52 @@ export function useHistory() {
       // Initialize determinism storage service
       await determinismStorageService.initialize();
 
-      // Load determinism grades and merge with history
-      const historyWithGrades = await Promise.all(
+      // Initialize workflow data persistence service
+      try {
+        if (!workflowDataPersistenceService.isInitialized) {
+          await workflowDataPersistenceService.initialize();
+        }
+      } catch (workflowInitError) {
+        console.warn('Failed to initialize workflow data persistence service:', workflowInitError.message);
+      }
+
+      // Load determinism grades and tool execution workflows, then merge with history
+      const historyWithEnrichments = await Promise.all(
         historyData.map(async (testResult) => {
+          let enrichedResult = { ...testResult };
+
           try {
+            // Add determinism grade if available
             const evaluation = await determinismStorageService.getEvaluationByTestId(testResult.id);
             if (evaluation && evaluation.grade) {
-              return {
-                ...testResult,
-                determinismGrade: evaluation.grade
+              enrichedResult.determinismGrade = evaluation.grade;
+            }
+
+            // Add tool execution workflow if available
+            const workflowData = await fileService.getToolExecutionWorkflow(testResult.id);
+            if (workflowData && workflowData.workflow) {
+              enrichedResult.toolExecutionWorkflow = {
+                executionId: workflowData.workflow.executionId,
+                status: workflowData.workflow.status,
+                startTime: workflowData.workflow.startTime,
+                endTime: workflowData.workflow.endTime,
+                totalDuration: workflowData.workflow.totalDuration,
+                currentIteration: workflowData.workflow.currentIteration,
+                maxIterations: workflowData.workflow.maxIterations,
+                stepCount: workflowData.workflow.steps ? workflowData.workflow.steps.length : 0,
+                hasWorkflowData: true
               };
             }
-            return testResult;
+
+            return enrichedResult;
           } catch (err) {
-            console.warn(`Failed to load determinism grade for test ${testResult.id}:`, err);
-            return testResult;
+            console.warn(`Failed to load enrichment data for test ${testResult.id}:`, err);
+            return enrichedResult;
           }
         })
       );
 
-      setHistory(historyWithGrades);
+      setHistory(historyWithEnrichments);
     } catch (err) {
       setError(`Failed to load history: ${err.message}`);
       console.error('Error loading history:', err);
@@ -150,7 +177,13 @@ export function useHistory() {
         (record.toolUsage?.toolCalls?.some(call =>
           call.toolName?.toLowerCase().includes(term) ||
           JSON.stringify(call.input)?.toLowerCase().includes(term)
-        ))
+        )) ||
+        // Include tool execution data in search
+        (record.toolExecution?.executionId?.toLowerCase().includes(term)) ||
+        (record.toolExecution?.status?.toLowerCase().includes(term)) ||
+        // Include workflow data in search
+        (record.toolExecutionWorkflow?.executionId?.toLowerCase().includes(term)) ||
+        (record.toolExecutionWorkflow?.status?.toLowerCase().includes(term))
       );
     });
   }, [history]);
@@ -200,6 +233,15 @@ export function useHistory() {
           totalToolCalls: 0,
           uniqueTools: 0
         },
+        toolExecutionStats: {
+          testsWithToolExecution: 0,
+          completedExecutions: 0,
+          cancelledExecutions: 0,
+          errorExecutions: 0,
+          averageExecutionDuration: 0,
+          averageIterations: 0,
+          totalExecutionDuration: 0
+        },
         dateRange: null
       };
     }
@@ -213,6 +255,7 @@ export function useHistory() {
 
     // Calculate tool usage statistics
     const testsWithTools = history.filter(record => record.toolUsage?.hasToolUsage).length;
+    const testsWithToolExecution = history.filter(record => record.toolExecution?.enabled || record.toolExecutionWorkflow?.hasWorkflowData).length;
     const testsWithoutTools = history.length - testsWithTools;
     const totalToolCalls = history.reduce((sum, record) =>
       sum + (record.toolUsage?.toolCallCount || 0), 0
@@ -222,6 +265,19 @@ export function useHistory() {
         .filter(record => record.toolUsage?.toolCalls)
         .flatMap(record => record.toolUsage.toolCalls.map(call => call.toolName))
     ).size;
+
+    // Calculate tool execution statistics
+    const completedExecutions = history.filter(record => record.toolExecutionWorkflow?.status === 'completed').length;
+    const cancelledExecutions = history.filter(record => record.toolExecutionWorkflow?.status === 'cancelled').length;
+    const errorExecutions = history.filter(record => record.toolExecutionWorkflow?.status === 'error').length;
+    const totalExecutionDuration = history.reduce((sum, record) =>
+      sum + (record.toolExecutionWorkflow?.totalDuration || 0), 0
+    );
+    const averageExecutionDuration = testsWithToolExecution > 0 ? totalExecutionDuration / testsWithToolExecution : 0;
+    const totalIterations = history.reduce((sum, record) =>
+      sum + (record.toolExecutionWorkflow?.currentIteration || 0), 0
+    );
+    const averageIterations = testsWithToolExecution > 0 ? totalIterations / testsWithToolExecution : 0;
 
     const timestamps = history
       .map(record => new Date(record.timestamp))
@@ -236,6 +292,15 @@ export function useHistory() {
         testsWithoutTools,
         totalToolCalls,
         uniqueTools
+      },
+      toolExecutionStats: {
+        testsWithToolExecution,
+        completedExecutions,
+        cancelledExecutions,
+        errorExecutions,
+        averageExecutionDuration,
+        averageIterations,
+        totalExecutionDuration
       },
       dateRange: {
         earliest: timestamps[0],

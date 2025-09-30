@@ -175,9 +175,17 @@ export class BedrockService {
     const startTime = performance.now();
 
     try {
-      // If tool configuration is provided, use tool use detection
+      // If tool configuration is provided, use tool use detection or execution
       if (toolConfig && toolConfig.tools && toolConfig.tools.length > 0) {
-        const result = await this.invokeModelWithTools(modelId, systemPrompt, userPrompt, content, toolConfig);
+        // Check if execution mode is specified in toolConfig
+        const executionOptions = toolConfig.executionMode ? {
+          executionMode: toolConfig.executionMode,
+          maxIterations: toolConfig.maxIterations,
+          onProgress: toolConfig.onProgress,
+          onToolExecution: toolConfig.onToolExecution
+        } : {};
+
+        const result = await this.invokeModelWithTools(modelId, systemPrompt, userPrompt, content, toolConfig, executionOptions);
         const endTime = performance.now();
         result.responseTime = endTime - startTime;
         return result;
@@ -233,16 +241,527 @@ export class BedrockService {
   }
 
   /**
-   * Invoke a foundation model with tool configuration using Converse API
-   * Single-shot request that detects tool usage attempts without execution
+   * Execute a complete tool workflow with multi-turn conversation
+   * Implements Bedrock's tool use pattern: model requests tools -> execute locally -> send results back
    * @param {string} modelId - The model ID to invoke
    * @param {string} systemPrompt - The system prompt to send to the model
    * @param {string} userPrompt - The user prompt to send to the model
    * @param {string} content - Additional content/context for the model
    * @param {Object} toolConfig - Tool configuration object
+   * @param {Object} options - Execution options (maxIterations, onProgress, etc.)
+   * @returns {Promise<Object>} Complete workflow execution result
+   */
+  async executeToolWorkflow(modelId, systemPrompt, userPrompt, content = '', toolConfig, options = {}) {
+    if (!this.isInitialized || !this.credentialsValid) {
+      const initResult = await this.initialize();
+      if (!initResult.success) {
+        throw new Error(initResult.message);
+      }
+    }
+
+    const {
+      maxIterations = 10,
+      onProgress = null,
+      onToolExecution = null,
+      executionId = this.generateExecutionId()
+    } = options;
+
+    // Track workflow execution state
+    const workflowState = {
+      executionId,
+      modelId,
+      systemPrompt,
+      userPrompt,
+      content,
+      toolConfig,
+      currentIteration: 0,
+      maxIterations,
+      startTime: Date.now(),
+      endTime: null,
+      status: 'executing',
+      messages: [], // Conversation history for Bedrock
+      workflow: [], // Detailed workflow steps for UI
+      toolExecutions: [],
+      totalToolCalls: 0,
+      finalResponse: null,
+      errors: []
+    };
+
+    try {
+      // Initialize conversation with user message
+      const fullUserPrompt = content ? `${userPrompt}\n\nData to analyze:\n${content}` : userPrompt;
+
+      workflowState.messages = [
+        {
+          role: 'user',
+          content: [{ text: fullUserPrompt }]
+        }
+      ];
+
+      // Add initial workflow step
+      this.addWorkflowStep(workflowState, {
+        type: 'llm_request',
+        content: {
+          messages: [...workflowState.messages],
+          modelId,
+          systemPrompt
+        },
+        metadata: {
+          iteration: 0,
+          isInitialRequest: true
+        }
+      });
+
+      // Report initial progress
+      if (onProgress) {
+        onProgress({
+          executionId,
+          status: 'executing',
+          currentIteration: 0,
+          maxIterations,
+          phase: 'initial_request',
+          message: 'Sending initial request to model...'
+        });
+      }
+
+      // Execute multi-turn conversation loop
+      while (workflowState.currentIteration < maxIterations) {
+        workflowState.currentIteration++;
+
+        // Prepare Converse API request
+        const converseParams = {
+          modelId: modelId,
+          messages: workflowState.messages,
+          inferenceConfig: {
+            maxTokens: 4000,
+            temperature: 0.7
+          },
+          toolConfig: {
+            tools: toolConfig.tools
+          }
+        };
+
+        // Add system prompt if provided
+        if (systemPrompt?.trim()) {
+          converseParams.system = [{ text: systemPrompt }];
+        }
+
+        // Make request to Bedrock
+        const command = new ConverseCommand(converseParams);
+        const response = await this.runtimeClient.send(command);
+
+        // Add LLM response to workflow
+        this.addWorkflowStep(workflowState, {
+          type: 'llm_response',
+          content: {
+            response: response.output?.message?.content,
+            stopReason: response.stopReason,
+            usage: response.usage
+          },
+          metadata: {
+            iteration: workflowState.currentIteration,
+            modelId
+          }
+        });
+
+        // Parse response for tool use
+        const messageContent = response.output?.message?.content || [];
+        const toolUseData = this.parseToolUseFromMessageContent(messageContent);
+
+        // Check stop reason and tool use
+        if (response.stopReason === 'end_turn' || !toolUseData.hasToolUse) {
+          // Conversation is complete
+          workflowState.finalResponse = {
+            text: toolUseData.textContent || 'No text response',
+            usage: response.usage ? {
+              input_tokens: response.usage.inputTokens,
+              output_tokens: response.usage.outputTokens,
+              total_tokens: response.usage.totalTokens
+            } : null,
+            stopReason: response.stopReason,
+            iterationCount: workflowState.currentIteration
+          };
+
+          // Add completion step to workflow
+          this.addWorkflowStep(workflowState, {
+            type: 'completion',
+            content: {
+              finalResponse: workflowState.finalResponse,
+              reason: response.stopReason === 'end_turn' ? 'natural_completion' : 'no_tool_use'
+            },
+            metadata: {
+              iteration: workflowState.currentIteration,
+              totalIterations: workflowState.currentIteration
+            }
+          });
+
+          break;
+        }
+
+        if (response.stopReason === 'tool_use') {
+          // Execute tools and continue conversation
+          const toolResults = [];
+
+          for (const toolUse of toolUseData.toolUses) {
+            try {
+              // Add tool call step to workflow
+              this.addWorkflowStep(workflowState, {
+                type: 'tool_call',
+                content: {
+                  toolName: toolUse.name,
+                  toolUseId: toolUse.toolUseId,
+                  parameters: toolUse.input
+                },
+                metadata: {
+                  iteration: workflowState.currentIteration,
+                  toolIndex: workflowState.totalToolCalls
+                }
+              });
+
+              // Report tool execution progress
+              if (onProgress) {
+                onProgress({
+                  executionId,
+                  status: 'executing_tool',
+                  currentIteration: workflowState.currentIteration,
+                  maxIterations,
+                  phase: 'tool_execution',
+                  message: `Executing tool: ${toolUse.name}`,
+                  currentTool: toolUse.name
+                });
+              }
+
+              // Execute the tool locally
+              const toolResult = await this.executeToolLocally(toolUse.name, toolUse.input, toolConfig);
+
+              // Track tool execution
+              workflowState.toolExecutions.push({
+                toolName: toolUse.name,
+                toolUseId: toolUse.toolUseId,
+                input: toolUse.input,
+                result: toolResult,
+                timestamp: new Date().toISOString(),
+                iteration: workflowState.currentIteration
+              });
+
+              workflowState.totalToolCalls++;
+
+              // Add tool result step to workflow
+              this.addWorkflowStep(workflowState, {
+                type: 'tool_result',
+                content: {
+                  toolName: toolUse.name,
+                  toolUseId: toolUse.toolUseId,
+                  result: toolResult,
+                  success: toolResult.success !== false
+                },
+                metadata: {
+                  iteration: workflowState.currentIteration,
+                  executionTime: toolResult.executionTime || 0
+                }
+              });
+
+              // Prepare tool result for Bedrock (using correct format)
+              toolResults.push({
+                toolUseId: toolUse.toolUseId,
+                content: [
+                  {
+                    text: JSON.stringify(toolResult)
+                  }
+                ]
+              });
+
+              // Notify about tool execution
+              if (onToolExecution) {
+                onToolExecution({
+                  toolName: toolUse.name,
+                  toolUseId: toolUse.toolUseId,
+                  input: toolUse.input,
+                  result: toolResult,
+                  iteration: workflowState.currentIteration
+                });
+              }
+
+            } catch (toolError) {
+              // Handle tool execution error
+              const errorResult = {
+                success: false,
+                error: toolError.message,
+                timestamp: new Date().toISOString()
+              };
+
+              workflowState.errors.push({
+                type: 'tool_execution_error',
+                toolName: toolUse.name,
+                toolUseId: toolUse.toolUseId,
+                error: toolError.message,
+                iteration: workflowState.currentIteration
+              });
+
+              // Add error step to workflow
+              this.addWorkflowStep(workflowState, {
+                type: 'error',
+                content: {
+                  errorType: 'tool_execution_error',
+                  toolName: toolUse.name,
+                  toolUseId: toolUse.toolUseId,
+                  error: toolError.message
+                },
+                metadata: {
+                  iteration: workflowState.currentIteration
+                }
+              });
+
+              // Still send error result to Bedrock
+              toolResults.push({
+                toolUseId: toolUse.toolUseId,
+                content: [
+                  {
+                    text: JSON.stringify(errorResult)
+                  }
+                ]
+              });
+            }
+          }
+
+          // Add tool results to conversation history
+          workflowState.messages.push({
+            role: 'assistant',
+            content: messageContent // Include the original tool use content
+          });
+
+          workflowState.messages.push({
+            role: 'user',
+            content: toolResults.map(result => ({
+              toolResult: result
+            }))
+          });
+
+          // Report progress after tool execution
+          if (onProgress) {
+            onProgress({
+              executionId,
+              status: 'continuing_conversation',
+              currentIteration: workflowState.currentIteration,
+              maxIterations,
+              phase: 'processing_results',
+              message: `Processed ${toolResults.length} tool result(s), continuing conversation...`,
+              toolsExecuted: toolResults.length
+            });
+          }
+
+          // Continue to next iteration
+          continue;
+        }
+
+        // Handle unexpected stop reason
+        workflowState.errors.push({
+          type: 'unexpected_stop_reason',
+          stopReason: response.stopReason,
+          iteration: workflowState.currentIteration
+        });
+
+        break;
+      }
+
+      // Check if we hit max iterations
+      if (workflowState.currentIteration >= maxIterations && !workflowState.finalResponse) {
+        workflowState.status = 'max_iterations_reached';
+        workflowState.finalResponse = {
+          text: 'Maximum iterations reached without completion',
+          usage: null,
+          stopReason: 'max_iterations',
+          iterationCount: workflowState.currentIteration
+        };
+
+        this.addWorkflowStep(workflowState, {
+          type: 'max_iterations_reached',
+          content: {
+            maxIterations,
+            finalIteration: workflowState.currentIteration
+          },
+          metadata: {
+            iteration: workflowState.currentIteration
+          }
+        });
+      }
+
+      // Finalize workflow state
+      workflowState.endTime = Date.now();
+      workflowState.totalDuration = workflowState.endTime - workflowState.startTime;
+      workflowState.status = workflowState.status === 'executing' ? 'completed' : workflowState.status;
+
+      // Report final progress
+      if (onProgress) {
+        onProgress({
+          executionId,
+          status: workflowState.status,
+          currentIteration: workflowState.currentIteration,
+          maxIterations,
+          phase: 'completed',
+          message: `Workflow completed in ${workflowState.currentIteration} iteration(s)`,
+          totalDuration: workflowState.totalDuration,
+          toolsExecuted: workflowState.totalToolCalls
+        });
+      }
+
+      // Return complete workflow result
+      return {
+        executionId,
+        text: workflowState.finalResponse?.text || '',
+        usage: workflowState.finalResponse?.usage,
+        workflow: workflowState.workflow,
+        toolExecutions: workflowState.toolExecutions,
+        iterationCount: workflowState.currentIteration,
+        totalToolCalls: workflowState.totalToolCalls,
+        totalDuration: workflowState.totalDuration,
+        status: workflowState.status,
+        errors: workflowState.errors,
+        stopReason: workflowState.finalResponse?.stopReason || 'unknown'
+      };
+
+    } catch (error) {
+      // Handle workflow execution error
+      workflowState.status = 'error';
+      workflowState.endTime = Date.now();
+      workflowState.totalDuration = workflowState.endTime - workflowState.startTime;
+
+      workflowState.errors.push({
+        type: 'workflow_execution_error',
+        error: error.message,
+        iteration: workflowState.currentIteration
+      });
+
+      this.addWorkflowStep(workflowState, {
+        type: 'error',
+        content: {
+          errorType: 'workflow_execution_error',
+          error: error.message
+        },
+        metadata: {
+          iteration: workflowState.currentIteration
+        }
+      });
+
+      if (onProgress) {
+        onProgress({
+          executionId,
+          status: 'error',
+          currentIteration: workflowState.currentIteration,
+          maxIterations,
+          phase: 'error',
+          message: `Workflow failed: ${error.message}`,
+          error: error.message
+        });
+      }
+
+      throw new Error(`Tool workflow execution failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Execute a tool locally using the appropriate service
+   * @param {string} toolName - Name of the tool to execute
+   * @param {Object} parameters - Tool parameters
+   * @param {Object} toolConfig - Tool configuration
+   * @returns {Promise<Object>} Tool execution result
+   */
+  async executeToolLocally(toolName, parameters, toolConfig) {
+    try {
+      // Find tool definition
+      const toolDef = toolConfig.tools.find(tool => tool.toolSpec.name === toolName);
+      if (!toolDef) {
+        throw new Error(`Tool definition not found: ${toolName}`);
+      }
+
+      // For fraud detection tools, use fraudToolsService
+      if (toolName.includes('fraud') || toolName.includes('account') || toolName.includes('transaction')) {
+        // Import fraudToolsService dynamically to avoid circular dependencies
+        const { fraudToolsService } = await import('./fraudToolsService.js');
+        return await fraudToolsService.executeTool(toolName, parameters);
+      }
+
+      // For other tools, implement generic execution
+      return {
+        success: true,
+        message: `Tool ${toolName} executed successfully`,
+        result: parameters,
+        timestamp: new Date().toISOString(),
+        executionTime: Math.random() * 100 + 50 // Simulate execution time
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        executionTime: 0
+      };
+    }
+  }
+
+  /**
+   * Add a workflow step to the execution state
+   * @param {Object} workflowState - Current workflow state
+   * @param {Object} step - Step to add
+   */
+  addWorkflowStep(workflowState, step) {
+    const workflowStep = {
+      id: `step_${workflowState.workflow.length + 1}`,
+      executionId: workflowState.executionId,
+      timestamp: new Date().toISOString(),
+      duration: null,
+      status: 'completed',
+      ...step
+    };
+
+    workflowState.workflow.push(workflowStep);
+  }
+
+  /**
+   * Generate a unique execution ID
+   * @returns {string} Unique execution ID
+   */
+  generateExecutionId() {
+    return `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Invoke a foundation model with tool configuration using Converse API
+   * Supports both tool detection (default) and actual tool execution modes
+   * @param {string} modelId - The model ID to invoke
+   * @param {string} systemPrompt - The system prompt to send to the model
+   * @param {string} userPrompt - The user prompt to send to the model
+   * @param {string} content - Additional content/context for the model
+   * @param {Object} toolConfig - Tool configuration object
+   * @param {Object} options - Execution options including mode
    * @returns {Promise<Object>} The model response with tool usage data
    */
-  async invokeModelWithTools(modelId, systemPrompt, userPrompt, content = '', toolConfig) {
+  async invokeModelWithTools(modelId, systemPrompt, userPrompt, content = '', toolConfig, options = {}) {
+    const {
+      executionMode = 'detection', // 'detection' or 'execution'
+      maxIterations = 10,
+      onProgress = null,
+      onToolExecution = null
+    } = options;
+
+    // If execution mode is requested, delegate to executeToolWorkflow
+    if (executionMode === 'execution') {
+      return await this.executeToolWorkflow(
+        modelId,
+        systemPrompt,
+        userPrompt,
+        content,
+        toolConfig,
+        {
+          maxIterations,
+          onProgress,
+          onToolExecution
+        }
+      );
+    }
+
+    // Default behavior: tool detection mode (backward compatibility)
     if (!this.isInitialized || !this.credentialsValid) {
       const initResult = await this.initialize();
       if (!initResult.success) {
@@ -298,6 +817,8 @@ export class BedrockService {
       // Extract tool usage attempts from the response
       const toolUsage = this.extractToolUsageAttempts(response, toolConfig);
 
+
+
       // Parse the basic response
       const basicResponse = this.parseConverseResponse(response);
 
@@ -306,7 +827,8 @@ export class BedrockService {
       return {
         ...basicResponse,
         toolUsage: toolUsage,
-        responseTime: endTime - startTime
+        responseTime: endTime - startTime,
+        executionMode: 'detection' // Indicate this was detection mode
       };
 
     } catch (error) {
@@ -329,8 +851,11 @@ export class BedrockService {
     };
 
     if (!messageContent || !Array.isArray(messageContent)) {
+
       return result;
     }
+
+
 
     for (const contentBlock of messageContent) {
       if (contentBlock.text) {
@@ -342,8 +867,11 @@ export class BedrockService {
           toolUseId: contentBlock.toolUse.toolUseId,
           input: contentBlock.toolUse.input
         });
+
       }
     }
+
+
 
     return result;
   }
@@ -951,7 +1479,15 @@ export class BedrockService {
 
     // If tool configuration is provided, use tool use streaming
     if (toolConfig && toolConfig.tools && toolConfig.tools.length > 0) {
-      return await this.invokeModelStreamWithTools(modelId, systemPrompt, userPrompt, content, toolConfig, onToken, onComplete, onError);
+      // Check if execution mode is specified in toolConfig
+      const streamingOptions = toolConfig.executionMode ? {
+        executionMode: toolConfig.executionMode,
+        maxIterations: toolConfig.maxIterations,
+        onProgress: toolConfig.onProgress,
+        onToolExecution: toolConfig.onToolExecution
+      } : {};
+
+      return await this.invokeModelStreamWithTools(modelId, systemPrompt, userPrompt, content, toolConfig, onToken, onComplete, onError, streamingOptions);
     }
 
     // Pre-flight model compatibility check
@@ -992,6 +1528,7 @@ export class BedrockService {
 
   /**
    * Invoke a foundation model with streaming and tool use support
+   * Supports both tool detection and execution modes
    * @param {string} modelId - The model ID to invoke
    * @param {string} systemPrompt - The system prompt to send to the model
    * @param {string} userPrompt - The user prompt to send to the model
@@ -1000,9 +1537,29 @@ export class BedrockService {
    * @param {Function} onToken - Callback function called for each token received
    * @param {Function} onComplete - Callback function called when streaming completes
    * @param {Function} onError - Callback function called if streaming fails
+   * @param {Object} options - Execution options including mode
    * @returns {Promise<Object>} The complete model response with tool usage data
    */
-  async invokeModelStreamWithTools(modelId, systemPrompt, userPrompt, content = '', toolConfig, onToken, onComplete, onError) {
+  async invokeModelStreamWithTools(modelId, systemPrompt, userPrompt, content = '', toolConfig, onToken, onComplete, onError, options = {}) {
+    const { executionMode = 'detection' } = options;
+
+    // If execution mode is requested, fall back to non-streaming execution
+    // Streaming with tool execution is complex and requires special handling
+    if (executionMode === 'execution') {
+      console.warn('Streaming not supported with tool execution mode, falling back to non-streaming');
+      onError?.(new Error('Streaming not supported with tool execution mode'));
+
+      try {
+        const result = await this.invokeModelWithTools(modelId, systemPrompt, userPrompt, content, toolConfig, options);
+        onComplete?.(result);
+        return result;
+      } catch (fallbackError) {
+        const finalError = new Error(`Tool execution fallback failed: ${fallbackError.message}`);
+        onError?.(finalError);
+        throw finalError;
+      }
+    }
+
     if (!this.isInitialized || !this.credentialsValid) {
       const initResult = await this.initialize();
       if (!initResult.success) {
@@ -1018,7 +1575,7 @@ export class BedrockService {
 
       // Graceful fallback to non-streaming with tools
       try {
-        const result = await this.invokeModelWithTools(modelId, systemPrompt, userPrompt, content, toolConfig);
+        const result = await this.invokeModelWithTools(modelId, systemPrompt, userPrompt, content, toolConfig, options);
         onComplete?.(result);
         return result;
       } catch (fallbackError) {

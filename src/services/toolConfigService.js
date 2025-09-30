@@ -16,7 +16,7 @@ export class ToolConfigService {
     this.initializationErrors = []
     this.validationCache = new Map()
     this.manifestCache = new Map()
-    this.hotReloadEnabled = import.meta.env.DEV || false
+    this.hotReloadEnabled = import.meta.env.VITE_ENABLE_HOT_RELOAD === 'true' || false
     this.lastReloadTime = Date.now()
     this.watchedManifests = new Set()
     this.configurationSchema = this.createConfigurationSchema()
@@ -446,7 +446,7 @@ export class ToolConfigService {
       } catch (error) {
         console.warn('Hot reload check failed:', error.message)
       }
-    }, 2000) // Check every 2 seconds in development
+    }, 30000) // Check every 30 seconds in development
 
     // Tool configuration hot reloading enabled
   }

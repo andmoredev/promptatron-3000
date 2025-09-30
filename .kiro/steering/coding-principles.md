@@ -1,5 +1,9 @@
 # Coding Principles & Best Practices
 
+## Code Formatting Policy
+
+**CRITICAL**: Do not apply automatic formatting or reformatting to entire files. Only format the specific lines being modified. Preserve existing code formatting and indentation patterns.
+
 ## Core Philosophy
 
 ### Follow Existing Patterns

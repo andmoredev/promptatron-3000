@@ -3,7 +3,12 @@ import PropTypes from 'prop-types'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
-const ToolUsageDisplay = ({ toolUsage }) => {
+const ToolUsageDisplay = ({
+  toolUsage,
+  toolExecutionEnabled = false,
+  executionResults = null,
+  workflowData = null
+}) => {
   const [expandedTools, setExpandedTools] = useState(new Set())
   const [showErrors, setShowErrors] = useState(false)
   const [showAllTools, setShowAllTools] = useState(false)
@@ -57,6 +62,40 @@ const ToolUsageDisplay = ({ toolUsage }) => {
       return JSON.stringify(input, null, 2)
     }
     return String(input)
+  }
+
+  // Get execution status for a tool call
+  const getToolExecutionStatus = (toolCall) => {
+    if (!toolExecutionEnabled || !workflowData) {
+      return { status: 'detected', message: 'Tool call detected (not executed)' }
+    }
+
+    // Find corresponding execution steps in workflow data
+    const toolCallSteps = workflowData.filter(step =>
+      step.type === 'tool_call' &&
+      step.content.toolName === toolCall.toolName
+    )
+
+    const toolResultSteps = workflowData.filter(step =>
+      step.type === 'tool_result' &&
+      toolCallSteps.some(callStep => callStep.id === step.id.replace('result', 'call'))
+    )
+
+    if (toolResultSteps.length > 0) {
+      const lastResult = toolResultSteps[toolResultSteps.length - 1]
+      return {
+        status: lastResult.content.success ? 'executed' : 'failed',
+        message: lastResult.content.success ? 'Tool executed successfully' : 'Tool execution failed',
+        result: lastResult.content.result,
+        error: lastResult.content.error
+      }
+    }
+
+    if (toolCallSteps.length > 0) {
+      return { status: 'attempted', message: 'Tool execution attempted' }
+    }
+
+    return { status: 'detected', message: 'Tool call detected (not executed)' }
   }
 
   const renderErrorSection = () => {
@@ -136,6 +175,40 @@ const ToolUsageDisplay = ({ toolUsage }) => {
   }
 
   const getToolCallStatusIcon = (toolCall) => {
+    // Check execution status first if tool execution is enabled
+    if (toolExecutionEnabled) {
+      const executionStatus = getToolExecutionStatus(toolCall)
+
+      switch (executionStatus.status) {
+        case 'executed':
+          return (
+            <svg className="h-4 w-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          )
+        case 'failed':
+          return (
+            <svg className="h-4 w-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          )
+        case 'attempted':
+          return (
+            <svg className="h-4 w-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
+            </svg>
+          )
+        default:
+          return (
+            <svg className="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          )
+      }
+    }
+
+    // Fall back to original detection-based logic
     if (toolCall.extractionSuccess === false) {
       return (
         <svg className="h-4 w-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -161,13 +234,21 @@ const ToolUsageDisplay = ({ toolUsage }) => {
     }
 
     return (
-      <svg className="h-4 w-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      <svg className="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
       </svg>
     )
   }
 
   const getToolCallStatusMessage = (toolCall) => {
+    // Check execution status first if tool execution is enabled
+    if (toolExecutionEnabled) {
+      const executionStatus = getToolExecutionStatus(toolCall)
+      return executionStatus.message
+    }
+
+    // Fall back to original detection-based logic
     if (toolCall.extractionSuccess === false) {
       return 'Failed to extract tool call data'
     }
@@ -180,7 +261,7 @@ const ToolUsageDisplay = ({ toolUsage }) => {
       return 'Invalid parameters provided'
     }
 
-    return 'Tool call attempted (not executed)'
+    return 'Tool call detected (not executed)'
   }
 
   // Group tool calls by name for summary
@@ -262,6 +343,21 @@ const ToolUsageDisplay = ({ toolUsage }) => {
                                   <h4 className="text-sm font-medium text-orange-900">
                                     {toolCall.toolName}
                                   </h4>
+                                  {toolExecutionEnabled && (() => {
+                                    const executionStatus = getToolExecutionStatus(toolCall)
+                                    const statusColors = {
+                                      executed: 'bg-green-100 text-green-800',
+                                      failed: 'bg-red-100 text-red-800',
+                                      attempted: 'bg-yellow-100 text-yellow-800',
+                                      detected: 'bg-blue-100 text-blue-800'
+                                    }
+
+                                    return (
+                                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${statusColors[executionStatus.status]}`}>
+                                        {executionStatus.status}
+                                      </span>
+                                    )
+                                  })()}
                                 </div>
                               </div>
                             </div>
@@ -299,22 +395,85 @@ const ToolUsageDisplay = ({ toolUsage }) => {
                         {/* Expanded parameter details - only show when expanded */}
                         {isExpanded && (
                           <div className="border-t border-orange-200 bg-white">
-                            <div className="p-4">
-                              <h5 className="text-xs font-medium text-gray-700 mb-3">Parameters:</h5>
-                              <div className="bg-gray-50 border border-gray-200 rounded overflow-hidden">
-                                <SyntaxHighlighter
-                                  language="json"
-                                  style={oneLight}
-                                  customStyle={{
-                                    margin: 0,
-                                    fontSize: '12px',
-                                    lineHeight: '1.4',
-                                    background: 'transparent'
-                                  }}
-                                >
-                                  {formatToolInput(toolCall.input)}
-                                </SyntaxHighlighter>
+                            <div className="p-4 space-y-4">
+                              <div>
+                                <h5 className="text-xs font-medium text-gray-700 mb-3">Parameters:</h5>
+                                <div className="bg-gray-50 border border-gray-200 rounded overflow-hidden">
+                                  <SyntaxHighlighter
+                                    language="json"
+                                    style={oneLight}
+                                    customStyle={{
+                                      margin: 0,
+                                      fontSize: '12px',
+                                      lineHeight: '1.4',
+                                      background: 'transparent'
+                                    }}
+                                  >
+                                    {formatToolInput(toolCall.input)}
+                                  </SyntaxHighlighter>
+                                </div>
                               </div>
+
+                              {/* Execution Results - only show if tool execution is enabled */}
+                              {toolExecutionEnabled && (() => {
+                                const executionStatus = getToolExecutionStatus(toolCall)
+
+                                if (executionStatus.status === 'executed' || executionStatus.status === 'failed') {
+                                  return (
+                                    <div>
+                                      <h5 className="text-xs font-medium text-gray-700 mb-3">Execution Result:</h5>
+                                      <div className={`border rounded p-3 ${
+                                        executionStatus.status === 'executed'
+                                          ? 'bg-green-50 border-green-200'
+                                          : 'bg-red-50 border-red-200'
+                                      }`}>
+                                        <div className="flex items-center space-x-2 mb-2">
+                                          {executionStatus.status === 'executed' ? (
+                                            <svg className="h-4 w-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                          ) : (
+                                            <svg className="h-4 w-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                          )}
+                                          <span className={`text-xs font-medium ${
+                                            executionStatus.status === 'executed' ? 'text-green-800' : 'text-red-800'
+                                          }`}>
+                                            {executionStatus.status === 'executed' ? 'Success' : 'Failed'}
+                                          </span>
+                                        </div>
+
+                                        {executionStatus.result && (
+                                          <div className="bg-white border border-gray-200 rounded overflow-hidden">
+                                            <SyntaxHighlighter
+                                              language="json"
+                                              style={oneLight}
+                                              customStyle={{
+                                                margin: 0,
+                                                fontSize: '12px',
+                                                lineHeight: '1.4',
+                                                background: 'transparent'
+                                              }}
+                                            >
+                                              {formatToolInput(executionStatus.result)}
+                                            </SyntaxHighlighter>
+                                          </div>
+                                        )}
+
+                                        {executionStatus.error && (
+                                          <div className="mt-2">
+                                            <p className="text-xs font-medium text-red-800">Error:</p>
+                                            <p className="text-xs text-red-700 mt-1">{executionStatus.error}</p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                }
+
+                                return null
+                              })()}
                             </div>
                           </div>
                         )}
@@ -355,6 +514,21 @@ const ToolUsageDisplay = ({ toolUsage }) => {
                           <h4 className="text-sm font-medium text-orange-900">
                             {toolCall.toolName}
                           </h4>
+                          {toolExecutionEnabled && (() => {
+                            const executionStatus = getToolExecutionStatus(toolCall)
+                            const statusColors = {
+                              executed: 'bg-green-100 text-green-800',
+                              failed: 'bg-red-100 text-red-800',
+                              attempted: 'bg-yellow-100 text-yellow-800',
+                              detected: 'bg-blue-100 text-blue-800'
+                            }
+
+                            return (
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${statusColors[executionStatus.status]}`}>
+                                {executionStatus.status}
+                              </span>
+                            )
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -392,22 +566,85 @@ const ToolUsageDisplay = ({ toolUsage }) => {
                 {/* Expanded parameter details - only show when expanded */}
                 {isExpanded && (
                   <div className="border-t border-orange-200 bg-white">
-                    <div className="p-4">
-                      <h5 className="text-xs font-medium text-gray-700 mb-3">Parameters:</h5>
-                      <div className="bg-gray-50 border border-gray-200 rounded overflow-hidden">
-                        <SyntaxHighlighter
-                          language="json"
-                          style={oneLight}
-                          customStyle={{
-                            margin: 0,
-                            fontSize: '12px',
-                            lineHeight: '1.4',
-                            background: 'transparent'
-                          }}
-                        >
-                          {formatToolInput(toolCall.input)}
-                        </SyntaxHighlighter>
+                    <div className="p-4 space-y-4">
+                      <div>
+                        <h5 className="text-xs font-medium text-gray-700 mb-3">Parameters:</h5>
+                        <div className="bg-gray-50 border border-gray-200 rounded overflow-hidden">
+                          <SyntaxHighlighter
+                            language="json"
+                            style={oneLight}
+                            customStyle={{
+                              margin: 0,
+                              fontSize: '12px',
+                              lineHeight: '1.4',
+                              background: 'transparent'
+                            }}
+                          >
+                            {formatToolInput(toolCall.input)}
+                          </SyntaxHighlighter>
+                        </div>
                       </div>
+
+                      {/* Execution Results - only show if tool execution is enabled */}
+                      {toolExecutionEnabled && (() => {
+                        const executionStatus = getToolExecutionStatus(toolCall)
+
+                        if (executionStatus.status === 'executed' || executionStatus.status === 'failed') {
+                          return (
+                            <div>
+                              <h5 className="text-xs font-medium text-gray-700 mb-3">Execution Result:</h5>
+                              <div className={`border rounded p-3 ${
+                                executionStatus.status === 'executed'
+                                  ? 'bg-green-50 border-green-200'
+                                  : 'bg-red-50 border-red-200'
+                              }`}>
+                                <div className="flex items-center space-x-2 mb-2">
+                                  {executionStatus.status === 'executed' ? (
+                                    <svg className="h-4 w-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="h-4 w-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                  )}
+                                  <span className={`text-xs font-medium ${
+                                    executionStatus.status === 'executed' ? 'text-green-800' : 'text-red-800'
+                                  }`}>
+                                    {executionStatus.status === 'executed' ? 'Success' : 'Failed'}
+                                  </span>
+                                </div>
+
+                                {executionStatus.result && (
+                                  <div className="bg-white border border-gray-200 rounded overflow-hidden">
+                                    <SyntaxHighlighter
+                                      language="json"
+                                      style={oneLight}
+                                      customStyle={{
+                                        margin: 0,
+                                        fontSize: '12px',
+                                        lineHeight: '1.4',
+                                        background: 'transparent'
+                                      }}
+                                    >
+                                      {formatToolInput(executionStatus.result)}
+                                    </SyntaxHighlighter>
+                                  </div>
+                                )}
+
+                                {executionStatus.error && (
+                                  <div className="mt-2">
+                                    <p className="text-xs font-medium text-red-800">Error:</p>
+                                    <p className="text-xs text-red-700 mt-1">{executionStatus.error}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        }
+
+                        return null
+                      })()}
                     </div>
                   </div>
                 )}
@@ -452,7 +689,20 @@ ToolUsageDisplay.propTypes = {
     })),
     toolCallCount: PropTypes.number,
     availableTools: PropTypes.arrayOf(PropTypes.string)
-  })
+  }),
+  toolExecutionEnabled: PropTypes.bool,
+  executionResults: PropTypes.object,
+  workflowData: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.string,
+    executionId: PropTypes.string,
+    type: PropTypes.oneOf(['llm_request', 'llm_response', 'tool_call', 'tool_result', 'error']),
+    timestamp: PropTypes.string,
+    duration: PropTypes.number,
+    iteration: PropTypes.number,
+    content: PropTypes.object,
+    metadata: PropTypes.object,
+    status: PropTypes.oneOf(['pending', 'in_progress', 'completed', 'error'])
+  }))
 }
 
 export default ToolUsageDisplay
