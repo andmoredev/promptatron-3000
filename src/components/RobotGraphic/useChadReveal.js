@@ -6,7 +6,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   saveChadRevealState,
   loadChadRevealState,
-  clearChadRevealState,
   getChadRevealStateWithFallback,
   resetChadRevealState
 } from '../../utils/chadStorage.js';
@@ -44,33 +43,16 @@ export function useChadReveal(options = {}) {
    * Load Chad reveal state from storage on initialization
    */
   const loadRevealState = useCallback(() => {
-    console.log('loadRevealState called, enablePersistence:', enablePersistence);
     if (!enablePersistence) {
-      console.log('Persistence disabled, skipping load');
       return;
     }
 
     try {
-      console.log('Loading Chad reveal state from storage...');
       const state = getChadRevealStateWithFallback();
-      console.log('Loaded state:', state);
-
-      console.log('Setting state:', {
-        isRevealed: state.isRevealed,
-        storageAvailable: state.storageAvailable,
-        fallbackMode: state.fallbackMode
-      });
       setIsRevealed(state.isRevealed);
       setStorageAvailable(state.storageAvailable);
       setFallbackMode(state.fallbackMode);
       setError(null);
-
-      console.log('Chad reveal state loaded successfully:', {
-        isRevealed: state.isRevealed,
-        storageAvailable: state.storageAvailable,
-        fallbackMode: state.fallbackMode,
-        revealedAt: state.revealedAt
-      });
     } catch (err) {
       console.warn('Failed to load Chad reveal state:', err);
       setError('Failed to load reveal state');
@@ -91,7 +73,6 @@ export function useChadReveal(options = {}) {
 
       if (!success && mountedRef.current) {
         setFallbackMode(true);
-        console.warn('Chad reveal state could not be persisted - using session-only mode');
       }
 
       return success;
@@ -109,31 +90,22 @@ export function useChadReveal(options = {}) {
    * Trigger Chad reveal with smooth animation
    */
   const revealChad = useCallback(async () => {
-    console.log('revealChad called!', { isRevealing, isRevealed, mountedRef: mountedRef.current });
-
     // Prevent multiple simultaneous reveals
     if (isRevealing || isRevealed) {
-      console.log('Chad reveal blocked:', { isRevealing, isRevealed });
       return false;
     }
 
-    console.log('Starting Chad reveal process...');
     setError(null);
     setIsRevealing(true);
 
     try {
-      // Immediate reveal for testing - skip timeouts for now
-      console.log('Completing Chad reveal immediately...');
-
       // Complete the reveal
       setIsRevealed(true);
       setIsRevealing(false);
 
       // Persist the reveal state
-      const saveResult = saveRevealState(true);
-      console.log('Save reveal state result:', saveResult);
+      saveRevealState(true);
 
-      console.log('Chad revealed successfully!');
       return true;
     } catch (err) {
       console.error('Failed to reveal Chad:', err);
@@ -172,9 +144,7 @@ export function useChadReveal(options = {}) {
       // Clear storage
       const success = resetChadRevealState();
 
-      if (import.meta.env.DEV) {
-        console.log('Chad reveal state reset (development only)');
-      }
+
 
       return success;
     } catch (err) {
@@ -211,9 +181,7 @@ export function useChadReveal(options = {}) {
       // Persist the state
       saveRevealState(revealed);
 
-      if (import.meta.env.DEV) {
-        console.log(`Chad reveal state forced to: ${revealed}`);
-      }
+
 
       return true;
     } catch (err) {
@@ -248,18 +216,14 @@ export function useChadReveal(options = {}) {
    * Check if reveal button should be visible
    */
   const shouldShowRevealButton = useCallback(() => {
-    const shouldShow = !isRevealed && !isRevealing;
-    console.log('shouldShowRevealButton:', { shouldShow, isRevealed, isRevealing });
-    return shouldShow;
+    return !isRevealed && !isRevealing;
   }, [isRevealed, isRevealing]);
 
   // Set mounted state and cleanup timeouts on unmount
   useEffect(() => {
     mountedRef.current = true;
-    console.log('Chad reveal hook mounted, setting mountedRef to true');
 
     return () => {
-      console.log('Chad reveal hook unmounting, setting mountedRef to false');
       mountedRef.current = false;
 
       if (revealTimeoutRef.current) {
@@ -273,22 +237,8 @@ export function useChadReveal(options = {}) {
 
   // Load reveal state on mount (after mountedRef is set)
   useEffect(() => {
-    console.log('useChadReveal load effect triggered, calling loadRevealState');
     loadRevealState();
   }, [loadRevealState]);
-
-  // Development debugging
-  useEffect(() => {
-    if (import.meta.env.DEV && import.meta.env.VITE_CHAD_DEBUG === 'true') {
-      console.log('Chad reveal state updated:', {
-        isRevealed,
-        isRevealing,
-        storageAvailable,
-        fallbackMode,
-        error
-      });
-    }
-  }, [isRevealed, isRevealing, storageAvailable, fallbackMode, error]);
 
   return {
     // Core state

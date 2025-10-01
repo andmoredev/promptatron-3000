@@ -34,22 +34,16 @@ const ChadRevealButton = ({
    * Handle button click with animation and callback
    */
   const handleClick = useCallback(async () => {
-    console.log('Chad reveal button clicked!', { disabled, isRevealing, isRevealed, isClicked });
-
     if (disabled || isRevealing || isRevealed || isClicked) {
-      console.log('Chad reveal button click blocked:', { disabled, isRevealing, isRevealed, isClicked });
       return;
     }
 
-    console.log('Setting clicked state and calling reveal function...');
     setIsClicked(true);
 
     try {
       // Call the reveal callback
       if (typeof onReveal === 'function') {
-        console.log('Calling onReveal function...');
-        const result = await onReveal();
-        console.log('onReveal result:', result);
+        await onReveal();
       } else {
         console.error('onReveal is not a function:', typeof onReveal, onReveal);
       }

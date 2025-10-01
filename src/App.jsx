@@ -134,28 +134,7 @@ function App() {
     shouldShowRevealButton
   } = chadRevealState;
 
-  // Debug Chad state
-  console.log('Chad reveal state in App:', {
-    isRevealed: isChadRevealed,
-    isRevealing: isChadRevealing,
-    shouldShowButton: shouldShowRevealButton(),
-    hookState: chadRevealState
-  });
 
-  // Debug storage on mount
-  useEffect(() => {
-    console.log('App mounted, checking localStorage for Chad state...');
-    const stored = localStorage.getItem('promptatron_chad_reveal');
-    console.log('Raw localStorage value:', stored);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        console.log('Parsed Chad state from localStorage:', parsed);
-      } catch (e) {
-        console.error('Failed to parse Chad state from localStorage:', e);
-      }
-    }
-  }, []);
 
   // Determinism evaluation state (initialized from saved state)
   const [determinismEnabled, setDeterminismEnabled] = useState(

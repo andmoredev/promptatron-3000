@@ -23,7 +23,6 @@ const DEFAULT_STATE = {
  * @returns {boolean} - Success status of save operation
  */
 export const saveChadRevealState = (isRevealed) => {
-  console.log('saveChadRevealState called with:', isRevealed);
   try {
     const state = {
       isRevealed: Boolean(isRevealed),
@@ -31,9 +30,7 @@ export const saveChadRevealState = (isRevealed) => {
       version: CURRENT_VERSION
     }
 
-    console.log('Saving Chad state to localStorage:', state);
     localStorage.setItem(CHAD_STORAGE_KEY, JSON.stringify(state))
-    console.log('Chad state saved successfully');
     return true
   } catch (error) {
     console.warn('Failed to save Chad reveal state:', error)
@@ -46,18 +43,14 @@ export const saveChadRevealState = (isRevealed) => {
  * @returns {Object} - Chad reveal state object
  */
 export const loadChadRevealState = () => {
-  console.log('loadChadRevealState called');
   try {
     const saved = localStorage.getItem(CHAD_STORAGE_KEY)
-    console.log('Raw localStorage value:', saved);
 
     if (!saved) {
-      console.log('No saved state found, returning default');
       return { ...DEFAULT_STATE }
     }
 
     const parsed = JSON.parse(saved)
-    console.log('Parsed saved state:', parsed);
 
     // Validate the loaded state structure
     if (typeof parsed !== 'object' || parsed === null) {
@@ -67,7 +60,6 @@ export const loadChadRevealState = () => {
 
     // Handle version migrations if needed
     const migratedState = migrateStateVersion(parsed)
-    console.log('Migrated state:', migratedState);
 
     // Ensure all required fields exist with proper types
     const finalState = {
@@ -76,7 +68,6 @@ export const loadChadRevealState = () => {
       version: migratedState.version || CURRENT_VERSION
     };
 
-    console.log('Final loaded state:', finalState);
     return finalState;
   } catch (error) {
     console.warn('Failed to load Chad reveal state:', error)
@@ -118,12 +109,9 @@ export const isStorageAvailable = () => {
  * @returns {Object} - Chad reveal state with storage availability info
  */
 export const getChadRevealStateWithFallback = () => {
-  console.log('getChadRevealStateWithFallback called');
   const storageAvailable = isStorageAvailable()
-  console.log('Storage available:', storageAvailable);
 
   if (!storageAvailable) {
-    console.log('Storage not available, returning fallback state');
     return {
       ...DEFAULT_STATE,
       storageAvailable: false,
@@ -132,7 +120,6 @@ export const getChadRevealStateWithFallback = () => {
   }
 
   const loadedState = loadChadRevealState();
-  console.log('Loaded state from storage:', loadedState);
 
   const finalState = {
     ...loadedState,
@@ -140,7 +127,6 @@ export const getChadRevealStateWithFallback = () => {
     fallbackMode: false
   };
 
-  console.log('Final state with fallback info:', finalState);
   return finalState;
 }
 
@@ -176,7 +162,6 @@ const migrateStateVersion = (state) => {
  */
 export const resetChadRevealState = () => {
   if (import.meta.env.DEV) {
-    console.log('Resetting Chad reveal state (development only)')
     return clearChadRevealState()
   }
 
