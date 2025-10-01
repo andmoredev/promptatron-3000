@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import PropTypes from 'prop-types'
 import HelpTooltip from './HelpTooltip'
 import { uiErrorRecovery } from '../utils/uiErrorRecovery'
+import { datasetToolIntegrationService } from '../services/datasetToolIntegrationService'
 
 const PromptEditor = ({
   systemPrompt = '',
@@ -10,6 +11,7 @@ const PromptEditor = ({
   onUserPromptChange,
   systemPromptError,
   userPromptError,
+  selectedDataset,
   // Legacy props for backward compatibility
   prompt,
   onPromptChange,
@@ -17,6 +19,7 @@ const PromptEditor = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const [activeTab, setActiveTab] = useState('system')
+  const [datasetSystemPrompts, setDatasetSystemPrompts] = useState([])
   const systemPromptRef = useRef(null)
   const userPromptRef = useRef(null)
 
@@ -50,6 +53,15 @@ const PromptEditor = ({
       uiErrorRecovery.monitorTextOverflow('.test-results-prompt', 'user-prompt')
     }, 100)
   }, [systemPrompt, userPrompt, prompt])
+
+  // Load dataset-specific system prompts when dataset changes
+  useEffect(() => {
+    if (selectedDataset?.type) {
+      loadDatasetSystemPrompts(selectedDataset.type)
+    } else {
+      setDatasetSystemPrompts([])
+    }
+  }, [selectedDataset?.type])
 
   // Handle system prompt change with auto-resize
   const handleSystemPromptChange = (e) => {
@@ -127,6 +139,14 @@ const PromptEditor = ({
     }
   ]
 
+  // Enhanced system prompt templates combining hardcoded and dataset-specific
+  const allSystemPromptTemplates = useMemo(() => {
+    return [
+      ...systemPromptTemplates, // Existing hardcoded templates
+      ...datasetSystemPrompts   // Dataset-specific templates
+    ]
+  }, [datasetSystemPrompts])
+
   const handleSystemTemplateSelect = (template) => {
     if (onSystemPromptChange && typeof onSystemPromptChange === 'function') {
       onSystemPromptChange(template)
@@ -168,6 +188,29 @@ const PromptEditor = ({
   const handleClearLegacy = () => {
     if (onPromptChange && typeof onPromptChange === 'function') {
       onPromptChange('')
+    }
+  }
+
+  // Load dataset-specific system prompts
+  const loadDatasetSystemPrompts = async (datasetType) => {
+    try {
+      const manifest = await datasetToolIntegrationService.loadDatasetManifest(datasetType)
+
+      if (manifest.systemPrompts && Array.isArray(manifest.systemPrompts)) {
+        const processedPrompts = manifest.systemPrompts.map(prompt => ({
+          name: prompt.name,
+          template: prompt.prompt.replace(/\\n/g, '\n'), // Convert escaped newlines
+          source: 'dataset',
+          datasetType: datasetType
+        }))
+
+        setDatasetSystemPrompts(processedPrompts)
+      } else {
+        setDatasetSystemPrompts([])
+      }
+    } catch (error) {
+      console.error(`Failed to load system prompts for ${datasetType}:`, error)
+      setDatasetSystemPrompts([])
     }
   }
 
@@ -330,12 +373,20 @@ const PromptEditor = ({
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              {systemPromptTemplates.map((template) => (
+              {allSystemPromptTemplates.map((template) => (
                 <button
-                  key={template.name}
+                  key={`${template.source || 'hardcoded'}-${template.name}`}
                   onClick={() => handleSystemTemplateSelect(template.template)}
-                  className="px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-md transition-colors duration-200"
+                  className={`px-3 py-1 text-sm rounded-md transition-colors duration-200 ${
+                    template.source === 'dataset'
+                      ? 'bg-green-100 hover:bg-green-200 text-green-700 border border-green-300'
+                      : 'bg-blue-100 hover:bg-blue-200 text-blue-700'
+                  }`}
+                  title={template.source === 'dataset' ? `Dataset-specific prompt from ${template.datasetType}` : 'Built-in prompt template'}
                 >
+                  {template.source === 'dataset' && (
+                    <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1" aria-hidden="true"></span>
+                  )}
                   {template.name}
                 </button>
               ))}
@@ -533,6 +584,7 @@ PromptEditor.propTypes = {
   onUserPromptChange: PropTypes.func,
   systemPromptError: PropTypes.string,
   userPromptError: PropTypes.string,
+  selectedDataset: PropTypes.object,
 
   // Legacy single prompt mode props (for backward compatibility)
   prompt: PropTypes.string,

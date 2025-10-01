@@ -1,6 +1,7 @@
 import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { analyzeError, handleError, ErrorTypes } from '../utils/errorHandling.js';
 import { fraudToolsService } from './fraudToolsService.js';
+import { shippingToolsService } from './shippingToolsService.js';
 import { workflowTrackingService } from './workflowTrackingService.js';
 
 /**
@@ -440,7 +441,8 @@ export class ToolExecutionService {
           // Execute the tool
           const result = await this.executeTool(toolUse.name, toolUse.input, {
             executionId: executionState.executionId,
-            toolConfig: toolConfig
+            toolConfig: toolConfig,
+            datasetType: executionState.options.datasetType
           });
 
           toolResults.push({
@@ -526,13 +528,25 @@ export class ToolExecutionService {
    */
   async executeTool(toolName, parameters, context) {
     try {
-      // Initialize fraud tools service if not already done
-      if (!fraudToolsService.isInitialized && context.toolConfig) {
-        await fraudToolsService.initialize(context.toolConfig);
+      // Determine which tool service to use based on dataset type
+      const datasetType = context.datasetType || context.toolConfig?.datasetType;
+      let toolService;
+
+      if (datasetType === 'fraud-detection') {
+        toolService = fraudToolsService;
+      } else if (datasetType === 'shipping-logistics') {
+        toolService = shippingToolsService;
+      } else {
+        throw new Error(`No tool service available for dataset type: ${datasetType}`);
       }
 
-      // Execute the tool using fraud tools service
-      const result = await fraudToolsService.executeTool(toolName, parameters, context);
+      // Initialize the appropriate tool service if not already done
+      if (!toolService.isInitialized && context.toolConfig) {
+        await toolService.initialize(context.toolConfig);
+      }
+
+      // Execute the tool using the appropriate service
+      const result = await toolService.executeTool(toolName, parameters, context);
 
       return result;
 

@@ -36,6 +36,7 @@ import { statePersistenceService } from "./services/statePersistenceService";
 import { useSettings, useDeterminismSettings } from "./hooks/useSettings";
 import { validateForm } from "./utils/formValidation";
 import { handleError, retryWithBackoff } from "./utils/errorHandling";
+import { hasToolServiceForDatasetType } from "./utils/toolServiceMapping";
 import {
   loadFormState,
   saveFormState,
@@ -259,8 +260,11 @@ function App() {
 
   // Helper function to check if tools are available for the current dataset
   const areToolsAvailable = () => {
-    // Tools are available for fraud-detection datasets
-    return selectedDataset.type === "fraud-detection";
+    // Check if the selected dataset type has a tool service mapped
+    if (!selectedDataset.type) return false;
+
+    // Use the tool service mapping to determine availability dynamically
+    return hasToolServiceForDatasetType(selectedDataset.type);
   };
 
   // Helper function to provide recovery suggestions for tool execution errors
@@ -986,6 +990,7 @@ function App() {
                 {
                   maxIterations: maxIterations,
                   executionId: executionId,
+                  datasetType: selectedDataset.type,
                   onStreamUpdate: (update) => {
                     // Update streaming content with workflow progress
                     setStreamingContent(prevContent => {
@@ -1939,6 +1944,7 @@ function App() {
                         onUserPromptChange={handleUserPromptChange}
                         systemPromptError={validationErrors.systemPrompt}
                         userPromptError={validationErrors.userPrompt}
+                        selectedDataset={selectedDataset}
                       />
 
                       {/* Tool Execution Settings */}
