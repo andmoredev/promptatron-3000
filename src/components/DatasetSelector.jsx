@@ -262,7 +262,7 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
       <div className="flex items-center space-x-2 mb-4">
         <h3 className="text-lg font-semibold text-gray-900">Select Dataset</h3>
         <HelpTooltip
-          content="Choose a dataset type (use case) and specific dataset file. Datasets are organized by use case in the public/datasets/ folder. You can add your own CSV files to test with custom data."
+          content="Choose a scenario and specific dataset file. Scenarios are organized in the public/scenarios/ folder with their own datasets. You can add your own scenarios and CSV files to test with custom data."
           position="right"
         />
       </div>

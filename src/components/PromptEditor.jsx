@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import PropTypes from 'prop-types'
 import HelpTooltip from './HelpTooltip'
 import { uiErrorRecovery } from '../utils/uiErrorRecovery'
@@ -10,6 +10,9 @@ const PromptEditor = ({
   onUserPromptChange,
   systemPromptError,
   userPromptError,
+  // Scenario-provided prompts
+  scenarioSystemPrompts = [],
+  scenarioUserPrompts = [],
   // Legacy props for backward compatibility
   prompt,
   onPromptChange,
@@ -65,47 +68,41 @@ const PromptEditor = ({
     setTimeout(() => autoResize(e.target), 0)
   }
 
-  const systemPromptTemplates = [
-    {
-      name: 'Data Analyst',
-      template: 'You are an expert data analyst with deep knowledge of fraud detection patterns. Your role is to analyze data systematically and provide clear, actionable insights based on statistical evidence and domain expertise.'
-    },
-    {
-      name: 'Classification Expert',
-      template: 'You are a classification specialist trained to categorize data accurately. You should examine each data point carefully and assign appropriate categories based on established criteria, providing reasoning for your decisions.'
-    },
-    {
-      name: 'Security Analyst',
-      template: 'You are a cybersecurity expert specializing in fraud detection and risk assessment. Your role is to identify potential security threats and anomalies in data patterns with high accuracy and detailed explanations.'
-    },
-    {
-      name: 'Business Intelligence',
-      template: 'You are a business intelligence analyst focused on extracting meaningful insights from data to support decision-making. Provide clear, business-focused analysis with actionable recommendations.'
-    }
-  ]
+  // Use only scenario-provided system prompts
+  const systemPromptTemplates = useMemo(() => {
+    const templates = []
 
-  const userPromptTemplates = [
-    {
-      name: 'Analyze Data',
-      template: 'Please analyze the following data and provide insights about patterns, anomalies, and key findings:\n\n'
-    },
-    {
-      name: 'Classify Records',
-      template: 'Please classify the following data records into appropriate categories. Provide your reasoning for each classification:\n\n'
-    },
-    {
-      name: 'Detect Fraud',
-      template: 'Please examine the following data for potential fraud indicators. Identify suspicious patterns, explain your reasoning, and act on high risk possibilities.'
-    },
-    {
-      name: 'Summarize Findings',
-      template: 'Please provide a concise summary of the following data, highlighting the most important findings and trends:\n\n'
-    },
-    {
-      name: 'Answer Questions',
-      template: 'Based on the following data, please answer questions accurately and provide supporting evidence from the data:\n\n'
+    // Add scenario-provided system prompts (if any)
+    if (scenarioSystemPrompts && scenarioSystemPrompts.length > 0) {
+      scenarioSystemPrompts.forEach(prompt => {
+        templates.push({
+          name: prompt.name,
+          template: prompt.content,
+          isScenario: true
+        })
+      })
     }
-  ]
+
+    return templates
+  }, [scenarioSystemPrompts])
+
+  // Use only scenario-provided user prompts
+  const userPromptTemplates = useMemo(() => {
+    const templates = []
+
+    // Add scenario-provided user prompts (if any)
+    if (scenarioUserPrompts && scenarioUserPrompts.length > 0) {
+      scenarioUserPrompts.forEach(prompt => {
+        templates.push({
+          name: prompt.name,
+          template: prompt.content,
+          isScenario: true
+        })
+      })
+    }
+
+    return templates
+  }, [scenarioUserPrompts])
 
   // Legacy templates for backward compatibility
   const legacyPromptTemplates = [
@@ -319,28 +316,30 @@ const PromptEditor = ({
       {activeTab === 'system' && (
         <div className="space-y-4">
           {/* System Prompt Templates */}
-          <div>
-            <div className="flex items-center space-x-2 mb-2">
-              <span className="block text-sm font-medium text-gray-700">
-                System Prompt Templates
-              </span>
-              <HelpTooltip
-                content="System prompts define the AI's role, expertise, and behavior. Choose a template that matches the type of analysis you want to perform."
-                position="right"
-              />
+          {systemPromptTemplates.length > 0 && (
+            <div>
+              <div className="flex items-center space-x-2 mb-2">
+                <span className="block text-sm font-medium text-gray-700">
+                  System Prompt Templates
+                </span>
+                <HelpTooltip
+                  content="System prompts define the AI's role, expertise, and behavior. These templates are provided by the selected scenario."
+                  position="right"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {systemPromptTemplates.map((template) => (
+                  <button
+                    key={template.name}
+                    onClick={() => handleSystemTemplateSelect(template.template)}
+                    className="px-3 py-1 text-sm rounded-md transition-colors duration-200 bg-primary-100 hover:bg-primary-200 text-primary-700 border border-primary-300"
+                  >
+                    {template.name}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {systemPromptTemplates.map((template) => (
-                <button
-                  key={template.name}
-                  onClick={() => handleSystemTemplateSelect(template.template)}
-                  className="px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-md transition-colors duration-200"
-                >
-                  {template.name}
-                </button>
-              ))}
-            </div>
-          </div>
+          )}
 
           {/* System Prompt Input */}
           <div className="space-y-2">
@@ -389,28 +388,30 @@ const PromptEditor = ({
       {activeTab === 'user' && (
         <div className="space-y-4">
           {/* User Prompt Templates */}
-          <div>
-            <div className="flex items-center space-x-2 mb-2">
-              <span className="block text-sm font-medium text-gray-700">
-                User Prompt Templates
-              </span>
-              <HelpTooltip
-                content="User prompts contain your specific request or question. Choose a template that matches the type of task you want to perform on your data."
-                position="right"
-              />
+          {userPromptTemplates.length > 0 && (
+            <div>
+              <div className="flex items-center space-x-2 mb-2">
+                <span className="block text-sm font-medium text-gray-700">
+                  User Prompt Templates
+                </span>
+                <HelpTooltip
+                  content="User prompts contain your specific request or question. These templates are provided by the selected scenario."
+                  position="right"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {userPromptTemplates.map((template) => (
+                  <button
+                    key={template.name}
+                    onClick={() => handleUserTemplateSelect(template.template)}
+                    className="px-3 py-1 text-sm rounded-md transition-colors duration-200 bg-primary-100 hover:bg-primary-200 text-primary-700 border border-primary-300"
+                  >
+                    {template.name}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {userPromptTemplates.map((template) => (
-                <button
-                  key={template.name}
-                  onClick={() => handleUserTemplateSelect(template.template)}
-                  className="px-3 py-1 text-sm bg-green-100 hover:bg-green-200 text-green-700 rounded-md transition-colors duration-200"
-                >
-                  {template.name}
-                </button>
-              ))}
-            </div>
-          </div>
+          )}
 
           {/* User Prompt Input */}
           <div className="space-y-2">
@@ -533,6 +534,18 @@ PromptEditor.propTypes = {
   onUserPromptChange: PropTypes.func,
   systemPromptError: PropTypes.string,
   userPromptError: PropTypes.string,
+
+  // Scenario-provided prompts
+  scenarioSystemPrompts: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired,
+    content: PropTypes.string.isRequired
+  })),
+  scenarioUserPrompts: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired,
+    content: PropTypes.string.isRequired
+  })),
 
   // Legacy single prompt mode props (for backward compatibility)
   prompt: PropTypes.string,

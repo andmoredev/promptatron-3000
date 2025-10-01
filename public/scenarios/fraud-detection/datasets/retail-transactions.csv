@@ -1,0 +1,9 @@
+transaction_id,account_id,amount,merchant,location,timestamp,category
+T0001,A1234,25.99,Coffee Shop,New York,2024-01-15 08:30:00,Food
+T0002,A1234,1250.00,Electronics Store,Los Angeles,2024-01-15 14:22:00,Electronics
+T0003,A5678,45.67,Gas Station,New York,2024-01-15 09:15:00,Gas
+T0004,A1234,3500.00,Jewelry Store,Miami,2024-01-15 16:45:00,Jewelry
+T0005,A9012,12.50,Fast Food,Chicago,2024-01-15 12:30:00,Food
+T0006,A1234,850.00,ATM Withdrawal,Tokyo,2024-01-15 23:15:00,Cash
+T0007,A3456,199.99,Online Store,New York,2024-01-15 20:10:00,Shopping
+T0008,A1234,75.00,Restaurant,New York,2024-01-16 19:30:00,Food

@@ -1,6 +1,0 @@
-{
-  "types": [
-    "fraud-detection"
-  ],
-  "description": "Available dataset types for the Bedrock LLM Analyzer"
-}

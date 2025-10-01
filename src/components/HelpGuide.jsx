@@ -59,7 +59,7 @@ function HelpGuide() {
             <div>
               <h4 className="font-medium text-gray-800">Adding Custom Datasets</h4>
               <ol className="list-decimal list-inside text-sm text-gray-600 mt-2 space-y-1">
-                <li>Create a folder in <code className="bg-gray-100 px-1 rounded">public/datasets/</code></li>
+                <li>Create a folder in <code className="bg-gray-100 px-1 rounded">public/scenarios/</code></li>
                 <li>Add CSV files with your data</li>
                 <li>Refresh the application to see new datasets</li>
               </ol>

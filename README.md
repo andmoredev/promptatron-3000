@@ -83,7 +83,7 @@ promptatron-3000/
 │   ├── main.jsx            # React entry point
 │   └── index.css           # Global styles & Tailwind
 ├── public/
-│   └── datasets/           # Dataset files organized by use case
+│   └── scenarios/          # Scenario files with datasets organized by use case
 │       ├── manifest.json           # Global dataset registry
 │       └── fraud-detection/        # Example use case
 │           ├── manifest.json       # Use case configuration
@@ -99,13 +99,13 @@ promptatron-3000/
 
 ## 📊 Dataset & Tool Integration
 
-Datasets are organized in the `public/datasets/` directory by use case, with optional tool configurations that enable AI models to take actions during analysis.
+Datasets are organized in the `public/scenarios/` directory by use case, with optional tool configurations that enable AI models to take actions during analysis.
 
 ### Directory Structure
 ```
-public/datasets/
-├── manifest.json           # Global dataset registry
-├── [use-case-name]/        # Use case folder (e.g., "fraud-detection")
+public/scenarios/
+├── manifest.json           # Global scenario registry
+├── [scenario-name]/        # Scenario folder (e.g., "fraud-detection")
 │   ├── manifest.json       # Use case configuration & tool settings
 │   ├── tools.json          # Tool definitions (optional)
 │   ├── dataset1.csv        # Dataset files (CSV/JSON format)
@@ -166,16 +166,17 @@ The application supports AI models using tools during analysis. For example, in 
 
 ### Adding Your Own Datasets
 
-1. **Create a use case folder** in `public/datasets/`:
+1. **Create a scenario folder** in `public/scenarios/`:
    ```bash
-   mkdir public/datasets/my-use-case
+   mkdir public/scenarios/my-scenario
    ```
 
 2. **Add dataset files**:
    ```bash
    # Example: Customer support tickets
-   mkdir public/datasets/customer-support
-   cp my-tickets.csv public/datasets/customer-support/
+   mkdir public/scenarios/customer-support
+   mkdir public/scenarios/customer-support/datasets
+   cp my-tickets.csv public/scenarios/customer-support/datasets/
    ```
 
 3. **Create manifest.json** for the use case:
@@ -221,7 +222,7 @@ The application supports AI models using tools during analysis. For example, in 
    }
    ```
 
-5. **Update global manifest** (`public/datasets/manifest.json`):
+5. **Update global manifest** (`public/scenarios/manifest.json`):
    ```json
    {
      "types": ["fraud-detection", "customer-support"]
@@ -444,8 +445,8 @@ window.debugToolConfig('fraud-detection')
 # Manually reload tool configuration
 window.reloadToolConfig('fraud-detection')
 
-# Verify dataset manifest structure
-cat public/datasets/fraud-detection/manifest.json
+# Verify scenario structure
+cat public/scenarios/fraud-detection/scenario.json
 ```
 
 ## 🔧 Troubleshooting
@@ -487,9 +488,9 @@ npm run dev -- --port 3001
 ### Dataset & Tool Issues
 
 **Dataset Loading Problems:**
-- Ensure datasets are in `public/datasets/` directory structure
+- Ensure datasets are in `public/scenarios/` directory structure
 - Check CSV/JSON file format and UTF-8 encoding
-- Verify manifest.json files exist and are valid
+- Verify scenario.json files exist and are valid
 - Check browser console for specific error messages
 - Ensure file permissions allow reading
 

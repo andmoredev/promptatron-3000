@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "scenarios": [
+    "fraud-detection/scenario.json"
+  ],
+  "metadata": {
+    "manifestVersion": "1.0.0",
+    "lastUpdated": "2024-01-15T10:30:00Z",
+    "totalScenarios": 1,
+    "description": "Scenarios are organized in folders with scenario.json as the main config file"
+  }
+}
