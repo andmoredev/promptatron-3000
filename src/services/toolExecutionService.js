@@ -59,12 +59,13 @@ export class ToolExecutionService {
    * @param {string} userPrompt - User prompt for the model
    * @param {string} content - Additional content/context
    * @param {Object} toolConfig - Tool configuration with available tools
-   * @param {Object} options - Execution options (maxIterations, etc.)
+   * @param {Object} options - Execution options (maxIterations, onStreamUpdate, etc.)
    * @returns {Promise<Object>} Complete execution result
    */
   async executeWorkflow(modelId, systemPrompt, userPrompt, content = '', toolConfig, options = {}) {
     const executionId = this.generateExecutionId();
     const maxIterations = options.maxIterations || 10;
+    const onStreamUpdate = options.onStreamUpdate || (() => {});
     const startTime = Date.now();
 
     // Initialize execution state
@@ -141,6 +142,23 @@ export class ToolExecutionService {
           }
         });
 
+        // Stream update: Starting iteration
+        onStreamUpdate({
+          type: 'iteration_start',
+          content: `🔄 Starting iteration ${currentIteration}/${maxIterations}...`,
+          iteration: currentIteration,
+          maxIterations: maxIterations,
+          timestamp: new Date().toISOString()
+        });
+
+        // Stream update: Sending request to model
+        onStreamUpdate({
+          type: 'model_request',
+          content: `🤖 Sending request to ${modelId}...`,
+          iteration: currentIteration,
+          timestamp: new Date().toISOString()
+        });
+
         // Send request to Bedrock
         const modelResponse = await this.sendConverseRequest(
           modelId,
@@ -174,6 +192,15 @@ export class ToolExecutionService {
           executionState.results.finalResponse = finalText;
           continueConversation = false;
 
+          // Stream update: Model completed
+          onStreamUpdate({
+            type: 'completion',
+            content: `✅ Model completed response\n\n${finalText}`,
+            iteration: currentIteration,
+            timestamp: new Date().toISOString(),
+            finalResponse: finalText
+          });
+
           this.addWorkflowStep(executionState, {
             type: 'completion',
             iteration: currentIteration,
@@ -185,11 +212,22 @@ export class ToolExecutionService {
           });
 
         } else if (modelResponse.stopReason === 'tool_use') {
+          // Stream update: Model wants to use tools
+          const toolRequests = this.extractToolRequestsFromContent(modelResponse.output.message.content);
+          onStreamUpdate({
+            type: 'tool_requests',
+            content: `🔧 Model requested ${toolRequests.length} tool(s): ${toolRequests.map(t => t.name).join(', ')}`,
+            iteration: currentIteration,
+            timestamp: new Date().toISOString(),
+            toolRequests: toolRequests
+          });
+
           // Model wants to use tools - execute them
           const toolResults = await this.executeToolsFromResponse(
             modelResponse.output.message.content,
             toolConfig,
-            executionState
+            executionState,
+            onStreamUpdate
           );
 
           // Add tool result messages to conversation
@@ -363,9 +401,10 @@ export class ToolExecutionService {
    * @param {Array} messageContent - Message content from Bedrock response
    * @param {Object} toolConfig - Tool configuration
    * @param {Object} executionState - Current execution state
+   * @param {Function} onStreamUpdate - Callback for streaming updates
    * @returns {Promise<Array>} Tool execution results
    */
-  async executeToolsFromResponse(messageContent, toolConfig, executionState) {
+  async executeToolsFromResponse(messageContent, toolConfig, executionState, onStreamUpdate = () => {}) {
     const toolResults = [];
 
     if (!Array.isArray(messageContent)) {
@@ -388,6 +427,16 @@ export class ToolExecutionService {
         });
 
         try {
+          // Stream update: Executing tool
+          onStreamUpdate({
+            type: 'tool_execution',
+            content: `⚙️ Executing ${toolUse.name}...`,
+            iteration: executionState.currentIteration,
+            timestamp: new Date().toISOString(),
+            toolName: toolUse.name,
+            toolUseId: toolUse.toolUseId
+          });
+
           // Execute the tool
           const result = await this.executeTool(toolUse.name, toolUse.input, {
             executionId: executionState.executionId,
@@ -401,6 +450,18 @@ export class ToolExecutionService {
             result: result,
             success: true,
             timestamp: new Date().toISOString()
+          });
+
+          // Stream update: Tool completed successfully
+          onStreamUpdate({
+            type: 'tool_result',
+            content: `✅ ${toolUse.name} completed successfully`,
+            iteration: executionState.currentIteration,
+            timestamp: new Date().toISOString(),
+            toolName: toolUse.name,
+            toolUseId: toolUse.toolUseId,
+            success: true,
+            result: result
           });
 
           this.addWorkflowStep(executionState, {
@@ -424,6 +485,18 @@ export class ToolExecutionService {
             success: false,
             error: error.message,
             timestamp: new Date().toISOString()
+          });
+
+          // Stream update: Tool failed
+          onStreamUpdate({
+            type: 'tool_error',
+            content: `❌ ${toolUse.name} failed: ${error.message}`,
+            iteration: executionState.currentIteration,
+            timestamp: new Date().toISOString(),
+            toolName: toolUse.name,
+            toolUseId: toolUse.toolUseId,
+            success: false,
+            error: error.message
           });
 
           this.addWorkflowStep(executionState, {
@@ -587,6 +660,25 @@ export class ToolExecutionService {
       .filter(block => block.text)
       .map(block => block.text)
       .join('');
+  }
+
+  /**
+   * Extract tool requests from Bedrock message content
+   * @param {Array} content - Message content array
+   * @returns {Array} Tool request summaries
+   */
+  extractToolRequestsFromContent(content) {
+    if (!Array.isArray(content)) {
+      return [];
+    }
+
+    return content
+      .filter(block => block.toolUse)
+      .map(block => ({
+        name: block.toolUse.name,
+        toolUseId: block.toolUse.toolUseId,
+        parameterCount: Object.keys(block.toolUse.input || {}).length
+      }));
   }
 
   /**

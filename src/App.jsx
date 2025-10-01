@@ -956,8 +956,13 @@ function App() {
             const executionId = `exec_${testId}`;
             initializeToolExecution(executionId);
 
+            // Initialize streaming for tool execution
+            setIsStreaming(true);
+            setStreamingContent("🚀 Starting tool execution workflow...\n");
+            setStreamingError(null);
+
             try {
-              // Execute tool workflow
+              // Execute tool workflow with streaming updates
               const workflowResult = await toolExecutionService.executeWorkflow(
                 selectedModel,
                 systemPrompt,
@@ -967,6 +972,45 @@ function App() {
                 {
                   maxIterations: maxIterations,
                   executionId: executionId,
+                  onStreamUpdate: (update) => {
+                    // Update streaming content with workflow progress
+                    setStreamingContent(prevContent => {
+                      const timestamp = new Date(update.timestamp).toLocaleTimeString();
+                      let newLine = `[${timestamp}] ${update.content}`;
+
+                      // Add additional context for certain update types
+                      if (update.type === 'iteration_start') {
+                        newLine += ` (${update.iteration}/${update.maxIterations})`;
+                      } else if (update.type === 'tool_requests') {
+                        newLine += ` - ${update.toolRequests?.length || 0} tool(s)`;
+                      } else if (update.type === 'tool_result' && update.success) {
+                        newLine += ` ✓`;
+                      } else if (update.type === 'tool_error') {
+                        newLine += ` ✗`;
+                      }
+
+                      return prevContent + newLine + '\n';
+                    });
+
+                    // Update progress status based on update type
+                    if (update.type === 'iteration_start') {
+                      setProgressStatus(`Tool execution: iteration ${update.iteration}/${update.maxIterations}`);
+                      const progressPercent = Math.min(90, 60 + (update.iteration / update.maxIterations) * 30);
+                      setProgressValue(progressPercent);
+                    } else if (update.type === 'tool_execution') {
+                      setProgressStatus(`Executing ${update.toolName}...`);
+                    } else if (update.type === 'completion') {
+                      setProgressStatus("Tool execution completed");
+                      setProgressValue(100);
+
+                      // Add final response to streaming content if available
+                      if (update.finalResponse) {
+                        setStreamingContent(prevContent =>
+                          prevContent + '\n📋 Final Response:\n' + update.finalResponse
+                        );
+                      }
+                    }
+                  }
                 }
               );
 
@@ -1015,8 +1059,15 @@ function App() {
               };
 
               completeToolExecution("completed");
+
+              // Complete streaming
+              setIsStreaming(false);
             } catch (toolError) {
               completeToolExecution("error");
+
+              // Complete streaming with error
+              setIsStreaming(false);
+              setStreamingError(`Tool execution failed: ${toolError.message}`);
 
               // Enhanced error handling for different tool execution failure types
               let errorMessage = "Tool execution failed";
@@ -1636,6 +1687,13 @@ function App() {
     setIsToolExecuting(false);
     setToolExecutionId(null);
     setToolExecutionStatus("idle");
+
+    // Reset streaming state if it was active during tool execution
+    if (isStreaming) {
+      setIsStreaming(false);
+      setStreamingContent("");
+      setStreamingError(null);
+    }
   };
 
   const handleClearSavedSettings = async () => {
