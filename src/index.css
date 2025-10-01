@@ -195,6 +195,18 @@
     animation: bounceIn 0.5s ease-out;
   }
 
+  .animate-fade-out {
+    animation: fadeOut 0.3s ease-in-out forwards;
+  }
+
+  .animate-chad-reveal {
+    animation: chadReveal 0.8s ease-in-out;
+  }
+
+  .animate-chad-emerge {
+    animation: chadEmerge 0.6s ease-out;
+  }
+
   /* Robot integration styles */
   .robot-graphic-container {
     @apply transition-all duration-300 ease-in-out;
@@ -202,6 +214,24 @@
 
   .robot-transitioning {
     @apply transform scale-105;
+  }
+
+  /* Chad reveal utility classes */
+  .chad-reveal-container {
+    @apply relative overflow-hidden;
+  }
+
+  .chad-reveal-transition {
+    @apply transition-all duration-500 ease-in-out;
+  }
+
+  .chad-reveal-button-container {
+    @apply transition-all duration-300 ease-in-out;
+  }
+
+  .floating-chad-container {
+    @apply fixed pointer-events-none;
+    z-index: 1000;
   }
 
   /* Responsive robot positioning */
@@ -248,13 +278,34 @@
     .animate-slide-up,
     .animate-slide-down,
     .animate-scale-in,
-    .animate-bounce-in {
+    .animate-bounce-in,
+    .animate-fade-out,
+    .animate-chad-reveal,
+    .animate-chad-emerge {
       animation: none !important;
     }
 
     .streaming-cursor {
       animation: none !important;
       opacity: 1 !important;
+    }
+
+    /* Chad reveal reduced motion alternatives */
+    .chad-reveal-transition,
+    .chad-reveal-button-container,
+    .floating-chad-container {
+      transition: none !important;
+    }
+
+    .animate-chad-reveal {
+      opacity: 1 !important;
+      transform: none !important;
+    }
+
+    .animate-chad-emerge {
+      opacity: 1 !important;
+      transform: none !important;
+      filter: none !important;
     }
   }
 
@@ -319,7 +370,8 @@
   }
 
   .transition-colors-fast {
-    transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+    transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out,
+      border-color 0.15s ease-in-out;
   }
 
   /* Accessibility improvements */
@@ -341,7 +393,11 @@
 
   /* Determinism evaluation specific styles */
   .determinism-gradient-container {
-    background: linear-gradient(135deg, var(--color-primary-50) 0%, var(--color-secondary-100) 100%);
+    background: linear-gradient(
+      135deg,
+      var(--color-primary-50) 0%,
+      var(--color-secondary-100) 100%
+    );
   }
 }
 
@@ -406,16 +462,19 @@
 }
 
 @keyframes blink {
-  0%, 50% {
+  0%,
+  50% {
     opacity: 1;
   }
-  51%, 100% {
+  51%,
+  100% {
     opacity: 0;
   }
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -424,10 +483,99 @@
 }
 
 @keyframes bounceSubtle {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0);
   }
   50% {
     transform: translateY(-2px);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes chadReveal {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    opacity: 0.7;
+    transform: scale(1.1) rotate(2deg);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(0.9) rotate(-1deg);
+  }
+  75% {
+    opacity: 0.7;
+    transform: scale(1.05) rotate(1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes chadEmerge {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+    filter: blur(2px);
+  }
+  30% {
+    opacity: 0.6;
+    transform: scale(1.05) translateY(-2px);
+    filter: blur(1px);
+  }
+  70% {
+    opacity: 0.9;
+    transform: scale(0.98) translateY(1px);
+    filter: blur(0.5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* Responsive Chad scaling for larger screens */
+.responsive-chad {
+  /* Base size is already set via inline styles */
+}
+
+/* Scale up Chad on larger screens */
+@media (min-width: 1024px) {
+  .responsive-chad {
+    transform: scale(1.2) !important;
+  }
+}
+
+@media (min-width: 1280px) {
+  .responsive-chad {
+    transform: scale(1.4) !important;
+  }
+}
+
+@media (min-width: 1536px) {
+  .responsive-chad {
+    transform: scale(1.6) !important;
+  }
+}
+
+/* Ensure Chad doesn't get too small on mobile */
+@media (max-width: 768px) {
+  .responsive-chad {
+    transform: scale(0.9) !important;
   }
 }

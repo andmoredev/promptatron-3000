@@ -29,6 +29,8 @@ export {
 // Export main components
 export { default as RobotGraphic } from './RobotGraphic.jsx';
 export { default as RobotFace } from './RobotFace.jsx';
+export { default as ChadFace } from './ChadFace.jsx';
+export { default as FloatingChad } from './FloatingChad.jsx';
 
 // Export accessibility utilities
 export {
@@ -52,6 +54,10 @@ export {
   useRobotStateComparison,
   useOptimizedRobotState
 } from './useRobotState.js';
+
+// Chad personality components and hooks
+export { default as ChadRevealButton } from './ChadRevealButton.jsx';
+export { useChadReveal } from './useChadReveal.js';
 
 
 

@@ -12,6 +12,9 @@ import LoadingSpinner from "./components/LoadingSpinner";
 import ProgressBar from "./components/ProgressBar";
 import ThemeProvider from "./components/ThemeProvider";
 import { RobotGraphicContainer } from "./components/RobotGraphic";
+import ChadRevealButton from "./components/RobotGraphic/ChadRevealButton";
+import FloatingChad from "./components/RobotGraphic/FloatingChad";
+import { useChadReveal } from "./components/RobotGraphic/useChadReveal";
 import StreamingPerformanceMonitor from "./components/StreamingPerformanceMonitor";
 import SettingsDialog from "./components/SettingsDialog";
 
@@ -121,6 +124,38 @@ function App() {
 
   // Settings dialog state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Chad reveal state management
+  const chadRevealState = useChadReveal();
+  const {
+    isRevealed: isChadRevealed,
+    isRevealing: isChadRevealing,
+    revealChad,
+    shouldShowRevealButton
+  } = chadRevealState;
+
+  // Debug Chad state
+  console.log('Chad reveal state in App:', {
+    isRevealed: isChadRevealed,
+    isRevealing: isChadRevealing,
+    shouldShowButton: shouldShowRevealButton(),
+    hookState: chadRevealState
+  });
+
+  // Debug storage on mount
+  useEffect(() => {
+    console.log('App mounted, checking localStorage for Chad state...');
+    const stored = localStorage.getItem('promptatron_chad_reveal');
+    console.log('Raw localStorage value:', stored);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        console.log('Parsed Chad state from localStorage:', parsed);
+      } catch (e) {
+        console.error('Failed to parse Chad state from localStorage:', e);
+      }
+    }
+  }, []);
 
   // Determinism evaluation state (initialized from saved state)
   const [determinismEnabled, setDeterminismEnabled] = useState(
@@ -1773,31 +1808,46 @@ function App() {
               <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
                 {/* Header with Robot */}
                 <div className="text-center mb-3 relative">
-                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
-                    <div className="flex-shrink-0 order-2 sm:order-1">
-                      <RobotGraphicContainer
-                        appState={{
-                          isLoading,
-                          error,
-                          progressStatus,
-                          progressValue,
-                          testResults,
-                          isStreaming,
-                          streamingContent,
-                          streamingProgress,
-                          isRequestPending,
-                          streamingError,
-                        }}
-                        size="md"
-                        className="mx-auto"
-                        enableDebug={isRobotDebugEnabled}
-                        options={{
-                          talkingDuration: 2000,
-                          debounceDelay: 100,
-                          enableTransitions: true,
-                        }}
+                  {/* Chad Reveal Button - positioned in top right */}
+                  {shouldShowRevealButton() && (
+                    <div className="absolute top-0 right-0 z-10">
+                      <ChadRevealButton
+                        onReveal={revealChad}
+                        isRevealed={isChadRevealed}
+                        isRevealing={isChadRevealing}
+                        className="text-xs sm:text-sm"
                       />
                     </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
+                    {!isChadRevealed && (
+                      <div className="flex-shrink-0 order-2 sm:order-1">
+                        <RobotGraphicContainer
+                          appState={{
+                            isLoading,
+                            error,
+                            progressStatus,
+                            progressValue,
+                            testResults,
+                            isStreaming,
+                            streamingContent,
+                            streamingProgress,
+                            isRequestPending,
+                            streamingError,
+                          }}
+                          size="md"
+                          className="mx-auto"
+                          enableDebug={isRobotDebugEnabled}
+                          chadState={chadRevealState}
+                          options={{
+                            talkingDuration: 2000,
+                            debounceDelay: 100,
+                            enableTransitions: true,
+                          }}
+                        />
+                      </div>
+                    )}
                     <div className="order-1 sm:order-2">
                       <h1 className="text-2xl md:text-3xl font-bold text-primary-700 mb-1">
                         Promptatron 3000
@@ -2423,6 +2473,22 @@ function App() {
 
           {/* UI Error Notification System */}
           <UIErrorNotification />
+
+          {/* Floating Chad Companion */}
+          <FloatingChad
+            isVisible={isChadRevealed}
+            currentState={
+              error || streamingError
+                ? 'error'
+                : isLoading || isStreaming || isRequestPending
+                ? isStreaming && streamingContent
+                  ? 'talking'
+                  : 'thinking'
+                : 'idle'
+            }
+            size="lg"
+            position={{ top: '50%', left: '20px', transform: 'translateY(-50%)' }}
+          />
 
           {/* Settings Dialog */}
           <SettingsDialog

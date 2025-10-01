@@ -9,6 +9,7 @@ import {
 } from "./propTypes.js";
 import { getRobotState, SIZE_CONFIGS } from "./robotStates.js";
 import RobotFace from "./RobotFace.jsx";
+import ChadFace from "./ChadFace.jsx";
 import {
   announceToScreenReader,
   getRobotAriaAttributes,
@@ -26,9 +27,10 @@ import "./RobotFaceAnimations.css";
  * @param {string} [props.size='md'] - Size variant ('sm', 'md', 'lg')
  * @param {string} [props.className=''] - Additional CSS classes
  * @param {string} [props.ariaLabel] - Custom accessibility label
+ * @param {boolean} [props.isChad=false] - Whether to render Chad personality instead of original robot
  * @returns {JSX.Element} The RobotGraphic component
  */
-const RobotGraphic = ({ currentState, size, className, ariaLabel }) => {
+const RobotGraphic = ({ currentState, size, className, ariaLabel, isChad }) => {
   // Refs for accessibility
   const robotRef = useRef(null);
   const previousStateRef = useRef(currentState);
@@ -42,7 +44,8 @@ const RobotGraphic = ({ currentState, size, className, ariaLabel }) => {
 
   // Get accessibility attributes
   const ariaAttributes = getRobotAriaAttributes(currentState, previousStateRef.current);
-  const effectiveAriaLabel = ariaLabel || ariaAttributes['aria-label'];
+  const baseAriaLabel = ariaLabel || ariaAttributes['aria-label'];
+  const effectiveAriaLabel = isChad ? `Chad ${baseAriaLabel}` : baseAriaLabel;
 
   // Handle state change announcements for screen readers
   useEffect(() => {
@@ -81,6 +84,7 @@ const RobotGraphic = ({ currentState, size, className, ariaLabel }) => {
     sizeConfig.className,
     `robot-state-${robotState.key}`,
     `robot-expression-${robotState.expression}`,
+    isChad && "robot-chad-personality",
     animationsDisabled && "robot-no-animations",
     className,
   ]
@@ -113,11 +117,19 @@ const RobotGraphic = ({ currentState, size, className, ariaLabel }) => {
 
       {/* SVG-based robot face with expressions */}
       <div className="robot-face" data-testid="robot-face">
-        <RobotFace
-          expression={robotState.expression}
-          animated={!animationsDisabled}
-          size={size}
-        />
+        {isChad ? (
+          <ChadFace
+            expression={robotState.expression}
+            animated={!animationsDisabled}
+            size={size}
+          />
+        ) : (
+          <RobotFace
+            expression={robotState.expression}
+            animated={!animationsDisabled}
+            size={size}
+          />
+        )}
       </div>
     </div>
   );
