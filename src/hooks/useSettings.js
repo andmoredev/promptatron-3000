@@ -377,4 +377,64 @@ export function useAWSSettings() {
   };
 }
 
+/**
+ * Hook specifically for cost settings
+ */
+export function useCostSettings() {
+  const {
+    settings: costSettings,
+    updateSection,
+    validateSection,
+    getSetting,
+    updateSetting,
+    isLoading,
+    error,
+    isInitialized
+  } = useSettings('cost');
+
+  const updateCostSettings = useCallback((newSettings) => {
+    return updateSection('cost', newSettings);
+  }, [updateSection]);
+
+  const updateCostSetting = useCallback((key, value) => {
+    return updateSetting(`cost.${key}`, value);
+  }, [updateSetting]);
+
+  const validateCostSettings = useCallback((settingsData) => {
+    return validateSection('cost', settingsData);
+  }, [validateSection]);
+
+  // Convenience method to toggle cost display
+  const toggleCostDisplay = useCallback(async () => {
+    const currentValue = costSettings?.showCostEstimates || false;
+    return await updateCostSetting('showCostEstimates', !currentValue);
+  }, [costSettings?.showCostEstimates, updateCostSetting]);
+
+  // Method to update pricing data timestamp
+  const updatePricingTimestamp = useCallback(async () => {
+    return await updateCostSetting('lastPricingUpdate', new Date().toISOString());
+  }, [updateCostSetting]);
+
+  return {
+    settings: costSettings || {},
+    updateSettings: updateCostSettings,
+    updateSetting: updateCostSetting,
+    validateSettings: validateCostSettings,
+    getSetting: (key, fallback) => getSetting(`cost.${key}`, fallback),
+    toggleCostDisplay,
+    updatePricingTimestamp,
+    isLoading,
+    error,
+    isInitialized,
+
+    // Convenience getters for commonly used settings
+    showCostEstimates: costSettings?.showCostEstimates || false,
+    costCurrency: costSettings?.costCurrency || 'USD',
+    includePricingDisclaimer: costSettings?.includePricingDisclaimer !== false,
+    autoUpdatePricing: costSettings?.autoUpdatePricing !== false,
+    pricingDataSource: costSettings?.pricingDataSource || 'aws-bedrock',
+    lastPricingUpdate: costSettings?.lastPricingUpdate || null
+  };
+}
+
 export default useSettings;

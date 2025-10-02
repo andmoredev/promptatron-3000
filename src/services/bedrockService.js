@@ -1,6 +1,9 @@
 import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
 import { analyzeError, handleError, ErrorTypes } from '../utils/errorHandling.js';
+import { tokenEstimationService } from './tokenEstimationService.js';
+import { costCalculationService } from './costCalculationService.js';
+import { settingsService } from './settingsService.js';
 
 /**
  * Service class for AWS Bedrock integration
@@ -72,6 +75,9 @@ export class BedrockService {
       // Test credentials by attempting to list models
       await this.validateCredentials();
 
+      // Initialize supporting services for token estimation and cost calculation
+      await this.initializeSupportingServices();
+
       this.isInitialized = true;
       this.credentialsValid = true;
 
@@ -85,6 +91,41 @@ export class BedrockService {
         message: this.getCredentialErrorMessage(error),
         error: error
       };
+    }
+  }
+
+  /**
+   * Initialize supporting services for token estimation and cost calculation
+   * @private
+   */
+  async initializeSupportingServices() {
+    try {
+      // Initialize token estimation service
+      if (!tokenEstimationService.isReady()) {
+        const tokenResult = await tokenEstimationService.initialize();
+        if (!tokenResult.success) {
+          console.warn('Token estimation service initialization failed:', tokenResult.message);
+        }
+      }
+
+      // Initialize cost calculation service
+      if (!costCalculationService.isReady()) {
+        const costResult = await costCalculationService.initialize();
+        if (!costResult.success) {
+          console.warn('Cost calculation service initialization failed:', costResult.message);
+        }
+      }
+
+      // Initialize settings service if not already initialized
+      if (!settingsService.isInitialized) {
+        const settingsResult = await settingsService.initialize();
+        if (!settingsResult.success) {
+          console.warn('Settings service initialization failed:', settingsResult.error);
+        }
+      }
+    } catch (error) {
+      console.warn('Supporting services initialization failed:', error.message);
+      // Don't throw error - these services are optional enhancements
     }
   }
 
@@ -229,7 +270,7 @@ export class BedrockService {
       const response = await this.runtimeClient.send(command);
 
       // Parse the Converse API response and add response time
-      const result = this.parseConverseResponse(response);
+      const result = this.parseConverseResponse(response, modelId, systemPrompt, userPrompt, content);
       const endTime = performance.now();
       result.responseTime = endTime - startTime;
 
@@ -820,7 +861,7 @@ export class BedrockService {
 
 
       // Parse the basic response
-      const basicResponse = this.parseConverseResponse(response);
+      const basicResponse = this.parseConverseResponse(response, modelId, systemPrompt, fullUserPrompt, content);
 
       // Add response time and return combined response with tool usage data
       const endTime = performance.now();
@@ -2293,27 +2334,136 @@ export class BedrockService {
   }
 
   /**
-   * Parse the response from the Converse API
+   * Parse the response from the Converse API with enhanced token and cost tracking
+   * @param {Object} response - The raw Converse API response
+   * @param {string} modelId - The model ID used for the request
+   * @param {string} systemPrompt - The system prompt used (for token estimation)
+   * @param {string} userPrompt - The user prompt used (for token estimation)
+   * @param {string} content - Additional content used (for token estimation)
    * @private
    */
-  parseConverseResponse(response) {
+  parseConverseResponse(response, modelId = null, systemPrompt = '', userPrompt = '', content = '') {
     try {
       // Extract text from the Converse API response
       const text = response.output?.message?.content?.[0]?.text || 'No response generated';
 
-      // Extract usage information if available
-      const usage = response.usage ? {
-        input_tokens: response.usage.inputTokens,
-        output_tokens: response.usage.outputTokens,
-        total_tokens: response.usage.totalTokens
-      } : null;
+      // Start with basic usage data from API if available
+      let enhancedUsage = null;
+
+      if (response.usage) {
+        // API provided usage data - use as exact values
+        enhancedUsage = {
+          input_tokens: response.usage.inputTokens,
+          output_tokens: response.usage.outputTokens,
+          tool_tokens: response.usage.toolTokens || 0,
+          total_tokens: response.usage.totalTokens,
+          tokens_source: 'api',
+          estimation_method: null
+        };
+      } else if (modelId && tokenEstimationService.isReady()) {
+        // API didn't provide usage data - estimate tokens
+        try {
+          const inputEstimation = tokenEstimationService.estimateInputTokens(
+            systemPrompt, userPrompt, content, modelId
+          );
+          const outputEstimation = tokenEstimationService.estimateOutputTokens(text, modelId);
+
+          enhancedUsage = {
+            input_tokens: inputEstimation.tokens || 0,
+            output_tokens: outputEstimation.tokens || 0,
+            tool_tokens: 0, // Tool tokens not estimated separately for now
+            total_tokens: (inputEstimation.tokens || 0) + (outputEstimation.tokens || 0),
+            tokens_source: 'estimated',
+            estimation_method: inputEstimation.method || 'unknown'
+          };
+
+          // Add estimation errors if any
+          if (inputEstimation.error || outputEstimation.error) {
+            enhancedUsage.estimation_errors = {
+              input: inputEstimation.error,
+              output: outputEstimation.error
+            };
+          }
+        } catch (estimationError) {
+          console.warn('Token estimation failed:', estimationError.message);
+          enhancedUsage = {
+            input_tokens: null,
+            output_tokens: null,
+            tool_tokens: null,
+            total_tokens: null,
+            tokens_source: 'unavailable',
+            estimation_method: null,
+            estimation_error: estimationError.message
+          };
+        }
+      } else {
+        // No API usage data and token estimation not available
+        enhancedUsage = {
+          input_tokens: null,
+          output_tokens: null,
+          tool_tokens: null,
+          total_tokens: null,
+          tokens_source: 'unavailable',
+          estimation_method: null
+        };
+      }
+
+      // Add cost calculation if enabled and we have token data
+      // Performance optimization: skip cost calculations entirely if disabled
+      if (enhancedUsage && this.shouldCalculateCosts()) {
+        try {
+          if (costCalculationService.isReady() && modelId) {
+            const costData = costCalculationService.calculateCost(enhancedUsage, modelId);
+            if (costData && !costData.error) {
+              enhancedUsage.cost = {
+                input_cost: costData.inputCost,
+                output_cost: costData.outputCost,
+                tool_cost: costData.toolCost,
+                total_cost: costData.totalCost,
+                currency: costData.currency,
+                pricing_date: costData.pricingDate,
+                is_estimated: costData.isEstimated,
+                provider: costData.provider,
+                region: costData.region
+              };
+            } else {
+              enhancedUsage.cost_error = costData?.error || 'Cost calculation failed';
+            }
+          } else {
+            enhancedUsage.cost_error = 'Cost calculation service not available';
+          }
+        } catch (costError) {
+          console.warn('Cost calculation failed:', costError.message);
+          enhancedUsage.cost_error = costError.message;
+        }
+      }
 
       return {
         text: text,
-        usage: usage
+        usage: enhancedUsage
       };
     } catch (error) {
       throw new Error(`Failed to parse Converse API response: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check if cost calculations should be performed based on user settings
+   * @returns {boolean} True if costs should be calculated
+   * @private
+   */
+  shouldCalculateCosts() {
+    try {
+      // Skip cost calculations if settings service is not ready
+      if (!settingsService.isInitialized) {
+        return false;
+      }
+
+      const costSettings = settingsService.getSection('cost');
+      return costSettings?.showCostEstimates === true;
+    } catch (error) {
+      console.warn('Failed to check cost settings:', error.message);
+      return false;
     }
   }
 
@@ -2795,13 +2945,27 @@ export class BedrockService {
   }
 
   /**
-   * Get the current initialization status
+   * Get the current initialization status including supporting services
    */
   getStatus() {
     return {
       initialized: this.isInitialized,
       credentialsValid: this.credentialsValid,
-      ready: this.isReady()
+      ready: this.isReady(),
+      supportingServices: {
+        tokenEstimation: {
+          ready: tokenEstimationService.isReady(),
+          status: tokenEstimationService.getStatus()
+        },
+        costCalculation: {
+          ready: costCalculationService.isReady(),
+          status: costCalculationService.getStatus()
+        },
+        settings: {
+          initialized: settingsService.isInitialized,
+          costDisplayEnabled: this.shouldCalculateCosts()
+        }
+      }
     };
   }
 

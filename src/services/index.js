@@ -7,3 +7,5 @@ export { toolExecutionService, ToolExecutionService } from './toolExecutionServi
 export { fraudToolsService, FraudToolsService } from './fraudToolsService.js';
 export { workflowTrackingService, WorkflowTrackingService } from './workflowTrackingService.js';
 export { workflowDataPersistenceService, WorkflowDataPersistenceService } from './workflowDataPersistenceService.js';
+export { tokenEstimationService, TokenEstimationService } from './tokenEstimationService.js';
+export { costCalculationService, CostCalculationService } from './costCalculationService.js';

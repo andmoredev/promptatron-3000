@@ -35,6 +35,14 @@ const DEFAULT_SETTINGS = {
     retryAttempts: 3,
     enableCredentialValidation: true
   },
+  cost: {
+    showCostEstimates: false,
+    costCurrency: 'USD',
+    includePricingDisclaimer: true,
+    autoUpdatePricing: true,
+    pricingDataSource: 'aws-bedrock',
+    lastPricingUpdate: null
+  },
   version: '1.0.0',
   lastUpdated: null
 };
@@ -62,6 +70,14 @@ const VALIDATION_RULES = {
     timeout: { min: 5000, max: 300000, type: 'number' },
     retryAttempts: { min: 0, max: 10, type: 'number' },
     enableCredentialValidation: { type: 'boolean' }
+  },
+  cost: {
+    showCostEstimates: { type: 'boolean' },
+    costCurrency: { values: ['USD', 'EUR', 'GBP', 'JPY'], type: 'string' },
+    includePricingDisclaimer: { type: 'boolean' },
+    autoUpdatePricing: { type: 'boolean' },
+    pricingDataSource: { values: ['aws-bedrock'], type: 'string' },
+    lastPricingUpdate: { type: 'string', allowNull: true }
   }
 };
 
@@ -346,11 +362,14 @@ export class SettingsService {
           continue;
         }
 
-        // Type validation
+        // Type validation (with null check)
         if (rule.type && typeof fieldValue !== rule.type) {
-          result.isValid = false;
-          result.errors.push(`${sectionName}.${fieldName} must be of type ${rule.type}`);
-          continue;
+          // Allow null values if explicitly permitted
+          if (!(rule.allowNull && fieldValue === null)) {
+            result.isValid = false;
+            result.errors.push(`${sectionName}.${fieldName} must be of type ${rule.type}`);
+            continue;
+          }
         }
 
         // Range validation for numbers

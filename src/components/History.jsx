@@ -1,5 +1,7 @@
 import React, { useState, useRef } from "react";
 import { useHistory } from "../hooks/useHistory.js";
+import { settingsService } from "../services/settingsService.js";
+import TokenCostDisplay from "./TokenCostDisplay.jsx";
 
 const History = ({
   onLoadFromHistory,
@@ -21,12 +23,37 @@ const History = ({
   const [filterModel, setFilterModel] = useState("");
   const [filterToolUsage, setFilterToolUsage] = useState("");
   const [filterToolExecution, setFilterToolExecution] = useState("");
+  const [filterCostRange, setFilterCostRange] = useState("");
+  const [sortBy, setSortBy] = useState("timestamp");
+  const [sortOrder, setSortOrder] = useState("desc");
   const [showStats, setShowStats] = useState(false);
   const [showManagement, setShowManagement] = useState(false);
   const [rerunDialog, setRerunDialog] = useState(null);
   const [comparisonMode, setComparisonMode] = useState(false);
   const [determinismModal, setDeterminismModal] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Get cost settings
+  const [costSettings, setCostSettings] = useState(null);
+  React.useEffect(() => {
+    const loadCostSettings = async () => {
+      if (!settingsService.isInitialized) {
+        await settingsService.initialize();
+      }
+      const settings = settingsService.getSection('cost');
+      setCostSettings(settings);
+    };
+    loadCostSettings();
+
+    // Listen for settings changes
+    const unsubscribe = settingsService.addChangeListener((sectionName, sectionData) => {
+      if (sectionName === 'cost') {
+        setCostSettings(sectionData);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   // Ensure unique IDs and clean up history data
   const cleanedHistory = React.useMemo(() => {
@@ -68,10 +95,10 @@ const History = ({
     }
   }, [cleanedHistory]);
 
-  // Filter history based on search, model filter, and tool usage filter (with error handling)
+  // Filter and sort history based on all criteria (with error handling)
   const filteredHistory = React.useMemo(() => {
     try {
-      return cleanedHistory.filter((item) => {
+      let filtered = cleanedHistory.filter((item) => {
         if (!item) return false;
 
         const matchesSearch =
@@ -108,18 +135,70 @@ const History = ({
           (filterToolExecution === "detected" &&
             (!item.toolExecutionEnabled || !item.workflowData));
 
+        // Cost range filtering
+        const matchesCostRange = (() => {
+          if (!filterCostRange || !costSettings?.showCostEstimates) return true;
+
+          const totalCost = item.usage?.cost?.total_cost;
+          if (totalCost === null || totalCost === undefined) {
+            return filterCostRange === "no-cost";
+          }
+
+          switch (filterCostRange) {
+            case "low": return totalCost < 0.01;
+            case "medium": return totalCost >= 0.01 && totalCost < 0.10;
+            case "high": return totalCost >= 0.10;
+            case "no-cost": return false; // Already handled above
+            default: return true;
+          }
+        })();
+
         return (
           matchesSearch &&
           matchesModel &&
           matchesToolUsage &&
-          matchesToolExecution
+          matchesToolExecution &&
+          matchesCostRange
         );
       });
+
+      // Apply sorting
+      filtered.sort((a, b) => {
+        let aValue, bValue;
+
+        switch (sortBy) {
+          case "timestamp":
+            aValue = new Date(a.timestamp);
+            bValue = new Date(b.timestamp);
+            break;
+          case "model":
+            aValue = a.modelId || "";
+            bValue = b.modelId || "";
+            break;
+          case "cost":
+            aValue = a.usage?.cost?.total_cost || 0;
+            bValue = b.usage?.cost?.total_cost || 0;
+            break;
+          case "tokens":
+            aValue = a.usage?.total_tokens || 0;
+            bValue = b.usage?.total_tokens || 0;
+            break;
+          default:
+            aValue = new Date(a.timestamp);
+            bValue = new Date(b.timestamp);
+        }
+
+        if (aValue < bValue) return sortOrder === "asc" ? -1 : 1;
+        if (aValue > bValue) return sortOrder === "asc" ? 1 : -1;
+        return 0;
+      });
+
+      return filtered;
     } catch (error) {
       console.error("Error filtering history:", error);
       return [];
     }
-  }, [cleanedHistory, searchTerm, filterModel, filterToolUsage]);
+  }, [cleanedHistory, searchTerm, filterModel, filterToolUsage, filterToolExecution, filterCostRange, sortBy, sortOrder, costSettings]);
 
   const formatTimestamp = (timestamp) => {
     return new Date(timestamp).toLocaleString();
@@ -188,7 +267,8 @@ const History = ({
   };
 
   const handleExportHistory = async () => {
-    await exportHistory();
+    const includeCostData = costSettings?.showCostEstimates || false;
+    await exportHistory(includeCostData);
   };
 
   const handleImportHistory = async (event) => {
@@ -215,6 +295,43 @@ const History = ({
   };
 
   const stats = getHistoryStats();
+
+  // Calculate cost aggregation for filtered history
+  const costAggregation = React.useMemo(() => {
+    if (!costSettings?.showCostEstimates) return null;
+
+    const testsWithCost = filteredHistory.filter(item =>
+      item.usage?.cost?.total_cost !== null &&
+      item.usage?.cost?.total_cost !== undefined
+    );
+
+    if (testsWithCost.length === 0) return null;
+
+    const totalCost = testsWithCost.reduce((sum, item) =>
+      sum + (item.usage.cost.total_cost || 0), 0
+    );
+
+    const averageCost = totalCost / testsWithCost.length;
+
+    const costsByModel = testsWithCost.reduce((acc, item) => {
+      const modelId = item.modelId;
+      if (!acc[modelId]) {
+        acc[modelId] = { count: 0, totalCost: 0 };
+      }
+      acc[modelId].count++;
+      acc[modelId].totalCost += item.usage.cost.total_cost || 0;
+      return acc;
+    }, {});
+
+    return {
+      testsWithCost: testsWithCost.length,
+      testsWithoutCost: filteredHistory.length - testsWithCost.length,
+      totalCost,
+      averageCost,
+      costsByModel,
+      currency: testsWithCost[0]?.usage?.cost?.currency || 'USD'
+    };
+  }, [filteredHistory, costSettings]);
 
   if (loading) {
     return (
@@ -362,6 +479,83 @@ const History = ({
                 )}
               </div>
 
+              {/* Cost Aggregation Stats */}
+              {costSettings?.showCostEstimates && costAggregation && (
+                <div className="border-t border-gray-200 pt-3">
+                  <h5 className="font-medium text-gray-800 mb-2">
+                    Cost Analysis (Filtered Results)
+                  </h5>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                    <div>
+                      <span className="text-gray-600">Tests with Cost:</span>
+                      <span className="ml-2 font-medium text-green-600">
+                        {costAggregation.testsWithCost}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Tests without Cost:</span>
+                      <span className="ml-2 font-medium">
+                        {costAggregation.testsWithoutCost}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Total Cost:</span>
+                      <span className="ml-2 font-medium text-green-600">
+                        {new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: costAggregation.currency,
+                          minimumFractionDigits: 4,
+                          maximumFractionDigits: 6
+                        }).format(costAggregation.totalCost)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Average Cost:</span>
+                      <span className="ml-2 font-medium text-green-600">
+                        {new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: costAggregation.currency,
+                          minimumFractionDigits: 4,
+                          maximumFractionDigits: 6
+                        }).format(costAggregation.averageCost)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Cost by Model */}
+                  {Object.keys(costAggregation.costsByModel).length > 0 && (
+                    <div className="border-t border-gray-100 pt-2">
+                      <h6 className="text-xs font-medium text-gray-700 mb-2">
+                        Cost by Model
+                      </h6>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                        {Object.entries(costAggregation.costsByModel)
+                          .sort(([,a], [,b]) => b.totalCost - a.totalCost)
+                          .slice(0, 6)
+                          .map(([modelId, data]) => (
+                            <div key={modelId} className="flex justify-between">
+                              <span className="text-gray-600 truncate mr-2">
+                                {modelId.split('.')[0]}:
+                              </span>
+                              <span className="font-medium text-green-600">
+                                {new Intl.NumberFormat('en-US', {
+                                  style: 'currency',
+                                  currency: costAggregation.currency,
+                                  minimumFractionDigits: 4,
+                                  maximumFractionDigits: 6
+                                }).format(data.totalCost)}
+                                <span className="text-gray-500 ml-1">
+                                  ({data.count})
+                                </span>
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Tool Usage Stats */}
               {stats.toolUsageStats && (
                 <div className="border-t border-gray-200 pt-3">
@@ -481,7 +675,7 @@ const History = ({
         )}
 
         {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-4">
           <div>
             <label
               htmlFor="search"
@@ -554,6 +748,58 @@ const History = ({
               <option value="executed">Tool execution enabled</option>
               <option value="detected">Tool detection only</option>
             </select>
+          </div>
+          {costSettings?.showCostEstimates && (
+            <div>
+              <label
+                htmlFor="cost-range-filter"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
+                Filter by Cost Range
+              </label>
+              <select
+                id="cost-range-filter"
+                value={filterCostRange}
+                onChange={(e) => setFilterCostRange(e.target.value)}
+                className="select-field"
+              >
+                <option value="">All costs</option>
+                <option value="low">Low (&lt; $0.01)</option>
+                <option value="medium">Medium ($0.01 - $0.10)</option>
+                <option value="high">High (&gt; $0.10)</option>
+                <option value="no-cost">No cost data</option>
+              </select>
+            </div>
+          )}
+          <div>
+            <label
+              htmlFor="sort-by"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
+              Sort by
+            </label>
+            <div className="flex space-x-2">
+              <select
+                id="sort-by"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="select-field flex-1"
+              >
+                <option value="timestamp">Date</option>
+                <option value="model">Model</option>
+                <option value="tokens">Tokens</option>
+                {costSettings?.showCostEstimates && (
+                  <option value="cost">Cost</option>
+                )}
+              </select>
+              <button
+                onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                className="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                title={`Sort ${sortOrder === "asc" ? "descending" : "ascending"}`}
+              >
+                {sortOrder === "asc" ? "↑" : "↓"}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -934,36 +1180,31 @@ const History = ({
                               </div>
                             )}
 
-                            {/* Token Usage */}
+                            {/* Token and Cost Usage */}
                             {item.usage && (
-                              <div className="mt-2 space-y-1">
-                                <p className="font-medium text-gray-700">
-                                  Token Usage:
-                                </p>
-                                <p className="text-xs">
-                                  <span className="font-medium">Input:</span>{" "}
-                                  {item.usage.input_tokens ||
-                                    item.usage.inputTokens ||
-                                    "N/A"}
-                                </p>
-                                <p className="text-xs">
-                                  <span className="font-medium">Output:</span>{" "}
-                                  {item.usage.output_tokens ||
-                                    item.usage.outputTokens ||
-                                    "N/A"}
-                                </p>
-                                <p className="text-xs">
-                                  <span className="font-medium">Total:</span>{" "}
-                                  {item.usage.total_tokens ||
-                                    item.usage.totalTokens ||
-                                    "N/A"}
-                                </p>
+                              <div className="mt-2">
+                                <TokenCostDisplay
+                                  usage={item.usage}
+                                  showCost={costSettings?.showCostEstimates || false}
+                                  compact={true}
+                                />
                               </div>
                             )}
                           </div>
                         </div>
                       </div>
                     </div>
+
+                    {/* Detailed Token and Cost Information */}
+                    {item.usage && (
+                      <div>
+                        <TokenCostDisplay
+                          usage={item.usage}
+                          showCost={costSettings?.showCostEstimates || false}
+                          compact={false}
+                        />
+                      </div>
+                    )}
 
                     <div>
                       <h5 className="font-medium text-gray-700 mb-1">
@@ -1114,10 +1355,14 @@ const History = ({
                 setSearchTerm("");
                 setFilterModel("");
                 setFilterToolUsage("");
+                setFilterToolExecution("");
+                setFilterCostRange("");
+                setSortBy("timestamp");
+                setSortOrder("desc");
               }}
               className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-2"
             >
-              Clear filters
+              Clear all filters
             </button>
           </div>
         )}

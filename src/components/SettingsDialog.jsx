@@ -10,6 +10,7 @@ import { useSettings, useDeterminismSettings, useUISettings, useAWSSettings } fr
 import LoadingSpinner from './LoadingSpinner.jsx';
 import HelpTooltip from './HelpTooltip.jsx';
 import AboutTab from './AboutTab.jsx';
+import CostSettingsTab from './CostSettingsTab.jsx';
 
 /**
  * Main SettingsDialog component
@@ -191,6 +192,7 @@ function SettingsDialog({ isOpen, onClose, onSave }) {
     { id: 'determinism', label: 'Determinism' },
     { id: 'ui', label: 'Interface' },
     { id: 'aws', label: 'AWS' },
+    { id: 'cost', label: 'Cost & Tokens' },
     { id: 'about', label: 'About' }
   ];
 
@@ -345,6 +347,16 @@ function SettingsDialog({ isOpen, onClose, onSave }) {
                   className="animate-fade-in"
                 >
                   <AWSSettingsTab onSettingsChange={() => setHasUnsavedChanges(true)} />
+                </div>
+              )}
+              {activeTab === 'cost' && (
+                <div
+                  id="cost-panel"
+                  role="tabpanel"
+                  aria-labelledby="cost-tab"
+                  className="animate-fade-in"
+                >
+                  <CostSettingsTab onSettingsChange={() => setHasUnsavedChanges(true)} />
                 </div>
               )}
               {activeTab === 'about' && (

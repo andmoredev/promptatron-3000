@@ -5,12 +5,171 @@ import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import ToolUsageDisplay from './ToolUsageDisplay';
+import TokenCostDisplay from './TokenCostDisplay';
+import { useCostSettings } from '../hooks/useSettings';
+
+// Export comparison data including cost information
+const exportComparisonData = (selectedTests, includeCostData = false) => {
+  const exportData = {
+    timestamp: new Date().toISOString(),
+    comparisonType: 'test-comparison',
+    testCount: selectedTests.length,
+    tests: selectedTests.map((test, index) => ({
+      testId: test.id,
+      testLabel: `Test ${String.fromCharCode(65 + index)}`,
+      modelId: test.modelId,
+      timestamp: test.timestamp,
+      datasetType: test.datasetType,
+      datasetOption: test.datasetOption,
+      systemPrompt: test.systemPrompt,
+      userPrompt: test.userPrompt,
+      response: test.response,
+      responseLength: test.response.length,
+      determinismGrade: test.determinismGrade,
+      isStreamed: test.isStreamed,
+      streamingMetrics: test.streamingMetrics,
+      usage: {
+        input_tokens: test.usage?.input_tokens || test.usage?.inputTokens,
+        output_tokens: test.usage?.output_tokens || test.usage?.outputTokens,
+        total_tokens: test.usage?.total_tokens || test.usage?.totalTokens,
+        tokens_source: test.usage?.tokens_source,
+        ...(includeCostData && test.usage?.cost && {
+          cost: {
+            input_cost: test.usage.cost.input_cost,
+            output_cost: test.usage.cost.output_cost,
+            tool_cost: test.usage.cost.tool_cost,
+            total_cost: test.usage.cost.total_cost,
+            currency: test.usage.cost.currency,
+            is_estimated: test.usage.cost.is_estimated,
+            pricing_date: test.usage.cost.pricing_date
+          }
+        })
+      },
+      toolUsage: test.toolUsage
+    }))
+  };
+
+  // Add comparison metrics if we have exactly 2 tests
+  if (selectedTests.length === 2) {
+    const [test1, test2] = selectedTests;
+
+    // Response similarity
+    const similarity = calculateSimilarity(test1.response, test2.response);
+    exportData.comparisonMetrics = {
+      responseSimilarity: similarity,
+      responseSimilarityGrade: similarity >= 80 ? 'High' : similarity >= 60 ? 'Medium' : 'Low'
+    };
+
+    // Tool usage comparison
+    const toolComparison = calculateToolUsageSimilarity(test1, test2);
+    exportData.comparisonMetrics.toolUsageSimilarity = toolComparison;
+
+    // Cost comparison (if enabled and available)
+    if (includeCostData && test1.usage?.cost && test2.usage?.cost) {
+      const cost1 = test1.usage.cost.total_cost;
+      const cost2 = test2.usage.cost.total_cost;
+      const costDifference = cost2 - cost1;
+      const costDifferencePercent = cost1 > 0 ? (costDifference / cost1) * 100 : 0;
+
+      exportData.comparisonMetrics.costComparison = {
+        test1Cost: cost1,
+        test2Cost: cost2,
+        costDifference: costDifference,
+        costDifferencePercent: costDifferencePercent,
+        moreEconomical: cost1 < cost2 ? 'Test A' : cost2 < cost1 ? 'Test B' : 'Equal',
+        currency: test1.usage.cost.currency
+      };
+    }
+  }
+
+  return exportData;
+};
+
+// Helper function to calculate similarity (moved outside component for export function)
+const calculateSimilarity = (text1, text2) => {
+  const words1 = text1.toLowerCase().split(/\s+/);
+  const words2 = text2.toLowerCase().split(/\s+/);
+  const allWords = new Set([...words1, ...words2]);
+
+  let commonWords = 0;
+  allWords.forEach(word => {
+    if (words1.includes(word) && words2.includes(word)) {
+      commonWords++;
+    }
+  });
+
+  return Math.round((commonWords / allWords.size) * 100);
+};
+
+// Helper function to calculate tool usage similarity (moved outside component for export function)
+const calculateToolUsageSimilarity = (test1, test2) => {
+  const toolUsage1 = test1.toolUsage;
+  const toolUsage2 = test2.toolUsage;
+
+  // If neither has tool usage, they're identical (100%)
+  if (!toolUsage1?.hasToolUsage && !toolUsage2?.hasToolUsage) {
+    return 100;
+  }
+
+  // If only one has tool usage, they're completely different (0%)
+  if (toolUsage1?.hasToolUsage !== toolUsage2?.hasToolUsage) {
+    return 0;
+  }
+
+  // Both have tool usage - compare details
+  const calls1 = toolUsage1?.toolCalls || [];
+  const calls2 = toolUsage2?.toolCalls || [];
+
+  // If different number of tool calls, partial similarity
+  if (calls1.length !== calls2.length) {
+    return Math.max(0, 50 - Math.abs(calls1.length - calls2.length) * 10);
+  }
+
+  // Compare each tool call
+  let totalSimilarity = 0;
+  for (let i = 0; i < calls1.length; i++) {
+    const call1 = calls1[i];
+    const call2 = calls2[i];
+
+    let callSimilarity = 0;
+
+    // Tool name match (40% weight)
+    if (call1.toolName === call2.toolName) {
+      callSimilarity += 40;
+
+      // Parameter similarity (60% weight)
+      const params1 = JSON.stringify(call1.input || {});
+      const params2 = JSON.stringify(call2.input || {});
+
+      if (params1 === params2) {
+        callSimilarity += 60;
+      } else {
+        // Partial parameter similarity based on key overlap
+        const keys1 = Object.keys(call1.input || {});
+        const keys2 = Object.keys(call2.input || {});
+        const allKeys = new Set([...keys1, ...keys2]);
+        const commonKeys = keys1.filter(key => keys2.includes(key));
+
+        if (allKeys.size > 0) {
+          callSimilarity += Math.round((commonKeys.length / allKeys.size) * 30);
+        }
+      }
+    }
+
+    totalSimilarity += callSimilarity;
+  }
+
+  return Math.round(totalSimilarity / calls1.length);
+};
 
 const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
   const [viewMode, setViewMode] = useState('side-by-side'); // 'side-by-side', 'stacked'
   const [compareMode, setCompareMode] = useState('responses'); // 'responses', 'metadata', 'tools', 'all'
 
   const [highlightDifferences, setHighlightDifferences] = useState(true);
+
+  // Get cost settings
+  const { showCostEstimates } = useCostSettings();
 
   // Helper function for determinism grade colors
   const getDeterminismGradeColor = (grade) => {
@@ -59,82 +218,7 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
     }
   };
 
-  // Calculate similarity between two texts
-  const calculateSimilarity = (text1, text2) => {
-    const words1 = text1.toLowerCase().split(/\s+/);
-    const words2 = text2.toLowerCase().split(/\s+/);
-    const allWords = new Set([...words1, ...words2]);
 
-    let commonWords = 0;
-    allWords.forEach(word => {
-      if (words1.includes(word) && words2.includes(word)) {
-        commonWords++;
-      }
-    });
-
-    return Math.round((commonWords / allWords.size) * 100);
-  };
-
-  // Calculate tool usage similarity between two tests
-  const calculateToolUsageSimilarity = (test1, test2) => {
-    const toolUsage1 = test1.toolUsage;
-    const toolUsage2 = test2.toolUsage;
-
-    // If neither has tool usage, they're identical (100%)
-    if (!toolUsage1?.hasToolUsage && !toolUsage2?.hasToolUsage) {
-      return 100;
-    }
-
-    // If only one has tool usage, they're completely different (0%)
-    if (toolUsage1?.hasToolUsage !== toolUsage2?.hasToolUsage) {
-      return 0;
-    }
-
-    // Both have tool usage - compare details
-    const calls1 = toolUsage1?.toolCalls || [];
-    const calls2 = toolUsage2?.toolCalls || [];
-
-    // If different number of tool calls, partial similarity
-    if (calls1.length !== calls2.length) {
-      return Math.max(0, 50 - Math.abs(calls1.length - calls2.length) * 10);
-    }
-
-    // Compare each tool call
-    let totalSimilarity = 0;
-    for (let i = 0; i < calls1.length; i++) {
-      const call1 = calls1[i];
-      const call2 = calls2[i];
-
-      let callSimilarity = 0;
-
-      // Tool name match (40% weight)
-      if (call1.toolName === call2.toolName) {
-        callSimilarity += 40;
-
-        // Parameter similarity (60% weight)
-        const params1 = JSON.stringify(call1.input || {});
-        const params2 = JSON.stringify(call2.input || {});
-
-        if (params1 === params2) {
-          callSimilarity += 60;
-        } else {
-          // Partial parameter similarity based on key overlap
-          const keys1 = Object.keys(call1.input || {});
-          const keys2 = Object.keys(call2.input || {});
-          const allKeys = new Set([...keys1, ...keys2]);
-          const commonKeys = keys1.filter(key => keys2.includes(key));
-
-          if (allKeys.size > 0) {
-            callSimilarity += Math.round((commonKeys.length / allKeys.size) * 30);
-          }
-        }
-      }
-
-      totalSimilarity += callSimilarity;
-    }
-
-    return Math.round(totalSimilarity / calls1.length);
-  };
 
   // Get tool usage comparison summary
   const getToolUsageComparison = () => {
@@ -169,6 +253,62 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
                          JSON.stringify(call1.input) === JSON.stringify(call2.input);
                 })
     };
+  };
+
+  // Get cost comparison summary
+  const getCostComparison = () => {
+    if (selectedTests.length !== 2) return null;
+
+    const [test1, test2] = selectedTests;
+    const cost1 = test1.usage?.cost;
+    const cost2 = test2.usage?.cost;
+
+    // If neither test has cost data, return null
+    if (!cost1 && !cost2) return null;
+
+    const hasCost1 = cost1 && cost1.total_cost !== null && cost1.total_cost !== undefined;
+    const hasCost2 = cost2 && cost2.total_cost !== null && cost2.total_cost !== undefined;
+
+    // Calculate cost difference and percentage
+    let costDifference = null;
+    let costDifferencePercent = null;
+    let winner = null;
+
+    if (hasCost1 && hasCost2) {
+      costDifference = cost2.total_cost - cost1.total_cost;
+      costDifferencePercent = cost1.total_cost > 0 ? (costDifference / cost1.total_cost) * 100 : 0;
+      winner = cost1.total_cost < cost2.total_cost ? 'test1' : cost2.total_cost < cost1.total_cost ? 'test2' : 'tie';
+    }
+
+    return {
+      test1: {
+        hasCost: hasCost1,
+        cost: cost1,
+        totalCost: hasCost1 ? cost1.total_cost : null,
+        currency: cost1?.currency || 'USD'
+      },
+      test2: {
+        hasCost: hasCost2,
+        cost: cost2,
+        totalCost: hasCost2 ? cost2.total_cost : null,
+        currency: cost2?.currency || 'USD'
+      },
+      costDifference,
+      costDifferencePercent,
+      winner,
+      bothHaveCosts: hasCost1 && hasCost2
+    };
+  };
+
+  // Format cost for display
+  const formatCost = (cost, currency = 'USD') => {
+    if (cost === null || cost === undefined) return 'N/A';
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency,
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 6
+    }).format(cost);
   };
 
   // Compare tool parameters and highlight differences
@@ -328,12 +468,32 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
           <h3 className="text-lg font-semibold text-gray-900">
             Test Comparison ({selectedTests.length} tests)
           </h3>
-          <button
-            onClick={onClearComparison}
-            className="text-sm text-red-600 hover:text-red-700 font-medium"
-          >
-            Clear All
-          </button>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => {
+                const exportData = exportComparisonData(selectedTests, showCostEstimates);
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `comparison-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+              className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+              title="Export comparison data"
+            >
+              Export
+            </button>
+            <button
+              onClick={onClearComparison}
+              className="text-sm text-red-600 hover:text-red-700 font-medium"
+            >
+              Clear All
+            </button>
+          </div>
         </div>
 
         {/* Controls */}
@@ -389,6 +549,17 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
             >
               Tools
             </button>
+            {showCostEstimates && (
+              <button
+                onClick={() => setCompareMode('costs')}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${compareMode === 'costs'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+                  }`}
+              >
+                Costs
+              </button>
+            )}
             <button
               onClick={() => setCompareMode('all')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${compareMode === 'all'
@@ -519,6 +690,113 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
                   <div className="flex items-center space-x-1">
                     <span>➖</span>
                     <span>Neither test used tools</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Cost Comparison */}
+        {showCostEstimates && (() => {
+          const costComparison = getCostComparison();
+          if (!costComparison) return null;
+
+          return (
+            <div className="mb-4 p-3 bg-green-50 rounded-lg border border-green-200">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-green-900">Cost Comparison</span>
+                {costComparison.bothHaveCosts && (
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-green-700">
+                      Difference: {costComparison.costDifference >= 0 ? '+' : ''}{formatCost(costComparison.costDifference, costComparison.test1.currency)}
+                      {costComparison.costDifferencePercent !== null && (
+                        <span className="ml-1">
+                          ({costComparison.costDifferencePercent >= 0 ? '+' : ''}{costComparison.costDifferencePercent.toFixed(1)}%)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div className="space-y-1">
+                  <div className="font-medium text-green-800">Test A</div>
+                  <div className="flex items-center space-x-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      costComparison.test1.hasCost
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {costComparison.test1.hasCost ? '💰 Has Cost Data' : 'No Cost Data'}
+                    </span>
+                    {costComparison.winner === 'test1' && (
+                      <span className="text-green-600 font-bold" title="Lower cost">🏆</span>
+                    )}
+                  </div>
+                  {costComparison.test1.hasCost && (
+                    <div className="text-green-700">
+                      Total: {formatCost(costComparison.test1.totalCost, costComparison.test1.currency)}
+                      {costComparison.test1.cost?.is_estimated && (
+                        <span className="ml-1 text-orange-600" title="Estimated cost">~</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <div className="font-medium text-green-800">Test B</div>
+                  <div className="flex items-center space-x-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      costComparison.test2.hasCost
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {costComparison.test2.hasCost ? '💰 Has Cost Data' : 'No Cost Data'}
+                    </span>
+                    {costComparison.winner === 'test2' && (
+                      <span className="text-green-600 font-bold" title="Lower cost">🏆</span>
+                    )}
+                  </div>
+                  {costComparison.test2.hasCost && (
+                    <div className="text-green-700">
+                      Total: {formatCost(costComparison.test2.totalCost, costComparison.test2.currency)}
+                      {costComparison.test2.cost?.is_estimated && (
+                        <span className="ml-1 text-orange-600" title="Estimated cost">~</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Cost Comparison Insights */}
+              <div className="mt-2 text-xs text-green-700">
+                {costComparison.bothHaveCosts ? (
+                  <div className="flex items-center space-x-1">
+                    {costComparison.winner === 'tie' ? (
+                      <>
+                        <span>⚖️</span>
+                        <span>Both tests have identical costs</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>💡</span>
+                        <span>
+                          Test {costComparison.winner === 'test1' ? 'A' : 'B'} is {Math.abs(costComparison.costDifferencePercent).toFixed(1)}% more cost-effective
+                        </span>
+                      </>
+                    )}
+                  </div>
+                ) : costComparison.test1.hasCost || costComparison.test2.hasCost ? (
+                  <div className="flex items-center space-x-1">
+                    <span>⚠️</span>
+                    <span>Only one test has cost data available</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-1">
+                    <span>➖</span>
+                    <span>No cost data available for comparison</span>
                   </div>
                 )}
               </div>
@@ -700,21 +978,14 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
                       </div>
                     )}
 
-                    {/* Token Usage */}
+                    {/* Token and Cost Usage */}
                     {test.usage && (
-                      <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                        <div>
-                          <span className="font-medium text-gray-600">Input:</span>
-                          <span className="ml-1 text-gray-500">{test.usage.input_tokens || test.usage.inputTokens || 'N/A'}</span>
-                        </div>
-                        <div>
-                          <span className="font-medium text-gray-600">Output:</span>
-                          <span className="ml-1 text-gray-500">{test.usage.output_tokens || test.usage.outputTokens || 'N/A'}</span>
-                        </div>
-                        <div>
-                          <span className="font-medium text-gray-600">Total:</span>
-                          <span className="ml-1 text-gray-500">{test.usage.total_tokens || test.usage.totalTokens || 'N/A'}</span>
-                        </div>
+                      <div className="mt-2">
+                        <TokenCostDisplay
+                          usage={test.usage}
+                          showCost={showCostEstimates}
+                          compact={true}
+                        />
                       </div>
                     )}
                   </div>
@@ -879,6 +1150,43 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
               </div>
             )}
 
+            {/* Cost Information */}
+            {showCostEstimates && (compareMode === 'costs' || compareMode === 'all') && (
+              <div className="mb-4">
+                <h5 className="font-medium text-gray-700 mb-2">Cost Information:</h5>
+                {test.usage ? (
+                  <TokenCostDisplay
+                    usage={test.usage}
+                    showCost={true}
+                    compact={false}
+                  />
+                ) : (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <div className="flex items-center space-x-2">
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                        No Usage Data
+                      </span>
+                      {selectedTests.length === 2 && highlightDifferences && (
+                        (() => {
+                          const otherTest = selectedTests.find(t => t.id !== test.id);
+                          const otherHasCost = otherTest?.usage?.cost;
+                          return otherHasCost ? (
+                            <span className="text-xs text-red-600 font-medium">
+                              ≠ Other test has cost data
+                            </span>
+                          ) : (
+                            <span className="text-xs text-green-600 font-medium">
+                              ✓ Both tests have no cost data
+                            </span>
+                          );
+                        })()
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Response */}
             {(compareMode === 'responses' || compareMode === 'all') && (
               <div>
@@ -903,3 +1211,4 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
 };
 
 export default Comparison;
+export { exportComparisonData, calculateSimilarity, calculateToolUsageSimilarity };

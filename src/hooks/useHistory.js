@@ -116,12 +116,13 @@ export function useHistory() {
 
   /**
    * Export history to file
+   * @param {boolean} includeCostData - Whether to include cost data in export
    */
-  const exportHistory = useCallback(async () => {
+  const exportHistory = useCallback(async (includeCostData = true) => {
     setError(null);
 
     try {
-      await fileService.exportHistory();
+      await fileService.exportHistory(includeCostData);
       return true;
     } catch (err) {
       setError(`Failed to export history: ${err.message}`);

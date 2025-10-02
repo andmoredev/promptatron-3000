@@ -11,7 +11,8 @@ import ToolConfigurationStatus from './ToolConfigurationStatus';
 import WorkflowTimeline from './WorkflowTimeline';
 import { uiErrorRecovery } from '../utils/uiErrorRecovery';
 import { useModelOutput } from '../hooks/useModelOutput';
-import { useDeterminismSettings } from '../hooks/useSettings';
+import { useDeterminismSettings, useCostSettings } from '../hooks/useSettings';
+import TokenCostDisplay from './TokenCostDisplay';
 
 import PropTypes from 'prop-types';
 
@@ -134,6 +135,10 @@ const TestResults = ({
     restoreState,
     getCurrentOutput
   } = useModelOutput();
+
+  // Get cost settings
+  const { settings: costSettings } = useCostSettings();
+  const showCost = costSettings?.showCostEstimates || false;
 
 
 
@@ -872,40 +877,46 @@ const TestResults = ({
             <div className="text-xs text-gray-500">Lines</div>
           </div>
 
-          <div className="text-center">
-            <div className="text-lg font-semibold text-gray-900">
-              {Math.ceil((displayOutput || displayResults.response).length / 4).toLocaleString()}
+          {/* Compact token display or fallback estimated tokens */}
+          {displayResults.usage ? (
+            <div className="text-center">
+              <div className="text-lg font-semibold text-purple-600">
+                {displayResults.usage.total_tokens?.toLocaleString() || 'N/A'}
+              </div>
+              <div className="text-xs text-gray-500 flex items-center justify-center">
+                Tokens
+                {displayResults.usage.tokens_source === 'estimated' && (
+                  <span className="ml-1 text-orange-500" title="Estimated">~</span>
+                )}
+              </div>
             </div>
-            <div className="text-xs text-gray-500">Est. Tokens</div>
-          </div>
+          ) : (
+            <div className="text-center">
+              <div className="text-lg font-semibold text-gray-900">
+                {Math.ceil((displayOutput || displayResults.response).length / 4).toLocaleString()}
+              </div>
+              <div className="text-xs text-gray-500">Est. Tokens</div>
+            </div>
+          )}
 
-          {displayResults.usage && (
-            <>
-              {displayResults.usage.input_tokens && (
-                <div className="text-center">
-                  <div className="text-lg font-semibold text-blue-600">
-                    {displayResults.usage.input_tokens.toLocaleString()}
-                  </div>
-                  <div className="text-xs text-gray-500">Input Tokens</div>
-                </div>
-              )}
-              {displayResults.usage.output_tokens && (
-                <div className="text-center">
-                  <div className="text-lg font-semibold text-green-600">
-                    {displayResults.usage.output_tokens.toLocaleString()}
-                  </div>
-                  <div className="text-xs text-gray-500">Output Tokens</div>
-                </div>
-              )}
-              {displayResults.usage.total_tokens && (
-                <div className="text-center">
-                  <div className="text-lg font-semibold text-purple-600">
-                    {displayResults.usage.total_tokens.toLocaleString()}
-                  </div>
-                  <div className="text-xs text-gray-500">Total Tokens</div>
-                </div>
-              )}
-            </>
+          {/* Show cost if available and enabled */}
+          {showCost && displayResults.usage?.cost && (
+            <div className="text-center">
+              <div className="text-lg font-semibold text-green-600">
+                {new Intl.NumberFormat('en-US', {
+                  style: 'currency',
+                  currency: displayResults.usage.cost.currency || 'USD',
+                  minimumFractionDigits: 4,
+                  maximumFractionDigits: 6
+                }).format(displayResults.usage.cost.total_cost)}
+              </div>
+              <div className="text-xs text-gray-500 flex items-center justify-center">
+                Cost
+                {displayResults.usage.cost.is_estimated && (
+                  <span className="ml-1 text-orange-500" title="Estimated">~</span>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Show response time if available */}
@@ -940,6 +951,17 @@ const TestResults = ({
             </>
           )}
         </div>
+
+        {/* Enhanced Token and Cost Display */}
+        {displayResults.usage && (
+          <div className="mt-6 pt-4 border-t border-gray-200">
+            <TokenCostDisplay
+              usage={displayResults.usage}
+              showCost={showCost}
+              compact={false}
+            />
+          </div>
+        )}
 
         {/* Determinism Evaluation */}
         {determinismEnabled && (

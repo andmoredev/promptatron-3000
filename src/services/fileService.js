@@ -836,14 +836,31 @@ export class FileService {
 
   /**
    * Export history to a downloadable JSON file
+   * @param {boolean} includeCostData - Whether to include cost data in export
    * @returns {Promise<boolean>} True if exported successfully
    */
-  async exportHistory() {
+  async exportHistory(includeCostData = true) {
     try {
       const history = await this.loadHistory();
 
       if (history.length === 0) {
         throw new Error('No history to export');
+      }
+
+      // Filter out cost data if not requested
+      let exportHistory = history;
+      if (!includeCostData) {
+        exportHistory = history.map(item => {
+          const { usage, ...itemWithoutCost } = item;
+          if (usage) {
+            const { cost, ...usageWithoutCost } = usage;
+            return {
+              ...itemWithoutCost,
+              usage: usageWithoutCost
+            };
+          }
+          return itemWithoutCost;
+        });
       }
 
       // Include determinism evaluations and tool execution workflows in export
@@ -865,12 +882,20 @@ export class FileService {
         }
       }
 
+      const exportFeatures = ['tokenUsage', 'toolExecution', 'determinismGrades'];
+      if (includeCostData) {
+        exportFeatures.push('costEstimation');
+      }
+
       const exportData = {
-        version: '1.3', // Version to track export format
+        version: '1.4', // Version to track export format - updated for cost tracking
         exportDate: new Date().toISOString(),
-        testHistory: history,
+        testHistory: exportHistory,
         determinismEvaluations: await determinismStorageService.getAllEvaluations(),
-        toolExecutionWorkflows: detailedWorkflows
+        toolExecutionWorkflows: detailedWorkflows,
+        // Cost tracking metadata
+        costTrackingEnabled: includeCostData,
+        exportFeatures
       }
 
       const dataStr = JSON.stringify(exportData, null, 2);
