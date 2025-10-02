@@ -140,6 +140,19 @@ const TestResults = ({
   const { settings: costSettings } = useCostSettings();
   const showCost = costSettings?.showCostEstimates || false;
 
+  // Debug cost settings and services
+  console.log('TestResults: Cost settings:', { costSettings, showCost });
+
+  // Check service status
+  useEffect(() => {
+    import('../services/bedrockService.js').then(({ bedrockService }) => {
+      console.log('TestResults: BedrockService status:', bedrockService.getStatus());
+    });
+    import('../services/tokenEstimationService.js').then(({ tokenEstimationService }) => {
+      console.log('TestResults: TokenEstimationService ready:', tokenEstimationService.isReady());
+    });
+  }, []);
+
 
 
   // Monitor for text wrapping issues when results change
@@ -225,6 +238,7 @@ const TestResults = ({
   // Get the results to display (merge with restored state if needed)
   const getDisplayResults = () => {
     if (results) {
+      console.log('TestResults: Using fresh results:', results);
       return results;
     }
 
@@ -952,16 +966,44 @@ const TestResults = ({
           )}
         </div>
 
-        {/* Enhanced Token and Cost Display */}
-        {displayResults.usage && (
-          <div className="mt-6 pt-4 border-t border-gray-200">
+        {/* Enhanced Token and Cost Display - DEBUG VERSION */}
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <h4 className="text-sm font-medium text-blue-800">🔍 Debug: Token Cost Display Status</h4>
+            <div className="text-xs text-blue-700 mt-2 space-y-1">
+              <div>showCost setting: <strong>{showCost ? 'ENABLED' : 'DISABLED'}</strong></div>
+              <div>displayResults exists: <strong>{displayResults ? 'YES' : 'NO'}</strong></div>
+              <div>displayResults.usage exists: <strong>{displayResults?.usage ? 'YES' : 'NO'}</strong></div>
+              <div>displayResults.usage type: <strong>{typeof displayResults?.usage}</strong></div>
+              <div>displayResults.usage value: <strong>{JSON.stringify(displayResults?.usage)}</strong></div>
+              {displayResults && (
+                <div>Available keys: <strong>{Object.keys(displayResults).join(', ')}</strong></div>
+              )}
+              {displayResults?.usage && (
+                <div>Usage keys: <strong>{Object.keys(displayResults.usage).join(', ')}</strong></div>
+              )}
+            </div>
+          </div>
+
+          {console.log('TestResults: TokenCostDisplay section - displayResults:', displayResults)}
+          {console.log('TestResults: Usage data:', displayResults?.usage)}
+          {console.log('TestResults: showCost:', showCost)}
+
+          {displayResults.usage ? (
             <TokenCostDisplay
               usage={displayResults.usage}
               showCost={showCost}
               compact={false}
             />
-          </div>
-        )}
+          ) : (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+              <h4 className="text-sm font-medium text-red-800">❌ TokenCostDisplay Not Rendered</h4>
+              <p className="text-xs text-red-700 mt-1">
+                Reason: No usage data found in test results
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Determinism Evaluation */}
         {determinismEnabled && (

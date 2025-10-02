@@ -17,6 +17,7 @@ import FloatingChad from "./components/RobotGraphic/FloatingChad";
 import { useChadReveal } from "./components/RobotGraphic/useChadReveal";
 import StreamingPerformanceMonitor from "./components/StreamingPerformanceMonitor";
 import SettingsDialog from "./components/SettingsDialog";
+import NotificationContainer from "./components/NotificationContainer";
 
 import ToolExecutionSettings from "./components/ToolExecutionSettings";
 import ToolExecutionMonitor from "./components/ToolExecutionMonitor";
@@ -33,7 +34,7 @@ import {
   useTestResultsStatePersistence,
 } from "./hooks/useStatePersistence";
 import { statePersistenceService } from "./services/statePersistenceService";
-import { useSettings, useDeterminismSettings } from "./hooks/useSettings";
+import { useSettings, useDeterminismSettings, useCostSettings } from "./hooks/useSettings";
 import { validateForm } from "./utils/formValidation";
 import { handleError, retryWithBackoff } from "./utils/errorHandling";
 import { hasToolServiceForDatasetType } from "./utils/toolServiceMapping";
@@ -52,6 +53,7 @@ import {
 } from "./utils/uiErrorIntegration";
 import { useUIErrorRecovery } from "./hooks/useUIErrorRecovery";
 import { fileService } from "./services/fileService";
+import { storageMonitor } from "./utils/storageMonitor";
 
 function App() {
   // Load saved form state on initialization
@@ -176,6 +178,12 @@ function App() {
     settings: determinismSettings,
     isInitialized: determinismSettingsInitialized,
   } = useDeterminismSettings();
+
+  // Get cost settings specifically
+  const {
+    settings: costSettings,
+    isInitialized: costSettingsInitialized,
+  } = useCostSettings();
 
   // Use the history hook for managing test history
   const { saveTestResult } = useHistory();
@@ -521,6 +529,14 @@ function App() {
     // Initialize comprehensive UI error monitoring
     initializeUIErrorMonitoring();
 
+    // Initialize storage monitoring
+    storageMonitor.startMonitoring();
+
+    // Expose storage monitor for debugging and error handling
+    if (typeof window !== 'undefined') {
+      window.storageMonitor = storageMonitor;
+    }
+
     // Set up periodic checks for gradient issues
     const checkInterval = setInterval(() => {
       const issues = gradientErrorRecovery.detectGradientIssues();
@@ -542,6 +558,7 @@ function App() {
 
     return () => {
       clearInterval(checkInterval);
+      storageMonitor.stopMonitoring();
     };
   }, []);
 
@@ -2483,6 +2500,12 @@ function App() {
               // Settings are automatically saved by the SettingsService
               // This callback is for any additional actions needed
             }}
+          />
+
+          {/* Notification Container */}
+          <NotificationContainer
+            position="top"
+            maxVisible={3}
           />
         </BrowserCompatibility>
       </ThemeProvider>

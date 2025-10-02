@@ -1,6 +1,8 @@
 import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
 import { analyzeError, handleError, ErrorTypes } from '../utils/errorHandling.js';
+import { handleServiceInitializationError, createFallbackUsageData, createFallbackCostData } from '../utils/tokenCostErrorHandling.js';
+import { notificationManager } from '../utils/notificationManager.js';
 import { tokenEstimationService } from './tokenEstimationService.js';
 import { costCalculationService } from './costCalculationService.js';
 import { settingsService } from './settingsService.js';
@@ -270,9 +272,12 @@ export class BedrockService {
       const response = await this.runtimeClient.send(command);
 
       // Parse the Converse API response and add response time
+      console.log('BedrockService: Raw API response:', response);
       const result = this.parseConverseResponse(response, modelId, systemPrompt, userPrompt, content);
+      console.log('BedrockService: Parsed result from parseConverseResponse:', result);
       const endTime = performance.now();
       result.responseTime = endTime - startTime;
+      console.log('BedrockService: Final result with responseTime:', result);
 
       return result;
 
@@ -293,6 +298,7 @@ export class BedrockService {
    * @returns {Promise<Object>} Complete workflow execution result
    */
   async executeToolWorkflow(modelId, systemPrompt, userPrompt, content = '', toolConfig, options = {}) {
+    console.log('BedrockService: executeToolWorkflow called');
     if (!this.isInitialized || !this.credentialsValid) {
       const initResult = await this.initialize();
       if (!initResult.success) {
@@ -412,16 +418,19 @@ export class BedrockService {
         // Check stop reason and tool use
         if (response.stopReason === 'end_turn' || !toolUseData.hasToolUse) {
           // Conversation is complete
+          // Parse the response to get enhanced usage data (with token estimation and cost calculation)
+          console.log('BedrockService: Tool workflow parsing final response for usage data');
+          const parsedResponse = this.parseConverseResponse(response, modelId, systemPrompt, userPrompt, content);
+          console.log('BedrockService: Tool workflow parsed response:', parsedResponse);
+
           workflowState.finalResponse = {
             text: toolUseData.textContent || 'No text response',
-            usage: response.usage ? {
-              input_tokens: response.usage.inputTokens,
-              output_tokens: response.usage.outputTokens,
-              total_tokens: response.usage.totalTokens
-            } : null,
+            usage: parsedResponse.usage, // Use enhanced usage data instead of raw API data
             stopReason: response.stopReason,
             iterationCount: workflowState.currentIteration
           };
+
+          console.log('BedrockService: Tool workflow final response:', workflowState.finalResponse);
 
           // Add completion step to workflow
           this.addWorkflowStep(workflowState, {
@@ -607,13 +616,40 @@ export class BedrockService {
 
       // Check if we hit max iterations
       if (workflowState.currentIteration >= maxIterations && !workflowState.finalResponse) {
+        console.log('BedrockService: Tool workflow hit max iterations, creating fallback response');
         workflowState.status = 'max_iterations_reached';
+
+        // Try to get usage data from the last response if available
+        let fallbackUsage = null;
+        if (workflowState.messages.length > 0) {
+          // Create a minimal response object to parse for usage data
+          const lastMessage = workflowState.messages[workflowState.messages.length - 1];
+          if (lastMessage && lastMessage.content) {
+            try {
+              const mockResponse = {
+                output: {
+                  message: {
+                    content: [{ text: 'Maximum iterations reached without completion' }]
+                  }
+                },
+                usage: null // No API usage data available
+              };
+              const parsedResponse = this.parseConverseResponse(mockResponse, modelId, systemPrompt, userPrompt, content);
+              fallbackUsage = parsedResponse.usage;
+            } catch (error) {
+              console.warn('BedrockService: Failed to create fallback usage data:', error);
+            }
+          }
+        }
+
         workflowState.finalResponse = {
           text: 'Maximum iterations reached without completion',
-          usage: null,
+          usage: fallbackUsage,
           stopReason: 'max_iterations',
           iterationCount: workflowState.currentIteration
         };
+
+        console.log('BedrockService: Max iterations fallback response:', workflowState.finalResponse);
 
         this.addWorkflowStep(workflowState, {
           type: 'max_iterations_reached',
@@ -647,7 +683,8 @@ export class BedrockService {
       }
 
       // Return complete workflow result
-      return {
+      console.log('BedrockService: executeToolWorkflow returning result with usage:', workflowState.finalResponse?.usage);
+      const finalResult = {
         executionId,
         text: workflowState.finalResponse?.text || '',
         usage: workflowState.finalResponse?.usage,
@@ -660,6 +697,8 @@ export class BedrockService {
         errors: workflowState.errors,
         stopReason: workflowState.finalResponse?.stopReason || 'unknown'
       };
+      console.log('BedrockService: Final workflow result:', finalResult);
+      return finalResult;
 
     } catch (error) {
       // Handle workflow execution error
@@ -779,6 +818,7 @@ export class BedrockService {
    * @returns {Promise<Object>} The model response with tool usage data
    */
   async invokeModelWithTools(modelId, systemPrompt, userPrompt, content = '', toolConfig, options = {}) {
+    console.log('BedrockService: invokeModelWithTools called with:', { modelId, executionMode: options.executionMode });
     const {
       executionMode = 'detection', // 'detection' or 'execution'
       maxIterations = 10,
@@ -2352,6 +2392,7 @@ export class BedrockService {
 
       if (response.usage) {
         // API provided usage data - use as exact values
+        console.log('BedrockService: Using API-provided usage data:', response.usage);
         enhancedUsage = {
           input_tokens: response.usage.inputTokens,
           output_tokens: response.usage.outputTokens,
@@ -2362,6 +2403,7 @@ export class BedrockService {
         };
       } else if (modelId && tokenEstimationService.isReady()) {
         // API didn't provide usage data - estimate tokens
+        console.log('BedrockService: Attempting token estimation for model:', modelId);
         try {
           const inputEstimation = tokenEstimationService.estimateInputTokens(
             systemPrompt, userPrompt, content, modelId
@@ -2377,27 +2419,35 @@ export class BedrockService {
             estimation_method: inputEstimation.method || 'unknown'
           };
 
-          // Add estimation errors if any
+          // Add estimation metadata
           if (inputEstimation.error || outputEstimation.error) {
-            enhancedUsage.estimation_errors = {
-              input: inputEstimation.error,
-              output: outputEstimation.error
-            };
+            enhancedUsage.estimation_error = inputEstimation.error || outputEstimation.error;
+          }
+
+          if (inputEstimation.fallbackStrategy || outputEstimation.fallbackStrategy) {
+            enhancedUsage.fallback_strategy = inputEstimation.fallbackStrategy || outputEstimation.fallbackStrategy;
+          }
+
+          if (inputEstimation.confidence || outputEstimation.confidence) {
+            enhancedUsage.confidence = inputEstimation.confidence || outputEstimation.confidence;
           }
         } catch (estimationError) {
           console.warn('Token estimation failed:', estimationError.message);
-          enhancedUsage = {
-            input_tokens: null,
-            output_tokens: null,
-            tool_tokens: null,
-            total_tokens: null,
-            tokens_source: 'unavailable',
-            estimation_method: null,
-            estimation_error: estimationError.message
-          };
+
+          // Create fallback usage data with error handling
+          enhancedUsage = createFallbackUsageData({}, {
+            tokens: null,
+            error: estimationError.message,
+            method: 'error-fallback',
+            fallbackStrategy: 'graceful_degradation'
+          });
         }
       } else {
         // No API usage data and token estimation not available
+        console.log('BedrockService: No usage data from API and token estimation not ready', {
+          modelId,
+          tokenEstimationReady: tokenEstimationService.isReady()
+        });
         enhancedUsage = {
           input_tokens: null,
           output_tokens: null,
@@ -2414,6 +2464,7 @@ export class BedrockService {
         try {
           if (costCalculationService.isReady() && modelId) {
             const costData = costCalculationService.calculateCost(enhancedUsage, modelId);
+
             if (costData && !costData.error) {
               enhancedUsage.cost = {
                 input_cost: costData.inputCost,
@@ -2426,24 +2477,76 @@ export class BedrockService {
                 provider: costData.provider,
                 region: costData.region
               };
+
+              // Add cost metadata for error states
+              if (costData.show_cost_unavailable) {
+                enhancedUsage.cost.show_cost_unavailable = true;
+              }
+
+              if (costData.show_stale_data_warning) {
+                enhancedUsage.cost.show_stale_data_warning = true;
+              }
+
+              if (costData.fallbackStrategy) {
+                enhancedUsage.cost.fallback_strategy = costData.fallbackStrategy;
+              }
             } else {
-              enhancedUsage.cost_error = costData?.error || 'Cost calculation failed';
+              // Create fallback cost data with error information
+              enhancedUsage.cost = createFallbackCostData({}, {
+                error: costData?.error || 'Cost calculation failed',
+                fallbackStrategy: 'disable_cost_display',
+                showCostUnavailable: true
+              });
             }
           } else {
-            enhancedUsage.cost_error = 'Cost calculation service not available';
+            // Service not ready - create fallback cost data
+            enhancedUsage.cost = createFallbackCostData({}, {
+              error: 'Cost calculation service not available',
+              fallbackStrategy: 'disable_cost_display',
+              showCostUnavailable: true
+            });
           }
         } catch (costError) {
           console.warn('Cost calculation failed:', costError.message);
-          enhancedUsage.cost_error = costError.message;
+
+          // Create fallback cost data for calculation errors
+          enhancedUsage.cost = createFallbackCostData({}, {
+            error: costError.message,
+            fallbackStrategy: 'graceful_degradation',
+            showCostUnavailable: true
+          });
         }
       }
 
+      console.log('BedrockService: Returning parsed response with usage:', enhancedUsage);
       return {
         text: text,
         usage: enhancedUsage
       };
     } catch (error) {
-      throw new Error(`Failed to parse Converse API response: ${error.message}`);
+      // Enhanced error handling for response parsing
+      const errorInfo = analyzeError(error, {
+        component: 'BedrockService',
+        action: 'parseConverseResponse',
+        modelId,
+        hasResponse: !!response
+      });
+
+      // Create minimal fallback response
+      const fallbackUsage = createFallbackUsageData({}, {
+        tokens: null,
+        error: 'Response parsing failed',
+        method: 'parse-error-fallback',
+        fallbackStrategy: 'graceful_degradation'
+      });
+
+      console.error('Failed to parse Converse API response:', errorInfo.userMessage);
+
+      return {
+        text: text || 'Response parsing failed',
+        usage: fallbackUsage,
+        parseError: errorInfo.userMessage
+      };
     }
   }
 

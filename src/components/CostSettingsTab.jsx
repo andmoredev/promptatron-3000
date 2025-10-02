@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import Pros from 'prop-types';
+import PropTypes from 'prop-types';
 import { useCostSettings } from '../hooks/useSettings.js';
 import LoadingSpinner from './LoadingSpinner.jsx';
 import HelpTooltip from './HelpTooltip.jsx';

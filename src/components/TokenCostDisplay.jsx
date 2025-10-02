@@ -1,6 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import HelpTooltip from './HelpTooltip';
+import UserNotification from './UserNotification';
 
 /**
  * TokenCostDisplay component displays token usage and cost information
@@ -10,9 +11,18 @@ import HelpTooltip from './HelpTooltip';
  * @param {boolean} props.compact - Whether to use compact display mode
  */
 function TokenCostDisplay({ usage, showCost = false, compact = false }) {
+  // Debug logging
+  console.log('TokenCostDisplay rendered with:', { usage, showCost, compact });
+
   if (!usage) {
+    console.log('TokenCostDisplay: No usage data provided');
     return null;
   }
+
+  // Handle error states and fallback scenarios
+  const hasTokenError = usage.estimation_error || usage.tokens_source === 'unavailable';
+  const hasCostError = showCost && usage.cost && (usage.cost.calculation_error || usage.cost.show_cost_unavailable);
+  const hasStaleData = showCost && usage.cost && usage.cost.show_stale_data_warning;
 
   // Helper function to format numbers with locale-specific formatting
   const formatNumber = (num) => {
@@ -87,6 +97,60 @@ function TokenCostDisplay({ usage, showCost = false, compact = false }) {
   // Full display mode
   return (
     <div className="space-y-4">
+      {/* Debug indicator */}
+      <div className="mb-4 p-2 bg-green-50 border border-green-200 rounded-lg">
+        <h4 className="text-xs font-medium text-green-800">✅ TokenCostDisplay Rendered Successfully</h4>
+        <div className="text-xs text-green-700 mt-1">
+          showCost: {showCost ? 'enabled' : 'disabled'} | compact: {compact ? 'yes' : 'no'} | hasUsage: {usage ? 'yes' : 'no'}
+        </div>
+      </div>
+      {/* Error notifications */}
+      {hasTokenError && (
+        <UserNotification
+          notification={{
+            type: 'warning',
+            title: 'Token Estimation Notice',
+            message: usage.estimation_error || 'Token estimation is using a fallback method',
+            dismissible: true,
+            autoHide: false
+          }}
+          position="inline"
+        />
+      )}
+
+      {hasCostError && (
+        <UserNotification
+          notification={{
+            type: 'info',
+            title: 'Cost Information Unavailable',
+            message: usage.cost.calculation_error || 'Cost estimates are not available for this model',
+            actions: ['Continue without cost info'],
+            dismissible: true,
+            autoHide: false
+          }}
+          position="inline"
+        />
+      )}
+
+      {hasStaleData && (
+        <UserNotification
+          notification={{
+            type: 'warning',
+            title: 'Pricing Data Notice',
+            message: 'Cost estimates may be based on outdated pricing data',
+            actions: ['Check AWS pricing page'],
+            dismissible: true,
+            autoHide: false
+          }}
+          position="inline"
+          onAction={(action) => {
+            if (action.action === 'check_aws_pricing_page') {
+              window.open('https://aws.amazon.com/bedrock/pricing/', '_blank', 'noopener,noreferrer');
+            }
+          }}
+        />
+      )}
+
       {/* Token Information Section */}
       <div>
         <div className="flex items-center space-x-2 mb-3">
@@ -161,12 +225,36 @@ function TokenCostDisplay({ usage, showCost = false, compact = false }) {
               <div className="text-xs text-gray-500 mt-1">Total Tokens</div>
             </div>
           )}
+
+          {/* Unavailable tokens display */}
+          {(usage.input_tokens === null || usage.input_tokens === undefined) &&
+           (usage.output_tokens === null || usage.output_tokens === undefined) &&
+           (usage.total_tokens === null || usage.total_tokens === undefined) && (
+            <div className="col-span-full text-center p-4 bg-gray-50 border border-gray-200 rounded-lg">
+              <div className="flex items-center justify-center space-x-2 text-gray-500">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                </svg>
+                <span className="text-sm">Token information unavailable</span>
+              </div>
+              {usage.estimation_error && (
+                <div className="mt-1 text-xs text-gray-400">
+                  {usage.estimation_error}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Estimation method info */}
         {isEstimated && usage.estimation_method && (
           <div className="mt-2 text-xs text-gray-500">
             Estimation method: {usage.estimation_method}
+            {usage.fallback_strategy && (
+              <span className="ml-2 text-orange-600">
+                (fallback: {usage.fallback_strategy.replace(/_/g, ' ')})
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -228,6 +316,23 @@ function TokenCostDisplay({ usage, showCost = false, compact = false }) {
                   {formatCost(usage.cost.total_cost, usage.cost.currency)}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">Total Cost</div>
+              </div>
+            )}
+
+            {/* Unavailable cost display */}
+            {usage.cost.show_cost_unavailable && (
+              <div className="col-span-full text-center p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <div className="flex items-center justify-center space-x-2 text-gray-500">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                  </svg>
+                  <span className="text-sm">Cost information unavailable</span>
+                </div>
+                {usage.cost.calculation_error && (
+                  <div className="mt-1 text-xs text-gray-400">
+                    {usage.cost.calculation_error}
+                  </div>
+                )}
               </div>
             )}
           </div>
