@@ -5,6 +5,7 @@
 
 import { toolConfigService } from './toolConfigService.js'
 import { handleToolError, validateToolConfigurationWithFeedback, ToolErrorTypes } from '../utils/toolErrorHandling.js'
+import { initializeToolServiceForDatasetType, hasToolServiceForDatasetType } from '../utils/toolServiceMapping.js'
 
 /**
  * Dataset Tool Integration Service
@@ -43,21 +44,109 @@ export class DatasetToolIntegrationService {
 
       const manifest = await manifestResponse.json()
 
-      // Validate basic manifest structure
+      // Validate basic manifest structure - now supports both file and seed data modes
       if (!manifest.files || !Array.isArray(manifest.files)) {
         throw new Error(`Invalid manifest format: expected "files" array in /datasets/${datasetType}/manifest.json`)
       }
 
+      // Detect dataset mode (file vs seed data)
+      const datasetMode = this.detectDatasetMode(manifest)
+
       // Enhance manifest with tool configuration information
       const enhancedManifest = {
         ...manifest,
-        toolConfiguration: this.processToolConfiguration(manifest.toolConfiguration, datasetType)
+        datasetMode: datasetMode,
+        toolConfiguration: this.processToolConfiguration(manifest.toolConfiguration, datasetType),
+        seedDataConfig: this.processSeedDataConfiguration(manifest.seedData, datasetType),
+        systemPromptsConfig: this.processSystemPromptsConfiguration(manifest.systemPrompts, datasetType)
       }
 
       return enhancedManifest
     } catch (error) {
       console.error(`Error loading dataset manifest for ${datasetType}:`, error)
       throw error
+    }
+  }
+
+  /**
+   * Detect dataset mode (file vs seed data) from manifest
+   * @param {Object} manifest - The dataset manifest
+   * @returns {string} Dataset mode: 'seed' or 'file'
+   */
+  detectDatasetMode(manifest) {
+    // If seedData configuration exists and has a dataFile, it's a seed data dataset
+    if (manifest.seedData && manifest.seedData.dataFile) {
+      return 'seed'
+    }
+
+    // If files array has entries, it's a file-based dataset
+    if (manifest.files && manifest.files.length > 0) {
+      return 'file'
+    }
+
+    // Default to file mode for backward compatibility
+    return 'file'
+  }
+
+  /**
+   * Process seed data configuration from manifest
+   * @param {Object} seedDataConfig - Seed data configuration from manifest
+   * @param {string} datasetType - The dataset type
+   * @returns {Object} Processed seed data configuration
+   */
+  processSeedDataConfiguration(seedDataConfig, datasetType) {
+    const defaultConfig = {
+      enabled: false,
+      dataFile: null,
+      allowReset: false,
+      datasetType: datasetType
+    }
+
+    // If no seed data configuration in manifest, return default
+    if (!seedDataConfig) {
+      return defaultConfig
+    }
+
+    return {
+      enabled: true,
+      dataFile: seedDataConfig.dataFile || null,
+      allowReset: seedDataConfig.allowReset === true,
+      datasetType: datasetType,
+      originalConfig: seedDataConfig
+    }
+  }
+
+  /**
+   * Process system prompts configuration from manifest
+   * @param {Array} systemPrompts - System prompts array from manifest
+   * @param {string} datasetType - The dataset type
+   * @returns {Object} Processed system prompts configuration
+   */
+  processSystemPromptsConfiguration(systemPrompts, datasetType) {
+    const defaultConfig = {
+      enabled: false,
+      prompts: [],
+      datasetType: datasetType
+    }
+
+    // If no system prompts in manifest, return default
+    if (!systemPrompts || !Array.isArray(systemPrompts)) {
+      return defaultConfig
+    }
+
+    // Process and validate each prompt
+    const processedPrompts = systemPrompts.map(prompt => ({
+      id: prompt.id || `prompt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: prompt.name || 'Unnamed Prompt',
+      prompt: prompt.prompt || '',
+      datasetType: datasetType
+    })).filter(prompt => prompt.prompt.trim().length > 0)
+
+    return {
+      enabled: processedPrompts.length > 0,
+      prompts: processedPrompts,
+      datasetType: datasetType,
+      originalConfig: systemPrompts
     }
   }
 
@@ -96,6 +185,237 @@ export class DatasetToolIntegrationService {
       toolsAvailable: availableTools,
       fallbackMode: !enabled || !hasToolsInService,
       originalConfig: toolConfig
+    }
+  }
+
+  /**
+   * Load seed data for a dataset with tool service initialization and proper error handling
+   * @param {string} datasetType - The dataset type
+   * @param {Object} seedDataConfig - Seed data configuration from manifest
+   * @param {Object} toolConfig - Optional tool configuration for service initialization
+   * @returns {Promise<Object>} Seed data loading result with tool service initialization status
+   */
+  async loadSeedDataWithInitialization(datasetType, seedDataConfig, toolConfig = null) {
+    const result = {
+      success: false,
+      data: null,
+      message: 'Seed data loading failed',
+      datasetType: datasetType,
+      errors: [],
+      warnings: [],
+      toolServiceInitialized: false,
+      toolServiceError: null
+    }
+
+    try {
+      // Validate input
+      if (!datasetType) {
+        result.errors.push('Dataset type is required')
+        result.message = 'Dataset type is required for seed data loading'
+        return result
+      }
+
+      if (!seedDataConfig || !seedDataConfig.enabled || !seedDataConfig.dataFile) {
+        result.errors.push('Invalid seed data configuration')
+        result.message = 'Seed data is not configured for this dataset'
+        return result
+      }
+
+      // Step 1: Initialize tool service if available for this dataset type
+      if (hasToolServiceForDatasetType(datasetType)) {
+        try {
+          console.log(`Initializing tool service for seed data dataset: ${datasetType}`)
+          const initResult = await initializeToolServiceForDatasetType(datasetType, toolConfig)
+
+          if (initResult.success) {
+            result.toolServiceInitialized = true
+            result.warnings.push(`Tool service initialized for ${datasetType}`)
+            console.log(`Tool service successfully initialized for ${datasetType}`)
+          } else {
+            result.toolServiceError = initResult.message
+            result.warnings.push(`Tool service initialization failed: ${initResult.message}`)
+            console.warn(`Tool service initialization failed for ${datasetType}:`, initResult.message)
+            // Continue with seed data loading even if tool service fails
+          }
+        } catch (error) {
+          result.toolServiceError = error.message
+          result.warnings.push(`Tool service initialization error: ${error.message}`)
+          console.error(`Error initializing tool service for ${datasetType}:`, error)
+          // Continue with seed data loading even if tool service fails
+        }
+      } else {
+        console.info(`No tool service available for dataset type: ${datasetType}`)
+      }
+
+      // Step 2: Load the seed data file
+      const seedDataUrl = `/datasets/${datasetType}/${seedDataConfig.dataFile}`
+      console.log(`Loading seed data from: ${seedDataUrl}`)
+
+      const seedDataResponse = await fetch(seedDataUrl)
+
+      if (!seedDataResponse.ok) {
+        const errorMessage = `Failed to load seed data file: ${seedDataResponse.status} ${seedDataResponse.statusText}`
+        result.errors.push(errorMessage)
+        result.message = `Seed data file not found: ${seedDataConfig.dataFile}`
+        return result
+      }
+
+      // Parse the seed data
+      const seedData = await seedDataResponse.json()
+
+      if (!seedData || typeof seedData !== 'object') {
+        result.errors.push('Invalid seed data format')
+        result.message = 'Seed data file contains invalid JSON'
+        return result
+      }
+
+      // Success
+      result.success = true
+      result.data = seedData
+      result.message = result.toolServiceInitialized
+        ? `Seed data loaded successfully with tool service initialized`
+        : `Seed data loaded successfully (tool service ${result.toolServiceError ? 'failed' : 'not available'})`
+
+      console.log(`Seed data loading completed for ${datasetType}:`, {
+        success: result.success,
+        toolServiceInitialized: result.toolServiceInitialized,
+        dataSize: JSON.stringify(seedData).length
+      })
+
+      return result
+
+    } catch (error) {
+      console.error(`Error loading seed data for ${datasetType}:`, error)
+      result.errors.push(error.message)
+      result.message = `Failed to load seed data: ${error.message}`
+      return result
+    }
+  }
+
+  /**
+   * Load seed data for a dataset with proper error handling (legacy method)
+   * @param {string} datasetType - The dataset type
+   * @param {Object} seedDataConfig - Seed data configuration from manifest
+   * @returns {Promise<Object>} Seed data loading result
+   */
+  async loadSeedData(datasetType, seedDataConfig) {
+    const result = {
+      success: false,
+      data: null,
+      message: 'Seed data loading failed',
+      datasetType: datasetType,
+      errors: [],
+      warnings: []
+    }
+
+    try {
+      // Validate input
+      if (!datasetType) {
+        result.errors.push('Dataset type is required')
+        result.message = 'Dataset type is required for seed data loading'
+        return result
+      }
+
+      if (!seedDataConfig || !seedDataConfig.enabled || !seedDataConfig.dataFile) {
+        result.errors.push('Invalid seed data configuration')
+        result.message = 'Seed data is not configured for this dataset'
+        return result
+      }
+
+      // Load the seed data file
+      const seedDataUrl = `/datasets/${datasetType}/${seedDataConfig.dataFile}`
+      const seedDataResponse = await fetch(seedDataUrl)
+
+      if (!seedDataResponse.ok) {
+        const errorMessage = `Failed to load seed data file: ${seedDataResponse.status} ${seedDataResponse.statusText}`
+        result.errors.push(errorMessage)
+        result.message = `Seed data file not found: ${seedDataConfig.dataFile}`
+        return result
+      }
+
+      // Parse the seed data
+      const seedData = await seedDataResponse.json()
+
+      if (!seedData || typeof seedData !== 'object') {
+        result.errors.push('Invalid seed data format')
+        result.message = 'Seed data file contains invalid JSON'
+        return result
+      }
+
+      // Success
+      result.success = true
+      result.data = seedData
+      result.message = `Seed data loaded successfully from ${seedDataConfig.dataFile}`
+
+      return result
+
+    } catch (error) {
+      console.error(`Error loading seed data for ${datasetType}:`, error)
+      result.errors.push(error.message)
+      result.message = `Failed to load seed data: ${error.message}`
+      return result
+    }
+  }
+
+  /**
+   * Initialize tool service for seed data dataset with graceful error handling
+   * @param {string} datasetType - The dataset type
+   * @param {Object} toolConfig - Optional tool configuration
+   * @returns {Promise<Object>} Tool service initialization result
+   */
+  async initializeToolServiceForSeedData(datasetType, toolConfig = null) {
+    const result = {
+      success: false,
+      service: null,
+      message: 'Tool service initialization failed',
+      datasetType: datasetType,
+      errors: [],
+      warnings: [],
+      gracefulDegradation: true
+    }
+
+    try {
+      // Validate input
+      if (!datasetType) {
+        result.errors.push('Dataset type is required')
+        result.message = 'Dataset type is required for tool service initialization'
+        return result
+      }
+
+      // Check if this dataset type has a tool service
+      if (!hasToolServiceForDatasetType(datasetType)) {
+        result.message = `No tool service available for dataset type: ${datasetType}`
+        result.warnings.push('This dataset type does not have an associated tool service')
+        console.info(`No tool service configured for dataset type: ${datasetType}`)
+        return result
+      }
+
+      // Attempt to initialize the tool service
+      console.log(`Attempting to initialize tool service for seed data dataset: ${datasetType}`)
+
+      const initResult = await initializeToolServiceForDatasetType(datasetType, toolConfig)
+
+      if (initResult.success) {
+        result.success = true
+        result.service = initResult.service
+        result.message = `Tool service initialized successfully for ${datasetType}`
+        result.gracefulDegradation = false
+        console.log(`Tool service successfully initialized for seed data dataset: ${datasetType}`)
+      } else {
+        result.errors.push(initResult.message)
+        result.message = `Tool service initialization failed: ${initResult.message}`
+        result.warnings.push('Seed data will be loaded without tool service capabilities')
+        console.warn(`Tool service initialization failed for ${datasetType}:`, initResult.message)
+      }
+
+      return result
+
+    } catch (error) {
+      console.error(`Error initializing tool service for seed data dataset ${datasetType}:`, error)
+      result.errors.push(error.message)
+      result.message = `Tool service initialization error: ${error.message}`
+      result.warnings.push('Seed data will be loaded without tool service capabilities')
+      return result
     }
   }
 
@@ -443,6 +763,33 @@ export class DatasetToolIntegrationService {
   }
 
   /**
+   * Get the tool service for a specific dataset type
+   * This method provides the mapping between dataset types and their corresponding tool services
+   * @param {string} datasetType - The dataset type
+   * @returns {Promise<Object|null>} The tool service instance or null if not found
+   */
+  async getToolServiceForDatasetType(datasetType) {
+    try {
+      // Use the centralized utility function
+      const serviceLoader = await import('../utils/toolServiceMapping.js')
+      const toolServiceLoader = serviceLoader.getToolServiceForDatasetType(datasetType)
+
+      if (!toolServiceLoader) {
+        console.info(`No tool service configured for dataset type: ${datasetType}`)
+        return null
+      }
+
+      // Load the service
+      const service = await toolServiceLoader()
+      return service
+
+    } catch (error) {
+      console.error(`Error getting tool service for dataset type ${datasetType}:`, error)
+      return null
+    }
+  }
+
+  /**
    * Debug method to check current tool configuration state
    * @param {string} datasetType - Optional dataset type to check specifically
    * @returns {Object} Debug information
@@ -477,6 +824,37 @@ export class DatasetToolIntegrationService {
       mappingCount: this.datasetToolMappings.size
     }
   }
+}
+
+/**
+ * Get the tool service for a specific dataset type
+ * This utility function provides the mapping between dataset types and their corresponding tool services
+ * @param {string} datasetType - The dataset type
+ * @returns {Object|null} The tool service instance or null if not found
+ */
+export const getToolServiceForDatasetType = (datasetType) => {
+  // Import services dynamically to avoid circular dependencies
+  let shippingToolsService = null
+  let fraudToolsService = null
+
+  try {
+    // Try to get services from modules if they're available
+    if (datasetType === 'shipping-logistics') {
+      // The component using this will need to import shippingToolsService and pass it
+      // For now, we'll return null and let the component handle the import
+      return null
+    }
+
+    if (datasetType === 'fraud-detection') {
+      // The component using this will need to import fraudToolsService and pass it
+      // For now, we'll return null and let the component handle the import
+      return null
+    }
+  } catch (error) {
+    console.warn(`Could not load tool service for ${datasetType}:`, error)
+  }
+
+  return null
 }
 
 // Create and export singleton instance

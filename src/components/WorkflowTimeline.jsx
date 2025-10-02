@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import PropTypes from 'prop-types'
 
 const WorkflowTimeline = ({
@@ -8,6 +8,8 @@ const WorkflowTimeline = ({
   onCopyStep
 }) => {
   const [expandedSteps, setExpandedSteps] = useState(new Set())
+  const [isTimelineCollapsed, setIsTimelineCollapsed] = useState(true)
+  const [collapsedIterations, setCollapsedIterations] = useState(new Set())
 
   const toggleStepExpansion = (stepId) => {
     const newExpanded = new Set(expandedSteps)
@@ -18,6 +20,63 @@ const WorkflowTimeline = ({
     }
     setExpandedSteps(newExpanded)
     onStepExpand?.(stepId)
+  }
+
+  const toggleTimelineCollapse = () => {
+    setIsTimelineCollapsed(!isTimelineCollapsed)
+  }
+
+  const toggleIterationCollapse = (iteration) => {
+    const newCollapsed = new Set(collapsedIterations)
+    if (newCollapsed.has(iteration)) {
+      newCollapsed.delete(iteration)
+    } else {
+      newCollapsed.add(iteration)
+    }
+    setCollapsedIterations(newCollapsed)
+  }
+
+  // Group workflow steps by iteration
+  const workflowByIteration = useMemo(() => {
+    const grouped = {}
+    workflow.forEach(step => {
+      const iteration = step.iteration || 0
+      if (!grouped[iteration]) {
+        grouped[iteration] = []
+      }
+      grouped[iteration].push(step)
+    })
+    return grouped
+  }, [workflow])
+
+  // Initialize all iterations as collapsed when workflow changes
+  useEffect(() => {
+    if (workflow.length > 0) {
+      const allIterations = new Set(Object.keys(workflowByIteration).map(k => parseInt(k)))
+      setCollapsedIterations(allIterations)
+    }
+  }, [workflowByIteration, workflow.length])
+
+  // Get iteration statistics
+  const getIterationStats = (steps) => {
+    const stats = {
+      totalSteps: steps.length,
+      completedSteps: steps.filter(s => s.status === 'completed').length,
+      errorSteps: steps.filter(s => s.status === 'error').length,
+      toolCalls: steps.filter(s => s.type === 'tool_call').length,
+      duration: null
+    }
+
+    // Calculate total duration if available
+    const firstStep = steps[0]
+    const lastStep = steps[steps.length - 1]
+    if (firstStep && lastStep && firstStep.timestamp && lastStep.timestamp) {
+      const startTime = new Date(firstStep.timestamp).getTime()
+      const endTime = new Date(lastStep.timestamp).getTime()
+      stats.duration = endTime - startTime
+    }
+
+    return stats
   }
 
   const copyStepContent = async (step) => {
@@ -205,7 +264,27 @@ const WorkflowTimeline = ({
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Workflow Timeline</h3>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={toggleTimelineCollapse}
+            className="flex items-center space-x-2 text-lg font-semibold text-gray-900 hover:text-primary-600 transition-colors"
+          >
+            <svg
+              className={`h-5 w-5 transition-transform duration-200 ${isTimelineCollapsed ? '' : 'rotate-90'}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <span>Workflow Timeline</span>
+          </button>
+          {workflow.length > 0 && (
+            <span className="text-sm text-gray-500">
+              ({Object.keys(workflowByIteration).length} iteration{Object.keys(workflowByIteration).length !== 1 ? 's' : ''}, {workflow.length} step{workflow.length !== 1 ? 's' : ''})
+            </span>
+          )}
+        </div>
         {isExecuting && (
           <div className="flex items-center space-x-2">
             <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
@@ -214,119 +293,191 @@ const WorkflowTimeline = ({
         )}
       </div>
 
-      <div className="space-y-4">
-        {workflow.map((step, index) => {
-          const isExpanded = expandedSteps.has(step.id)
-          const isLast = index === workflow.length - 1
+      {!isTimelineCollapsed && (
+        <div className="space-y-6">
+          {Object.entries(workflowByIteration)
+            .sort(([a], [b]) => parseInt(a) - parseInt(b))
+            .map(([iteration, steps]) => {
+              const iterationNum = parseInt(iteration)
+              const isIterationCollapsed = collapsedIterations.has(iterationNum)
+              const stats = getIterationStats(steps)
 
-          return (
-            <div key={step.id} className="relative">
-              {/* Timeline line */}
-              {!isLast && (
-                <div className="absolute left-6 top-12 w-0.5 h-8 bg-gray-200" />
-              )}
-
-              <div className={`flex items-start space-x-3 p-3 rounded-lg transition-colors duration-200 ${
-                step.status === 'error'
-                  ? 'bg-red-50 border border-red-200'
-                  : 'bg-gray-50 hover:bg-gray-100'
-              }`}>
-                {/* Step icon */}
-                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white border-2 border-gray-200">
-                  {getStepIcon(step)}
-                </div>
-
-                {/* Step content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <h4 className="text-sm font-medium text-gray-900">
-                        {getStepTitle(step)}
-                      </h4>
-                      {getStatusIndicator(step)}
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs text-gray-500">
-                        {formatTimestamp(step.timestamp)}
-                      </span>
-                      {step.duration && (
-                        <span className="text-xs text-gray-500">
-                          ({formatDuration(step.duration)})
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <p className="mt-1 text-sm text-gray-600">
-                    {getStepDescription(step)}
-                  </p>
-
-                  {/* Action buttons */}
-                  <div className="mt-2 flex items-center space-x-2">
+              return (
+                <div key={iteration} className="border border-gray-200 rounded-lg overflow-hidden">
+                  {/* Iteration Header */}
+                  <div className="bg-gray-50 border-b border-gray-200">
                     <button
-                      onClick={() => toggleStepExpansion(step.id)}
-                      className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+                      onClick={() => toggleIterationCollapse(iterationNum)}
+                      className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-100 transition-colors"
                     >
-                      {isExpanded ? 'Collapse' : 'Expand'}
-                    </button>
-                    <button
-                      onClick={() => copyStepContent(step)}
-                      className="text-xs text-gray-500 hover:text-gray-700 font-medium"
-                    >
-                      Copy
-                    </button>
-                  </div>
-
-                  {/* Expanded content */}
-                  {isExpanded && (
-                    <div className="mt-3 p-3 bg-white border border-gray-200 rounded-md">
-                      <div className="space-y-3">
-                        {/* Step metadata */}
-                        <div className="grid grid-cols-2 gap-4 text-xs">
-                          <div>
-                            <span className="font-medium text-gray-700">ID:</span>
-                            <span className="ml-1 text-gray-600 font-mono">{step.id}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-700">Status:</span>
-                            <span className={`ml-1 capitalize ${
-                              step.status === 'error' ? 'text-red-600' :
-                              step.status === 'completed' ? 'text-green-600' :
-                              'text-gray-600'
-                            }`}>
-                              {step.status.replace('_', ' ')}
+                      <div className="flex items-center space-x-3">
+                        <svg
+                          className={`h-4 w-4 transition-transform duration-200 ${isIterationCollapsed ? '' : 'rotate-90'}`}
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        <h4 className="text-sm font-semibold text-gray-900">
+                          Iteration {iterationNum}
+                        </h4>
+                        <div className="flex items-center space-x-4 text-xs text-gray-500">
+                          <span>{stats.totalSteps} step{stats.totalSteps !== 1 ? 's' : ''}</span>
+                          {stats.toolCalls > 0 && (
+                            <span className="flex items-center space-x-1">
+                              <svg className="h-3 w-3 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                              <span>{stats.toolCalls} tool{stats.toolCalls !== 1 ? 's' : ''}</span>
                             </span>
-                          </div>
+                          )}
+                          {stats.duration && (
+                            <span>{formatDuration(stats.duration)}</span>
+                          )}
                         </div>
-
-                        {/* Step content details */}
-                        <div>
-                          <h5 className="text-xs font-medium text-gray-700 mb-2">Content:</h5>
-                          <pre className="text-xs text-gray-600 bg-gray-50 p-2 rounded border overflow-x-auto">
-                            {JSON.stringify(step.content, null, 2)}
-                          </pre>
-                        </div>
-
-                        {/* Step metadata */}
-                        {step.metadata && Object.keys(step.metadata).length > 0 && (
-                          <div>
-                            <h5 className="text-xs font-medium text-gray-700 mb-2">Metadata:</h5>
-                            <pre className="text-xs text-gray-600 bg-gray-50 p-2 rounded border overflow-x-auto">
-                              {JSON.stringify(step.metadata, null, 2)}
-                            </pre>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {stats.errorSteps > 0 && (
+                          <div className="flex items-center space-x-1 text-red-600">
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span className="text-xs">{stats.errorSteps}</span>
                           </div>
                         )}
+                        <div className="flex items-center space-x-1 text-green-600">
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="text-xs">{stats.completedSteps}</span>
+                        </div>
                       </div>
+                    </button>
+                  </div>
+
+                  {/* Iteration Steps */}
+                  {!isIterationCollapsed && (
+                    <div className="p-4 space-y-4">
+                      {steps.map((step, stepIndex) => {
+                        const isExpanded = expandedSteps.has(step.id)
+                        const isLast = stepIndex === steps.length - 1
+
+                        return (
+                          <div key={step.id} className="relative">
+                            {/* Timeline line */}
+                            {!isLast && (
+                              <div className="absolute left-6 top-12 w-0.5 h-8 bg-gray-200" />
+                            )}
+
+                            <div className={`flex items-start space-x-3 p-3 rounded-lg transition-colors duration-200 ${
+                              step.status === 'error'
+                                ? 'bg-red-50 border border-red-200'
+                                : 'bg-gray-50 hover:bg-gray-100'
+                            }`}>
+                              {/* Step icon */}
+                              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white border-2 border-gray-200">
+                                {getStepIcon(step)}
+                              </div>
+
+                              {/* Step content */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-2">
+                                    <h4 className="text-sm font-medium text-gray-900">
+                                      {getStepTitle(step)}
+                                    </h4>
+                                    {getStatusIndicator(step)}
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-xs text-gray-500">
+                                      {formatTimestamp(step.timestamp)}
+                                    </span>
+                                    {step.duration && (
+                                      <span className="text-xs text-gray-500">
+                                        ({formatDuration(step.duration)})
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <p className="mt-1 text-sm text-gray-600">
+                                  {getStepDescription(step)}
+                                </p>
+
+                                {/* Action buttons */}
+                                <div className="mt-2 flex items-center space-x-2">
+                                  <button
+                                    onClick={() => toggleStepExpansion(step.id)}
+                                    className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+                                  >
+                                    {isExpanded ? 'Collapse' : 'Expand'}
+                                  </button>
+                                  <button
+                                    onClick={() => copyStepContent(step)}
+                                    className="text-xs text-gray-500 hover:text-gray-700 font-medium"
+                                  >
+                                    Copy
+                                  </button>
+                                </div>
+
+                                {/* Expanded content */}
+                                {isExpanded && (
+                                  <div className="mt-3 p-3 bg-white border border-gray-200 rounded-md">
+                                    <div className="space-y-3">
+                                      {/* Step metadata */}
+                                      <div className="grid grid-cols-2 gap-4 text-xs">
+                                        <div>
+                                          <span className="font-medium text-gray-700">ID:</span>
+                                          <span className="ml-1 text-gray-600 font-mono">{step.id}</span>
+                                        </div>
+                                        <div>
+                                          <span className="font-medium text-gray-700">Status:</span>
+                                          <span className={`ml-1 capitalize ${
+                                            step.status === 'error' ? 'text-red-600' :
+                                            step.status === 'completed' ? 'text-green-600' :
+                                            'text-gray-600'
+                                          }`}>
+                                            {step.status.replace('_', ' ')}
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      {/* Step content details */}
+                                      <div>
+                                        <h5 className="text-xs font-medium text-gray-700 mb-2">Content:</h5>
+                                        <pre className="text-xs text-gray-600 bg-gray-50 p-2 rounded border overflow-x-auto">
+                                          {JSON.stringify(step.content, null, 2)}
+                                        </pre>
+                                      </div>
+
+                                      {/* Step metadata */}
+                                      {step.metadata && Object.keys(step.metadata).length > 0 && (
+                                        <div>
+                                          <h5 className="text-xs font-medium text-gray-700 mb-2">Metadata:</h5>
+                                          <pre className="text-xs text-gray-600 bg-gray-50 p-2 rounded border overflow-x-auto">
+                                            {JSON.stringify(step.metadata, null, 2)}
+                                          </pre>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+              )
+            })}
+        </div>
+      )}
 
-      {workflow.length > 0 && (
+      {workflow.length > 0 && !isTimelineCollapsed && (
         <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="flex items-center justify-between text-sm text-gray-500">
             <span>{workflow.length} step{workflow.length !== 1 ? 's' : ''} total</span>

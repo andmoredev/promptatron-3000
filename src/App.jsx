@@ -12,6 +12,9 @@ import LoadingSpinner from "./components/LoadingSpinner";
 import ProgressBar from "./components/ProgressBar";
 import ThemeProvider from "./components/ThemeProvider";
 import { RobotGraphicContainer } from "./components/RobotGraphic";
+import ChadRevealButton from "./components/RobotGraphic/ChadRevealButton";
+import FloatingChad from "./components/RobotGraphic/FloatingChad";
+import { useChadReveal } from "./components/RobotGraphic/useChadReveal";
 import StreamingPerformanceMonitor from "./components/StreamingPerformanceMonitor";
 import SettingsDialog from "./components/SettingsDialog";
 
@@ -33,6 +36,7 @@ import { statePersistenceService } from "./services/statePersistenceService";
 import { useSettings, useDeterminismSettings } from "./hooks/useSettings";
 import { validateForm } from "./utils/formValidation";
 import { handleError, retryWithBackoff } from "./utils/errorHandling";
+import { hasToolServiceForDatasetType } from "./utils/toolServiceMapping";
 import {
   loadFormState,
   saveFormState,
@@ -121,6 +125,17 @@ function App() {
 
   // Settings dialog state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Chad reveal state management
+  const chadRevealState = useChadReveal();
+  const {
+    isRevealed: isChadRevealed,
+    isRevealing: isChadRevealing,
+    revealChad,
+    shouldShowRevealButton
+  } = chadRevealState;
+
+
 
   // Determinism evaluation state (initialized from saved state)
   const [determinismEnabled, setDeterminismEnabled] = useState(
@@ -245,8 +260,11 @@ function App() {
 
   // Helper function to check if tools are available for the current dataset
   const areToolsAvailable = () => {
-    // Tools are available for fraud-detection datasets
-    return selectedDataset.type === "fraud-detection";
+    // Check if the selected dataset type has a tool service mapped
+    if (!selectedDataset.type) return false;
+
+    // Use the tool service mapping to determine availability dynamically
+    return hasToolServiceForDatasetType(selectedDataset.type);
   };
 
   // Helper function to provide recovery suggestions for tool execution errors
@@ -956,8 +974,13 @@ function App() {
             const executionId = `exec_${testId}`;
             initializeToolExecution(executionId);
 
+            // Initialize streaming for tool execution
+            setIsStreaming(true);
+            setStreamingContent("🚀 Starting tool execution workflow...\n");
+            setStreamingError(null);
+
             try {
-              // Execute tool workflow
+              // Execute tool workflow with streaming updates
               const workflowResult = await toolExecutionService.executeWorkflow(
                 selectedModel,
                 systemPrompt,
@@ -967,6 +990,46 @@ function App() {
                 {
                   maxIterations: maxIterations,
                   executionId: executionId,
+                  datasetType: selectedDataset.type,
+                  onStreamUpdate: (update) => {
+                    // Update streaming content with workflow progress
+                    setStreamingContent(prevContent => {
+                      const timestamp = new Date(update.timestamp).toLocaleTimeString();
+                      let newLine = `[${timestamp}] ${update.content}`;
+
+                      // Add additional context for certain update types
+                      if (update.type === 'iteration_start') {
+                        newLine += ` (${update.iteration}/${update.maxIterations})`;
+                      } else if (update.type === 'tool_requests') {
+                        newLine += ` - ${update.toolRequests?.length || 0} tool(s)`;
+                      } else if (update.type === 'tool_result' && update.success) {
+                        newLine += ` ✓`;
+                      } else if (update.type === 'tool_error') {
+                        newLine += ` ✗`;
+                      }
+
+                      return prevContent + newLine + '\n';
+                    });
+
+                    // Update progress status based on update type
+                    if (update.type === 'iteration_start') {
+                      setProgressStatus(`Tool execution: iteration ${update.iteration}/${update.maxIterations}`);
+                      const progressPercent = Math.min(90, 60 + (update.iteration / update.maxIterations) * 30);
+                      setProgressValue(progressPercent);
+                    } else if (update.type === 'tool_execution') {
+                      setProgressStatus(`Executing ${update.toolName}...`);
+                    } else if (update.type === 'completion') {
+                      setProgressStatus("Tool execution completed");
+                      setProgressValue(100);
+
+                      // Add final response to streaming content if available
+                      if (update.finalResponse) {
+                        setStreamingContent(prevContent =>
+                          prevContent + '\n📋 Final Response:\n' + update.finalResponse
+                        );
+                      }
+                    }
+                  }
                 }
               );
 
@@ -1015,8 +1078,15 @@ function App() {
               };
 
               completeToolExecution("completed");
+
+              // Complete streaming
+              setIsStreaming(false);
             } catch (toolError) {
               completeToolExecution("error");
+
+              // Complete streaming with error
+              setIsStreaming(false);
+              setStreamingError(`Tool execution failed: ${toolError.message}`);
 
               // Enhanced error handling for different tool execution failure types
               let errorMessage = "Tool execution failed";
@@ -1636,6 +1706,13 @@ function App() {
     setIsToolExecuting(false);
     setToolExecutionId(null);
     setToolExecutionStatus("idle");
+
+    // Reset streaming state if it was active during tool execution
+    if (isStreaming) {
+      setIsStreaming(false);
+      setStreamingContent("");
+      setStreamingError(null);
+    }
   };
 
   const handleClearSavedSettings = async () => {
@@ -1715,31 +1792,46 @@ function App() {
               <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
                 {/* Header with Robot */}
                 <div className="text-center mb-3 relative">
-                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
-                    <div className="flex-shrink-0 order-2 sm:order-1">
-                      <RobotGraphicContainer
-                        appState={{
-                          isLoading,
-                          error,
-                          progressStatus,
-                          progressValue,
-                          testResults,
-                          isStreaming,
-                          streamingContent,
-                          streamingProgress,
-                          isRequestPending,
-                          streamingError,
-                        }}
-                        size="md"
-                        className="mx-auto"
-                        enableDebug={isRobotDebugEnabled}
-                        options={{
-                          talkingDuration: 2000,
-                          debounceDelay: 100,
-                          enableTransitions: true,
-                        }}
+                  {/* Chad Reveal Button - positioned in top right */}
+                  {shouldShowRevealButton() && (
+                    <div className="absolute top-0 right-0 z-10">
+                      <ChadRevealButton
+                        onReveal={revealChad}
+                        isRevealed={isChadRevealed}
+                        isRevealing={isChadRevealing}
+                        className="text-xs sm:text-sm"
                       />
                     </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
+                    {!isChadRevealed && (
+                      <div className="flex-shrink-0 order-2 sm:order-1">
+                        <RobotGraphicContainer
+                          appState={{
+                            isLoading,
+                            error,
+                            progressStatus,
+                            progressValue,
+                            testResults,
+                            isStreaming,
+                            streamingContent,
+                            streamingProgress,
+                            isRequestPending,
+                            streamingError,
+                          }}
+                          size="md"
+                          className="mx-auto"
+                          enableDebug={isRobotDebugEnabled}
+                          chadState={chadRevealState}
+                          options={{
+                            talkingDuration: 2000,
+                            debounceDelay: 100,
+                            enableTransitions: true,
+                          }}
+                        />
+                      </div>
+                    )}
                     <div className="order-1 sm:order-2">
                       <h1 className="text-2xl md:text-3xl font-bold text-primary-700 mb-1">
                         Promptatron 3000
@@ -1852,6 +1944,7 @@ function App() {
                         onUserPromptChange={handleUserPromptChange}
                         systemPromptError={validationErrors.systemPrompt}
                         userPromptError={validationErrors.userPrompt}
+                        selectedDataset={selectedDataset}
                       />
 
                       {/* Tool Execution Settings */}
@@ -2365,6 +2458,22 @@ function App() {
 
           {/* UI Error Notification System */}
           <UIErrorNotification />
+
+          {/* Floating Chad Companion */}
+          <FloatingChad
+            isVisible={isChadRevealed}
+            currentState={
+              error || streamingError
+                ? 'error'
+                : isLoading || isStreaming || isRequestPending
+                ? isStreaming && streamingContent
+                  ? 'talking'
+                  : 'thinking'
+                : 'idle'
+            }
+            size="lg"
+            position={{ top: '50%', left: '20px', transform: 'translateY(-50%)' }}
+          />
 
           {/* Settings Dialog */}
           <SettingsDialog

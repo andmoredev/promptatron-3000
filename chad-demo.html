@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chad Demo - Meet the Stylish Robot</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #f0f9f0 0%, #e6f3d5 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        h1 {
+            color: #2d5a2d;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #5c8c5a;
+            font-size: 1.2rem;
+            margin-bottom: 40px;
+        }
+
+        .chad-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin: 40px 0;
+        }
+
+        .chad-card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .chad-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+        }
+
+        .chad-display {
+            width: 120px;
+            height: 162px;
+            margin: 0 auto 20px;
+            position: relative;
+        }
+
+        .chad-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: #2d5a2d;
+            margin-bottom: 10px;
+        }
+
+        .chad-description {
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .features {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin: 40px 0;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .features h2 {
+            color: #2d5a2d;
+            margin-bottom: 20px;
+        }
+
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            text-align: left;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .feature-icon {
+            width: 24px;
+            height: 24px;
+            background: #5c8c5a;
+            border-radius: 50%;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .floating-chad-demo {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 60px;
+            height: 60px;
+            z-index: 1000;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+        }
+
+        @keyframes blink {
+            0%, 90%, 100% { transform: scaleY(1); }
+            95% { transform: scaleY(0.1); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .blink-animation {
+            animation: blink 3s infinite ease-in-out;
+        }
+
+        .pulse-animation {
+            animation: pulse 2s infinite ease-in-out;
+        }
+
+        .tech-specs {
+            background: #f8fafc;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .tech-specs h3 {
+            color: #374151;
+            margin-top: 0;
+        }
+
+        .spec-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .spec-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .spec-label {
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .spec-value {
+            color: #5c8c5a;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Meet Chad 🤖</h1>
+        <p class="subtitle">Your friendly AI companion with personality and style</p>
+
+        <div class="chad-gallery">
+            <!-- Happy Chad -->
+            <div class="chad-card">
+                <div class="chad-display">
+                    <svg width="120" height="162" viewBox="0 0 100 135" class="chad-svg">
+                        <!-- Chad's neck -->
+                        <rect x="35" y="70" width="30" height="12" fill="#f8fafc" stroke="#475569" stroke-width="1"/>
+                        <ellipse cx="50" cy="70" rx="15" ry="3" fill="#f8fafc" stroke="#475569" stroke-width="1"/>
+                        <ellipse cx="50" cy="82" rx="15" ry="3" fill="#f8fafc" stroke="#475569" stroke-width="1"/>
+                        <line x1="37" y1="74" x2="63" y2="74" stroke="#475569" stroke-width="0.5" opacity="0.3"/>
+                        <line x1="37" y1="78" x2="63" y2="78" stroke="#475569" stroke-width="0.5" opacity="0.3"/>
+
+                        <!-- Chad's polo shirt -->
+                        <rect x="10" y="82" width="80" height="30" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <!-- Left collar flap -->
+                        <path d="M 35 82 L 42 75 L 47 74 L 45 84 L 40 87 Z" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <!-- Right collar flap -->
+                        <path d="M 65 82 L 58 75 L 53 74 L 55 84 L 60 87 Z" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <!-- Collar fold lines -->
+                        <line x1="42" y1="75" x2="40" y2="87" stroke="#e5e7eb" stroke-width="1"/>
+                        <line x1="58" y1="75" x2="60" y2="87" stroke="#e5e7eb" stroke-width="1"/>
+                        <!-- Shirt opening -->
+                        <path d="M 47 74 L 50 73 L 53 74 L 52 90 L 48 90 Z" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <!-- Buttons -->
+                        <circle cx="48" cy="84" r="1.2" fill="#9ca3af" stroke="#475569" stroke-width="0.5"/>
+                        <circle cx="52" cy="88" r="1.2" fill="#9ca3af" stroke="#475569" stroke-width="0.5"/>
+                        <!-- Logo -->
+                        <circle cx="25" cy="95" r="3" fill="#ffffff" stroke="#475569" stroke-width="0.3" opacity="0.9"/>
+                        <path d="M 23 94 L 25 92 L 27 94 L 25 96 Z" fill="#86efac" stroke="#475569" stroke-width="0.2"/>
+
+                        <!-- Robot head - bigger and rounder -->
+                        <rect x="8" y="20" width="84" height="58" rx="28" ry="28" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
+                        <line x1="16" y1="30" x2="84" y2="30" stroke="#475569" stroke-width="1" opacity="0.3"/>
+                        <line x1="16" y1="70" x2="84" y2="70" stroke="#475569" stroke-width="1" opacity="0.3"/>
+
+                        <!-- Eyes -->
+                        <rect x="26" y="42" width="12" height="7" rx="2" fill="#0f172a" stroke="#475569" stroke-width="1" class="blink-animation"/>
+                        <rect x="62" y="42" width="12" height="7" rx="2" fill="#0f172a" stroke="#475569" stroke-width="1" class="blink-animation"/>
+                        <circle cx="29" cy="44" r="1.2" fill="#047857" class="pulse-animation"/>
+                        <circle cx="35" cy="44" r="1.2" fill="#047857" class="pulse-animation"/>
+                        <circle cx="65" cy="44" r="1.2" fill="#047857" class="pulse-animation"/>
+                        <circle cx="71" cy="44" r="1.2" fill="#047857" class="pulse-animation"/>
+
+                        <!-- Happy Mouth -->
+                        <rect x="32" y="58" width="36" height="6" rx="3" fill="#047857"/>
+                        <rect x="34" y="60" width="4" height="2" fill="#ffffff" opacity="0.8"/>
+                        <rect x="40" y="60" width="4" height="2" fill="#ffffff" opacity="0.6"/>
+                        <rect x="46" y="60" width="4" height="2" fill="#ffffff" opacity="0.8"/>
+                        <rect x="52" y="60" width="4" height="2" fill="#ffffff" opacity="0.6"/>
+                        <rect x="58" y="60" width="4" height="2" fill="#ffffff" opacity="0.8"/>
+                        <rect x="64" y="60" width="2" height="2" fill="#ffffff" opacity="0.4"/>
+
+                        <!-- Chad's spiky hair with frosted tips -->
+                        <!-- Yellow frosted tips -->
+                        <path d="M 22 20 L 24 12 L 26 19 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 30 17 L 32 9 L 34 18 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 38 16 L 40 7 L 42 17 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 45 15 L 47 5 L 49 16 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 53 14 L 55 6 L 57 16 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 61 17 L 63 8 L 65 18 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 69 19 L 71 11 L 73 20 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 76 21 L 78 13 L 80 22 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <!-- Dark hair spikes -->
+                        <path d="M 18 22 L 20 16 L 22 23 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 26 20 L 28 14 L 30 21 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 33 19 L 35 13 L 37 20 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 41 18 L 43 11 L 45 19 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 48 17 L 50 10 L 52 18 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 56 18 L 58 11 L 60 19 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 63 19 L 65 13 L 67 20 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 70 20 L 72 14 L 74 21 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 78 22 L 80 16 L 82 23 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+
+                        <!-- Status LEDs -->
+                        <circle cx="22" cy="32" r="1.5" fill="#047857" class="pulse-animation"/>
+                        <circle cx="78" cy="32" r="1.5" fill="#047857" class="pulse-animation"/>
+
+                        <!-- Chad's name label -->
+                        <text x="50" y="125" text-anchor="middle" fill="#475569" font-size="12" font-weight="bold" font-family="Arial, sans-serif">CHAD</text>
+                    </svg>
+                </div>
+                <div class="chad-title">Happy Chad</div>
+                <div class="chad-description">Ready to help! Chad's default state when everything is running smoothly. Notice his bright green LEDs and cheerful expression.</div>
+            </div>
+
+            <!-- Thinking Chad -->
+            <div class="chad-card">
+                <div class="chad-display">
+                    <svg width="120" height="162" viewBox="0 0 100 135" class="chad-svg">
+                        <!-- Chad's neck -->
+                        <rect x="35" y="70" width="30" height="12" fill="#f8fafc" stroke="#475569" stroke-width="1"/>
+                        <ellipse cx="50" cy="70" rx="15" ry="3" fill="#f8fafc" stroke="#475569" stroke-width="1"/>
+                        <ellipse cx="50" cy="82" rx="15" ry="3" fill="#f8fafc" stroke="#475569" stroke-width="1"/>
+
+                        <!-- Chad's polo shirt -->
+                        <rect x="10" y="82" width="80" height="30" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <path d="M 35 82 L 42 75 L 47 74 L 45 84 L 40 87 Z" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <path d="M 65 82 L 58 75 L 53 74 L 55 84 L 60 87 Z" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <path d="M 47 74 L 50 73 L 53 74 L 52 90 L 48 90 Z" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <circle cx="48" cy="84" r="1.2" fill="#9ca3af" stroke="#475569" stroke-width="0.5"/>
+                        <circle cx="52" cy="88" r="1.2" fill="#9ca3af" stroke="#475569" stroke-width="0.5"/>
+
+                        <!-- Robot head - thinking background -->
+                        <rect x="8" y="20" width="84" height="58" rx="28" ry="28" fill="#fefce8" stroke="#475569" stroke-width="2"/>
+                        <line x1="16" y1="30" x2="84" y2="30" stroke="#475569" stroke-width="1" opacity="0.3"/>
+                        <line x1="16" y1="70" x2="84" y2="70" stroke="#475569" stroke-width="1" opacity="0.3"/>
+
+                        <!-- Narrowed Eyes (Concentrating) -->
+                        <rect x="26" y="44" width="12" height="4" rx="1" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+                        <rect x="62" y="44" width="12" height="4" rx="1" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+                        <rect x="27" y="45" width="1.5" height="2" fill="#b45309" class="pulse-animation"/>
+                        <rect x="30" y="45" width="1.5" height="2" fill="#b45309" opacity="0.6"/>
+                        <rect x="33" y="45" width="1.5" height="2" fill="#b45309" opacity="0.3"/>
+                        <rect x="63" y="45" width="1.5" height="2" fill="#b45309" class="pulse-animation"/>
+                        <rect x="66" y="45" width="1.5" height="2" fill="#b45309" opacity="0.6"/>
+                        <rect x="69" y="45" width="1.5" height="2" fill="#b45309" opacity="0.3"/>
+
+                        <!-- Processing Mouth -->
+                        <rect x="36" y="62" width="28" height="4" rx="2" fill="#b45309"/>
+                        <circle cx="40" cy="64" r="0.8" fill="#ffffff" opacity="0.8"/>
+                        <circle cx="44" cy="64" r="0.8" fill="#ffffff" opacity="0.6"/>
+                        <circle cx="48" cy="64" r="0.8" fill="#ffffff" opacity="0.4"/>
+                        <circle cx="52" cy="64" r="0.8" fill="#ffffff" opacity="0.6"/>
+                        <circle cx="56" cy="64" r="0.8" fill="#ffffff" opacity="0.8"/>
+
+                        <!-- CPU Indicator -->
+                        <rect x="70" y="28" width="10" height="10" fill="#fefce8" stroke="#b45309" stroke-width="1" class="pulse-animation"/>
+                        <line x1="72" y1="30" x2="78" y2="30" stroke="#b45309" stroke-width="0.5"/>
+                        <line x1="72" y1="32" x2="78" y2="32" stroke="#b45309" stroke-width="0.5"/>
+                        <line x1="72" y1="34" x2="78" y2="34" stroke="#b45309" stroke-width="0.5"/>
+                        <line x1="73" y1="29" x2="73" y2="37" stroke="#b45309" stroke-width="0.5"/>
+                        <line x1="75" y1="29" x2="75" y2="37" stroke="#b45309" stroke-width="0.5"/>
+                        <line x1="77" y1="29" x2="77" y2="37" stroke="#b45309" stroke-width="0.5"/>
+
+                        <!-- Chad's spiky hair with frosted tips -->
+                        <path d="M 22 20 L 24 12 L 26 19 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 30 17 L 32 9 L 34 18 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 38 16 L 40 7 L 42 17 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 45 15 L 47 5 L 49 16 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 53 14 L 55 6 L 57 16 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 61 17 L 63 8 L 65 18 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 69 19 L 71 11 L 73 20 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 76 21 L 78 13 L 80 22 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 18 22 L 20 16 L 22 23 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 26 20 L 28 14 L 30 21 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 33 19 L 35 13 L 37 20 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 41 18 L 43 11 L 45 19 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 48 17 L 50 10 L 52 18 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 56 18 L 58 11 L 60 19 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 63 19 L 65 13 L 67 20 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 70 20 L 72 14 L 74 21 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 78 22 L 80 16 L 82 23 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+
+                        <!-- Status LEDs -->
+                        <circle cx="22" cy="32" r="1.5" fill="#b45309" class="pulse-animation"/>
+                        <circle cx="78" cy="32" r="1.5" fill="#f59e0b" class="pulse-animation"/>
+
+                        <!-- Chad's name label -->
+                        <text x="50" y="125" text-anchor="middle" fill="#475569" font-size="12" font-weight="bold" font-family="Arial, sans-serif">CHAD</text>
+                    </svg>
+                </div>
+                <div class="chad-title">Thinking Chad</div>
+                <div class="chad-description">Processing your request! Chad's eyes narrow in concentration while his CPU indicator shows active processing. Orange LEDs indicate thinking mode.</div>
+            </div>
+
+            <!-- Talking Chad -->
+            <div class="chad-card">
+                <div class="chad-display">
+                    <svg width="120" height="162" viewBox="0 0 100 135" class="chad-svg">
+                        <!-- Chad's neck -->
+                        <rect x="35" y="70" width="30" height="12" fill="#f8fafc" stroke="#475569" stroke-width="1"/>
+                        <ellipse cx="50" cy="70" rx="15" ry="3" fill="#f8fafc" stroke="#475569" stroke-width="1"/>
+                        <ellipse cx="50" cy="82" rx="15" ry="3" fill="#f8fafc" stroke="#475569" stroke-width="1"/>
+
+                        <!-- Chad's polo shirt -->
+                        <rect x="10" y="82" width="80" height="30" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <path d="M 35 82 L 42 75 L 47 74 L 45 84 L 40 87 Z" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <path d="M 65 82 L 58 75 L 53 74 L 55 84 L 60 87 Z" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <path d="M 47 74 L 50 73 L 53 74 L 52 90 L 48 90 Z" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <circle cx="48" cy="84" r="1.2" fill="#9ca3af" stroke="#475569" stroke-width="0.5"/>
+                        <circle cx="52" cy="88" r="1.2" fill="#9ca3af" stroke="#475569" stroke-width="0.5"/>
+
+                        <!-- Robot head - talking background -->
+                        <rect x="8" y="20" width="84" height="58" rx="28" ry="28" fill="#eff6ff" stroke="#475569" stroke-width="2"/>
+                        <line x1="16" y1="30" x2="84" y2="30" stroke="#475569" stroke-width="1" opacity="0.3"/>
+                        <line x1="16" y1="70" x2="84" y2="70" stroke="#475569" stroke-width="1" opacity="0.3"/>
+
+                        <!-- Active Eyes -->
+                        <rect x="26" y="42" width="12" height="7" rx="2" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+                        <rect x="62" y="42" width="12" height="7" rx="2" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+                        <circle cx="29" cy="44" r="1.2" fill="#2563eb" class="pulse-animation"/>
+                        <circle cx="35" cy="44" r="1.2" fill="#2563eb" class="pulse-animation"/>
+                        <circle cx="65" cy="44" r="1.2" fill="#2563eb" class="pulse-animation"/>
+                        <circle cx="71" cy="44" r="1.2" fill="#2563eb" class="pulse-animation"/>
+                        <!-- Eye highlights -->
+                        <rect x="27" y="43" width="2" height="1" fill="#ffffff"/>
+                        <rect x="63" y="43" width="2" height="1" fill="#ffffff"/>
+
+                        <!-- Speaker Grille Mouth -->
+                        <rect x="32" y="56" width="36" height="10" rx="5" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+                        <line x1="35" y1="58" x2="35" y2="64" stroke="#ffffff" stroke-width="1"/>
+                        <line x1="38" y1="58" x2="38" y2="64" stroke="#ffffff" stroke-width="1"/>
+                        <line x1="41" y1="58" x2="41" y2="64" stroke="#ffffff" stroke-width="1"/>
+                        <line x1="44" y1="58" x2="44" y2="64" stroke="#ffffff" stroke-width="1"/>
+                        <line x1="47" y1="58" x2="47" y2="64" stroke="#ffffff" stroke-width="1"/>
+                        <line x1="50" y1="58" x2="50" y2="64" stroke="#ffffff" stroke-width="1"/>
+                        <line x1="53" y1="58" x2="53" y2="64" stroke="#ffffff" stroke-width="1"/>
+                        <line x1="56" y1="58" x2="56" y2="64" stroke="#ffffff" stroke-width="1"/>
+                        <line x1="59" y1="58" x2="59" y2="64" stroke="#ffffff" stroke-width="1"/>
+                        <line x1="62" y1="58" x2="62" y2="64" stroke="#ffffff" stroke-width="1"/>
+                        <line x1="65" y1="58" x2="65" y2="64" stroke="#ffffff" stroke-width="1"/>
+
+                        <!-- Sound Waves -->
+                        <rect x="14" y="46" width="1.5" height="3" fill="#2563eb" class="pulse-animation"/>
+                        <rect x="17" y="44" width="1.5" height="7" fill="#60a5fa" class="pulse-animation"/>
+                        <rect x="20" y="42" width="1.5" height="11" fill="#93c5fd" class="pulse-animation"/>
+                        <rect x="23" y="45" width="1.5" height="5" fill="#2563eb" class="pulse-animation"/>
+
+                        <!-- Transmission indicator -->
+                        <circle cx="82" cy="28" r="2.5" fill="none" stroke="#2563eb" stroke-width="1" class="pulse-animation"/>
+                        <circle cx="82" cy="28" r="0.8" fill="#2563eb"/>
+
+                        <!-- Chad's spiky hair with frosted tips -->
+                        <path d="M 22 20 L 24 12 L 26 19 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 30 17 L 32 9 L 34 18 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 38 16 L 40 7 L 42 17 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 45 15 L 47 5 L 49 16 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 53 14 L 55 6 L 57 16 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 61 17 L 63 8 L 65 18 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 69 19 L 71 11 L 73 20 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 76 21 L 78 13 L 80 22 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 18 22 L 20 16 L 22 23 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 26 20 L 28 14 L 30 21 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 33 19 L 35 13 L 37 20 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 41 18 L 43 11 L 45 19 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 48 17 L 50 10 L 52 18 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 56 18 L 58 11 L 60 19 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 63 19 L 65 13 L 67 20 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 70 20 L 72 14 L 74 21 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 78 22 L 80 16 L 82 23 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+
+                        <!-- Status LEDs -->
+                        <circle cx="22" cy="32" r="1.5" fill="#2563eb" class="pulse-animation"/>
+                        <circle cx="78" cy="32" r="1.5" fill="#60a5fa" class="pulse-animation"/>
+
+                        <!-- Chad's name label -->
+                        <text x="50" y="125" text-anchor="middle" fill="#475569" font-size="12" font-weight="bold" font-family="Arial, sans-serif">CHAD</text>
+                    </svg>
+                </div>
+                <div class="chad-title">Talking Chad</div>
+                <div class="chad-description">Communicating with you! Chad's speaker grille mouth and sound wave indicators show he's actively responding. Blue LEDs indicate communication mode.</div>
+            </div>
+
+            <!-- Concerned Chad -->
+            <div class="chad-card">
+                <div class="chad-display">
+                    <svg width="120" height="162" viewBox="0 0 100 135" class="chad-svg">
+                        <!-- Chad's neck -->
+                        <rect x="35" y="70" width="30" height="12" fill="#f8fafc" stroke="#475569" stroke-width="1"/>
+                        <ellipse cx="50" cy="70" rx="15" ry="3" fill="#f8fafc" stroke="#475569" stroke-width="1"/>
+                        <ellipse cx="50" cy="82" rx="15" ry="3" fill="#f8fafc" stroke="#475569" stroke-width="1"/>
+
+                        <!-- Chad's polo shirt -->
+                        <rect x="10" y="82" width="80" height="30" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <path d="M 35 82 L 42 75 L 47 74 L 45 84 L 40 87 Z" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <path d="M 65 82 L 58 75 L 53 74 L 55 84 L 60 87 Z" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <path d="M 47 74 L 50 73 L 53 74 L 52 90 L 48 90 Z" fill="#fce7f3" stroke="#475569" stroke-width="1"/>
+                        <circle cx="48" cy="84" r="1.2" fill="#9ca3af" stroke="#475569" stroke-width="0.5"/>
+                        <circle cx="52" cy="88" r="1.2" fill="#9ca3af" stroke="#475569" stroke-width="0.5"/>
+
+                        <!-- Robot head - error background -->
+                        <rect x="8" y="20" width="84" height="58" rx="28" ry="28" fill="#fef2f2" stroke="#475569" stroke-width="2"/>
+                        <line x1="16" y1="30" x2="84" y2="30" stroke="#475569" stroke-width="1" opacity="0.3"/>
+                        <line x1="16" y1="70" x2="84" y2="70" stroke="#475569" stroke-width="1" opacity="0.3"/>
+
+                        <!-- Error Eyes (X patterns) -->
+                        <rect x="26" y="42" width="12" height="7" rx="2" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+                        <rect x="62" y="42" width="12" height="7" rx="2" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+                        <line x1="28" y1="44" x2="36" y2="47" stroke="#b91c1c" stroke-width="1.5" stroke-linecap="round"/>
+                        <line x1="36" y1="44" x2="28" y2="47" stroke="#b91c1c" stroke-width="1.5" stroke-linecap="round"/>
+                        <line x1="64" y1="44" x2="72" y2="47" stroke="#b91c1c" stroke-width="1.5" stroke-linecap="round"/>
+                        <line x1="72" y1="44" x2="64" y2="47" stroke="#b91c1c" stroke-width="1.5" stroke-linecap="round"/>
+
+                        <!-- Warning Mouth -->
+                        <rect x="32" y="58" width="36" height="7" rx="3" fill="#b91c1c"/>
+                        <polygon points="42,60 50,64 58,60" fill="#ffffff"/>
+                        <rect x="49" y="61" width="2" height="2" fill="#b91c1c"/>
+
+                        <!-- Error Indicator -->
+                        <rect x="72" y="18" width="10" height="10" fill="#b91c1c" stroke="#475569" stroke-width="1" class="pulse-animation"/>
+                        <text x="77" y="25" text-anchor="middle" fill="#ffffff" font-size="6" font-weight="bold">!</text>
+
+                        <!-- System diagnostic bars -->
+                        <rect x="20" y="20" width="5" height="1.5" fill="#b91c1c"/>
+                        <rect x="20" y="22" width="3" height="1.5" fill="#b91c1c" opacity="0.7"/>
+                        <rect x="20" y="24" width="6" height="1.5" fill="#b91c1c"/>
+                        <rect x="20" y="26" width="2" height="1.5" fill="#b91c1c" opacity="0.5"/>
+
+                        <!-- Chad's spiky hair with frosted tips -->
+                        <path d="M 22 20 L 24 12 L 26 19 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 30 17 L 32 9 L 34 18 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 38 16 L 40 7 L 42 17 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 45 15 L 47 5 L 49 16 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 53 14 L 55 6 L 57 16 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 61 17 L 63 8 L 65 18 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 69 19 L 71 11 L 73 20 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 76 21 L 78 13 L 80 22 Z" fill="#ffd700" stroke="#ffed4e" stroke-width="0.5"/>
+                        <path d="M 18 22 L 20 16 L 22 23 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 26 20 L 28 14 L 30 21 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 33 19 L 35 13 L 37 20 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 41 18 L 43 11 L 45 19 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 48 17 L 50 10 L 52 18 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 56 18 L 58 11 L 60 19 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 63 19 L 65 13 L 67 20 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 70 20 L 72 14 L 74 21 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+                        <path d="M 78 22 L 80 16 L 82 23 Z" fill="#5a5a5a" stroke="#3a3a3a" stroke-width="0.4"/>
+
+                        <!-- Status LEDs -->
+                        <circle cx="22" cy="32" r="1.5" fill="#b91c1c" class="pulse-animation"/>
+                        <circle cx="78" cy="32" r="1.5" fill="#b91c1c" class="pulse-animation"/>
+
+                        <!-- Chad's name label -->
+                        <text x="50" y="125" text-anchor="middle" fill="#475569" font-size="12" font-weight="bold" font-family="Arial, sans-serif">CHAD</text>
+                    </svg>
+                </div>
+                <div class="chad-title">Concerned Chad</div>
+                <div class="chad-description">Something's not right! Chad shows X patterns in his eyes and displays error indicators when there's a problem that needs attention. Red LEDs indicate error state.</div>
+            </div>
+        </div>
+
+        <div class="features">
+            <h2>Chad's Features</h2>
+            <div class="feature-list">
+                <div class="feature-item">
+                    <div class="feature-icon"></div>
+                    <div>
+                        <strong>Signature Spiky Hair</strong><br>
+                        Individual spiky hair sections with scattered yellow frosted tips for that authentic early 2000s style
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon"></div>
+                    <div>
+                        <strong>Professional Polo Attire</strong><br>
+                        Pink polo shirt with proper collar, button placket, and mini logo for a polished tech professional look
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon"></div>
+                    <div>
+                        <strong>3D Robotic Design</strong><br>
+                        Cylindrical neck, rounded head with panel lines, and dimensional features for authentic robot aesthetics
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon"></div>
+                    <div>
+                        <strong>Expressive LED System</strong><br>
+                        Four distinct emotional states with color-coded LEDs, animated indicators, and context-aware expressions
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon"></div>
+                    <div>
+                        <strong>State-Specific Details</strong><br>
+                        CPU indicators for thinking, sound waves for talking, error symbols for problems, and more
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon"></div>
+                    <div>
+                        <strong>Consistent Branding</strong><br>
+                        "CHAD" name label appears on all states with consistent positioning and styling
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon"></div>
+                    <div>
+                        <strong>Accessibility First</strong><br>
+                        Respects reduced motion preferences, provides high contrast mode, and includes proper ARIA labels
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon"></div>
+                    <div>
+                        <strong>Smooth Animations</strong><br>
+                        CSS keyframe animations for blinking, pulsing LEDs, and state transitions that sync with app behavior
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tech-specs">
+            <h3>Technical Specifications</h3>
+            <div class="spec-grid">
+                <div class="spec-item">
+                    <span class="spec-label">Framework:</span>
+                    <span class="spec-value">React 19</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Graphics:</span>
+                    <span class="spec-value">SVG</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">ViewBox:</span>
+                    <span class="spec-value">100×135</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Hair Spikes:</span>
+                    <span class="spec-value">17 individual</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Frosted Tips:</span>
+                    <span class="spec-value">8 yellow tips</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Animations:</span>
+                    <span class="spec-value">CSS Keyframes</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Styling:</span>
+                    <span class="spec-value">Tailwind CSS</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Accessibility:</span>
+                    <span class="spec-value">WCAG 2.1 AA</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Expressions:</span>
+                    <span class="spec-value">4 states</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Size Variants:</span>
+                    <span class="spec-value">sm, md, lg</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Theme Support:</span>
+                    <span class="spec-value">Dynamic colors</span>
+                </div>
+                <div class="spec-item">
+                    <span class="spec-label">Name Label:</span>
+                    <span class="spec-value">Consistent</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Chad Demo -->
+    <div class="floating-chad-demo">
+        <svg width="60" height="81" viewBox="0 0 100 135">
+            <!-- Mini Chad with modern features -->
+            <!-- Neck -->
+            <rect x="35" y="70" width="30" height="12" fill="#f8fafc" stroke="#475569" stroke-width="0.8"/>
+            <ellipse cx="50" cy="70" rx="15" ry="3" fill="#f8fafc" stroke="#475569" stroke-width="0.8"/>
+            <ellipse cx="50" cy="82" rx="15" ry="3" fill="#f8fafc" stroke="#475569" stroke-width="0.8"/>
+
+            <!-- Polo shirt -->
+            <rect x="10" y="82" width="80" height="30" fill="#fce7f3" stroke="#475569" stroke-width="0.8"/>
+            <path d="M 35 82 L 42 75 L 47 74 L 45 84 L 40 87 Z" fill="#fce7f3" stroke="#475569" stroke-width="0.8"/>
+            <path d="M 65 82 L 58 75 L 53 74 L 55 84 L 60 87 Z" fill="#fce7f3" stroke="#475569" stroke-width="0.8"/>
+            <circle cx="48" cy="84" r="1" fill="#9ca3af"/>
+            <circle cx="52" cy="88" r="1" fill="#9ca3af"/>
+
+            <!-- Head -->
+            <rect x="8" y="20" width="84" height="58" rx="28" ry="28" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+
+            <!-- Eyes -->
+            <rect x="26" y="42" width="12" height="7" rx="2" fill="#0f172a" stroke="#475569" stroke-width="0.8" class="blink-animation"/>
+            <rect x="62" y="42" width="12" height="7" rx="2" fill="#0f172a" stroke="#475569" stroke-width="0.8" class="blink-animation"/>
+            <circle cx="29" cy="44" r="1" fill="#047857"/>
+            <circle cx="35" cy="44" r="1" fill="#047857"/>
+            <circle cx="65" cy="44" r="1" fill="#047857"/>
+            <circle cx="71" cy="44" r="1" fill="#047857"/>
+
+            <!-- Mouth -->
+            <rect x="32" y="58" width="36" height="6" rx="3" fill="#047857"/>
+
+            <!-- Spiky hair (simplified) -->
+            <path d="M 22 20 L 24 12 L 26 19 Z" fill="#ffd700"/>
+            <path d="M 30 17 L 32 9 L 34 18 Z" fill="#ffd700"/>
+            <path d="M 38 16 L 40 7 L 42 17 Z" fill="#ffd700"/>
+            <path d="M 45 15 L 47 5 L 49 16 Z" fill="#ffd700"/>
+            <path d="M 53 14 L 55 6 L 57 16 Z" fill="#ffd700"/>
+            <path d="M 61 17 L 63 8 L 65 18 Z" fill="#ffd700"/>
+            <path d="M 69 19 L 71 11 L 73 20 Z" fill="#ffd700"/>
+            <path d="M 76 21 L 78 13 L 80 22 Z" fill="#ffd700"/>
+            <path d="M 18 22 L 20 16 L 22 23 Z" fill="#5a5a5a"/>
+            <path d="M 26 20 L 28 14 L 30 21 Z" fill="#5a5a5a"/>
+            <path d="M 33 19 L 35 13 L 37 20 Z" fill="#5a5a5a"/>
+            <path d="M 41 18 L 43 11 L 45 19 Z" fill="#5a5a5a"/>
+            <path d="M 48 17 L 50 10 L 52 18 Z" fill="#5a5a5a"/>
+            <path d="M 56 18 L 58 11 L 60 19 Z" fill="#5a5a5a"/>
+            <path d="M 63 19 L 65 13 L 67 20 Z" fill="#5a5a5a"/>
+            <path d="M 70 20 L 72 14 L 74 21 Z" fill="#5a5a5a"/>
+            <path d="M 78 22 L 80 16 L 82 23 Z" fill="#5a5a5a"/>
+
+            <!-- Chad's name label -->
+            <text x="50" y="125" text-anchor="middle" fill="#475569" font-size="8" font-weight="bold" font-family="Arial, sans-serif">CHAD</text>
+        </svg>
+    </div>
+</body>
+</html>
