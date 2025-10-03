@@ -462,14 +462,15 @@ function App() {
     setValidationErrors(filteredErrors);
 
     // Check for individual field warnings
+    // Show warnings immediately for long prompts, regardless of touched state
     const warnings = {};
     const systemResult = validateField('systemPrompt', systemPrompt);
     const userResult = validateField('userPrompt', userPrompt);
 
-    if (systemResult.warning && touchedFields.systemPrompt) {
+    if (systemResult.warning) {
       warnings.systemPrompt = systemResult.warning;
     }
-    if (userResult.warning && touchedFields.userPrompt) {
+    if (userResult.warning) {
       warnings.userPrompt = userResult.warning;
     }
 
