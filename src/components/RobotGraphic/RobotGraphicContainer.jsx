@@ -7,6 +7,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import RobotGraphic from './RobotGraphic.jsx';
 import { useRobotState } from './useRobotState.js';
+import { useChadReveal } from './useChadReveal.js';
 
 import { extractRobotRelevantState } from './stateMapping.js';
 
@@ -29,7 +30,8 @@ const RobotGraphicContainer = ({
   className = '',
   ariaLabel,
   options = {},
-  enableDebug = false
+  enableDebug = false,
+  chadState = null
 }) => {
   // Extract only robot-relevant state for performance
   const robotRelevantState = extractRobotRelevantState(appState);
@@ -47,6 +49,15 @@ const RobotGraphicContainer = ({
     enableTransitions: options.enableTransitions !== false
   });
 
+  // Use Chad reveal state management (either passed in or create our own)
+  const internalChadState = useChadReveal({
+    revealAnimationDuration: options.chadRevealAnimationDuration || 800,
+    revealDelay: options.chadRevealDelay || 300,
+    enablePersistence: options.enableChadPersistence !== false
+  });
+
+  const chadRevealState = chadState || internalChadState;
+
   // Debug information (when debug mode is enabled)
   React.useEffect(() => {
     if (enableDebug) {
@@ -55,10 +66,16 @@ const RobotGraphicContainer = ({
         isTransitioning,
         robotRelevantState,
         stateHistoryLength: stateHistory.length,
-        debug
+        debug,
+        chadState: {
+          isRevealed: chadRevealState.isRevealed,
+          isRevealing: chadRevealState.isRevealing,
+          storageAvailable: chadRevealState.storageAvailable,
+          fallbackMode: chadRevealState.fallbackMode
+        }
       });
     }
-  }, [currentState, isTransitioning, robotRelevantState, stateHistory.length, debug, enableDebug]);
+  }, [currentState, isTransitioning, robotRelevantState, stateHistory.length, debug, enableDebug, chadRevealState]);
 
   // Build enhanced className with state information
   const enhancedClassName = [
@@ -67,11 +84,11 @@ const RobotGraphicContainer = ({
     `robot-container-${currentState}`
   ].filter(Boolean).join(' ');
 
-  // Enhanced aria label with transition information
+  // Enhanced aria label with transition and Chad information
   const enhancedAriaLabel = ariaLabel || (
     isTransitioning
-      ? `Robot is transitioning to ${currentState} state`
-      : `Robot is in ${currentState} state`
+      ? `${chadRevealState.isRevealed ? 'Chad' : 'Robot'} is transitioning to ${currentState} state`
+      : `${chadRevealState.isRevealed ? 'Chad' : 'Robot'} is in ${currentState} state`
   );
 
   return (
@@ -80,12 +97,15 @@ const RobotGraphicContainer = ({
       data-testid="robot-graphic-container"
       data-current-state={currentState}
       data-is-transitioning={isTransitioning}
+      data-is-chad={chadRevealState.isRevealed}
+      data-chad-revealing={chadRevealState.isRevealing}
     >
       <RobotGraphic
         currentState={currentState}
         size={size}
         className={className}
         ariaLabel={enhancedAriaLabel}
+        isChad={chadRevealState.isRevealed}
       />
 
       {/* Debug panel (when debug mode is enabled) */}
@@ -96,6 +116,7 @@ const RobotGraphicContainer = ({
           stateHistory={stateHistory}
           appState={robotRelevantState}
           getStateInfo={getStateInfo}
+          chadRevealState={chadRevealState}
         />
       )}
     </div>
@@ -104,14 +125,15 @@ const RobotGraphicContainer = ({
 
 /**
  * Debug panel component for development
- * Shows current state, history, and allows manual state testing
+ * Shows current state, history, Chad state, and allows manual state testing
  */
 const RobotDebugPanel = ({
   currentState,
   isTransitioning,
   stateHistory,
   appState,
-  getStateInfo
+  getStateInfo,
+  chadRevealState
 }) => {
   const [isExpanded, setIsExpanded] = React.useState(false);
 
@@ -160,12 +182,54 @@ const RobotDebugPanel = ({
         <div>Transitioning: {isTransitioning ? 'Yes' : 'No'}</div>
         <div>History: {stateHistory.length} entries</div>
 
+        {/* Chad state information */}
+        <div className="border-t border-gray-600 pt-1 mt-2">
+          <div className="font-bold text-xs mb-1">Chad State</div>
+          <div>Revealed: {chadRevealState.isRevealed ? 'Yes' : 'No'}</div>
+          <div>Revealing: {chadRevealState.isRevealing ? 'Yes' : 'No'}</div>
+          <div>Storage: {chadRevealState.storageAvailable ? 'Available' : 'Unavailable'}</div>
+          {chadRevealState.fallbackMode && (
+            <div className="text-yellow-300">Fallback Mode</div>
+          )}
+          {chadRevealState.error && (
+            <div className="text-red-300">Error: {chadRevealState.error}</div>
+          )}
+        </div>
+
         <details className="mt-2">
           <summary className="cursor-pointer">App State</summary>
           <pre className="text-xs mt-1 overflow-auto max-h-20">
             {JSON.stringify(appState, null, 2)}
           </pre>
         </details>
+
+        {/* Chad debug controls (development only) */}
+        {import.meta.env.DEV && (
+          <details className="mt-2">
+            <summary className="cursor-pointer">Chad Controls</summary>
+            <div className="text-xs mt-1 space-y-1">
+              <button
+                onClick={() => chadRevealState.revealChad()}
+                disabled={chadRevealState.isRevealed || chadRevealState.isRevealing}
+                className="block w-full text-left px-1 py-0.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded text-white"
+              >
+                Reveal Chad
+              </button>
+              <button
+                onClick={() => chadRevealState.resetReveal()}
+                className="block w-full text-left px-1 py-0.5 bg-red-600 hover:bg-red-700 rounded text-white"
+              >
+                Reset Chad
+              </button>
+              <button
+                onClick={() => chadRevealState.forceReveal(!chadRevealState.isRevealed)}
+                className="block w-full text-left px-1 py-0.5 bg-yellow-600 hover:bg-yellow-700 rounded text-white"
+              >
+                Toggle Chad
+              </button>
+            </div>
+          </details>
+        )}
 
         {stateHistory.length > 0 && (
           <details className="mt-2">
@@ -201,9 +265,22 @@ RobotGraphicContainer.propTypes = {
   options: PropTypes.shape({
     talkingDuration: PropTypes.number,
     debounceDelay: PropTypes.number,
-    enableTransitions: PropTypes.bool
+    enableTransitions: PropTypes.bool,
+    chadRevealAnimationDuration: PropTypes.number,
+    chadRevealDelay: PropTypes.number,
+    enableChadPersistence: PropTypes.bool
   }),
-  enableDebug: PropTypes.bool
+  enableDebug: PropTypes.bool,
+  chadState: PropTypes.shape({
+    isRevealed: PropTypes.bool.isRequired,
+    isRevealing: PropTypes.bool.isRequired,
+    storageAvailable: PropTypes.bool.isRequired,
+    fallbackMode: PropTypes.bool.isRequired,
+    error: PropTypes.string,
+    revealChad: PropTypes.func.isRequired,
+    resetReveal: PropTypes.func,
+    forceReveal: PropTypes.func
+  })
 };
 
 RobotDebugPanel.propTypes = {
@@ -211,7 +288,17 @@ RobotDebugPanel.propTypes = {
   isTransitioning: PropTypes.bool.isRequired,
   stateHistory: PropTypes.array.isRequired,
   appState: PropTypes.object.isRequired,
-  getStateInfo: PropTypes.func.isRequired
+  getStateInfo: PropTypes.func.isRequired,
+  chadRevealState: PropTypes.shape({
+    isRevealed: PropTypes.bool.isRequired,
+    isRevealing: PropTypes.bool.isRequired,
+    storageAvailable: PropTypes.bool.isRequired,
+    fallbackMode: PropTypes.bool.isRequired,
+    error: PropTypes.string,
+    revealChad: PropTypes.func.isRequired,
+    resetReveal: PropTypes.func.isRequired,
+    forceReveal: PropTypes.func.isRequired
+  }).isRequired
 };
 
 // Export the container component
@@ -228,19 +315,21 @@ export default RobotGraphicContainer;
 export function useRobotIntegration(appState, options = {}) {
   const robotRelevantState = extractRobotRelevantState(appState);
   const robotState = useRobotState(robotRelevantState, options);
+  const chadRevealState = useChadReveal(options);
 
   return {
     // Robot component ready to use
     RobotComponent: (props) => (
       <RobotGraphic
         currentState={robotState.currentState}
+        isChad={chadRevealState.isRevealed}
         {...props}
       />
     ),
 
     // Container component with full integration
     RobotContainer: (props) => (
-      <OptimizedRobotGraphicContainer
+      <RobotGraphicContainer
         appState={appState}
         {...props}
       />
@@ -251,9 +340,16 @@ export function useRobotIntegration(appState, options = {}) {
     isTransitioning: robotState.isTransitioning,
     stateHistory: robotState.stateHistory,
 
+    // Chad state information
+    isChad: chadRevealState.isRevealed,
+    isChadRevealing: chadRevealState.isRevealing,
+    chadRevealState,
+
     // Control functions
     forceUpdate: robotState.forceUpdate,
     getStateInfo: robotState.getStateInfo,
-    clearHistory: robotState.clearHistory
+    clearHistory: robotState.clearHistory,
+    revealChad: chadRevealState.revealChad,
+    resetChad: chadRevealState.resetReveal
   };
 }

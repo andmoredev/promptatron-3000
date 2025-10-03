@@ -9,6 +9,7 @@ import PropTypes from 'prop-types';
 import { useSettings, useDeterminismSettings, useUISettings, useAWSSettings } from '../hooks/useSettings.js';
 import LoadingSpinner from './LoadingSpinner.jsx';
 import HelpTooltip from './HelpTooltip.jsx';
+import AboutTab from './AboutTab.jsx';
 
 /**
  * Main SettingsDialog component
@@ -189,32 +190,44 @@ function SettingsDialog({ isOpen, onClose, onSave }) {
   const tabs = [
     { id: 'determinism', label: 'Determinism' },
     { id: 'ui', label: 'Interface' },
-    { id: 'aws', label: 'AWS' }
+    { id: 'aws', label: 'AWS' },
+    { id: 'about', label: 'About' }
   ];
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fade-in">
-      <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden animate-scale-in">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50 animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-dialog-title"
+      aria-describedby="settings-dialog-description"
+    >
+      <div className="bg-white rounded-lg sm:rounded-xl shadow-xl max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden animate-scale-in">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-primary-50 to-secondary-100">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 bg-gradient-to-r from-primary-50 to-secondary-100">
+          <div className="flex items-center space-x-3 min-w-0 flex-1">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 bg-primary-600 rounded-lg flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </div>
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">Application Settings</h2>
-              <p className="text-sm text-gray-600">Configure your Promptatron 3000 experience</p>
+            <div className="min-w-0">
+              <h2 id="settings-dialog-title" className="text-lg sm:text-xl font-semibold text-gray-900 truncate">
+                Application Settings
+              </h2>
+              <p id="settings-dialog-description" className="text-xs sm:text-sm text-gray-600 truncate">
+                Configure your Promptatron 3000 experience
+              </p>
             </div>
           </div>
 
           <button
             onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-gray-400 hover:text-gray-600 focus:text-gray-600 transition-colors p-1 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ml-3 flex-shrink-0"
+            aria-label="Close settings dialog"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -246,12 +259,52 @@ function SettingsDialog({ isOpen, onClose, onSave }) {
         {isInitialized && !globalLoading && (
           <>
             {/* Tab Navigation */}
-            <div className="flex border-b border-gray-200 bg-gray-50">
+            <div className="flex flex-wrap sm:flex-nowrap border-b border-gray-200 bg-gray-50" role="tablist" aria-label="Settings sections">
               {tabs.map(tab => (
                 <button
                   key={tab.id}
+                  id={`${tab.id}-tab`}
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  aria-controls={`${tab.id}-panel`}
+                  tabIndex={activeTab === tab.id ? 0 : -1}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors duration-200 ${
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                      e.preventDefault();
+                      const currentIndex = tabs.findIndex(t => t.id === tab.id);
+                      let nextIndex;
+
+                      if (e.key === 'ArrowRight') {
+                        nextIndex = currentIndex === tabs.length - 1 ? 0 : currentIndex + 1;
+                      } else {
+                        nextIndex = currentIndex === 0 ? tabs.length - 1 : currentIndex - 1;
+                      }
+
+                      const nextTab = tabs[nextIndex];
+                      setActiveTab(nextTab.id);
+
+                      // Focus the new tab
+                      setTimeout(() => {
+                        document.getElementById(`${nextTab.id}-tab`)?.focus();
+                      }, 0);
+                    } else if (e.key === 'Home') {
+                      e.preventDefault();
+                      const firstTab = tabs[0];
+                      setActiveTab(firstTab.id);
+                      setTimeout(() => {
+                        document.getElementById(`${firstTab.id}-tab`)?.focus();
+                      }, 0);
+                    } else if (e.key === 'End') {
+                      e.preventDefault();
+                      const lastTab = tabs[tabs.length - 1];
+                      setActiveTab(lastTab.id);
+                      setTimeout(() => {
+                        document.getElementById(`${lastTab.id}-tab`)?.focus();
+                      }, 0);
+                    }
+                  }}
+                  className={`flex-1 sm:flex-none px-4 sm:px-6 py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-gray-50 ${
                     activeTab === tab.id
                       ? 'border-primary-500 text-primary-600 bg-white'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -263,96 +316,131 @@ function SettingsDialog({ isOpen, onClose, onSave }) {
             </div>
 
             {/* Tab Content with Smooth Transitions */}
-            <div className="p-6 overflow-y-auto h-[30rem]">
+            <div className="p-4 sm:p-6 overflow-y-auto h-[30rem]">
               {activeTab === 'determinism' && (
-                <div className="animate-fade-in">
+                <div
+                  id="determinism-panel"
+                  role="tabpanel"
+                  aria-labelledby="determinism-tab"
+                  className="animate-fade-in"
+                >
                   <DeterminismSettingsTab onSettingsChange={() => setHasUnsavedChanges(true)} />
                 </div>
               )}
               {activeTab === 'ui' && (
-                <div className="animate-fade-in">
+                <div
+                  id="ui-panel"
+                  role="tabpanel"
+                  aria-labelledby="ui-tab"
+                  className="animate-fade-in"
+                >
                   <UISettingsTab onSettingsChange={() => setHasUnsavedChanges(true)} />
                 </div>
               )}
               {activeTab === 'aws' && (
-                <div className="animate-fade-in">
+                <div
+                  id="aws-panel"
+                  role="tabpanel"
+                  aria-labelledby="aws-tab"
+                  className="animate-fade-in"
+                >
                   <AWSSettingsTab onSettingsChange={() => setHasUnsavedChanges(true)} />
+                </div>
+              )}
+              {activeTab === 'about' && (
+                <div
+                  id="about-panel"
+                  role="tabpanel"
+                  aria-labelledby="about-tab"
+                  className="animate-fade-in"
+                >
+                  <AboutTab />
                 </div>
               )}
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between p-6 border-t border-gray-200 bg-gray-50">
-              <div className="flex items-center space-x-4">
-                {/* Import/Export */}
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={handleExportSettings}
-                    className="text-sm text-gray-600 hover:text-gray-800 font-medium"
-                  >
-                    Export
-                  </button>
-                  <span className="text-gray-300">|</span>
-                  <label className="text-sm text-gray-600 hover:text-gray-800 font-medium cursor-pointer">
-                    Import
-                    <input
-                      type="file"
-                      accept=".json"
-                      onChange={handleImportSettings}
-                      className="hidden"
-                    />
-                  </label>
-                  <span className="text-gray-300">|</span>
-                  <button
-                    onClick={handleResetToDefaults}
-                    className="text-sm text-red-600 hover:text-red-700 font-medium"
-                  >
-                    Reset to Defaults
-                  </button>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 sm:p-6 border-t border-gray-200 bg-gray-50 space-y-4 sm:space-y-0">
+              {activeTab !== 'about' && (
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                  {/* Import/Export */}
+                  <div className="flex items-center space-x-2 text-xs sm:text-sm">
+                    <button
+                      onClick={handleExportSettings}
+                      className="text-gray-600 hover:text-gray-800 focus:text-gray-800 font-medium p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                    >
+                      Export
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <label className="text-gray-600 hover:text-gray-800 focus-within:text-gray-800 font-medium cursor-pointer p-1 rounded focus-within:outline-none focus-within:ring-2 focus-within:ring-primary-500 focus-within:ring-offset-2">
+                      Import
+                      <input
+                        type="file"
+                        accept=".json"
+                        onChange={handleImportSettings}
+                        className="sr-only"
+                        aria-label="Import settings file"
+                      />
+                    </label>
+                    <span className="text-gray-300">|</span>
+                    <button
+                      onClick={handleResetToDefaults}
+                      className="text-red-600 hover:text-red-700 focus:text-red-700 font-medium p-1 rounded focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                    >
+                      Reset to Defaults
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
+              {activeTab === 'about' && <div></div>}
 
-              <div className="flex items-center space-x-3">
+              <div className="flex flex-col sm:flex-row sm:items-center space-y-3 sm:space-y-0 sm:space-x-3">
                 {/* Save Status */}
                 {saveStatus && (
                   <div className="flex items-center space-x-2">
                     {saveStatus === 'saving' && <LoadingSpinner size="sm" />}
                     {saveStatus === 'success' && (
-                      <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     )}
                     {saveStatus === 'error' && (
-                      <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
                       </svg>
                     )}
-                    <span className={`text-sm ${
-                      saveStatus === 'success' ? 'text-green-600' :
-                      saveStatus === 'error' ? 'text-red-600' : 'text-gray-600'
-                    }`}>
+                    <span
+                      className={`text-xs sm:text-sm ${
+                        saveStatus === 'success' ? 'text-green-600' :
+                        saveStatus === 'error' ? 'text-red-600' : 'text-gray-600'
+                      }`}
+                      role="status"
+                      aria-live="polite"
+                    >
                       {saveMessage}
                     </span>
                   </div>
                 )}
 
                 {/* Action Buttons */}
-                <button
-                  onClick={handleClose}
-                  className="btn-secondary"
-                >
-                  {hasUnsavedChanges ? 'Cancel' : 'Close'}
-                </button>
-
-                {hasUnsavedChanges && (
+                <div className="flex space-x-3">
                   <button
-                    onClick={handleSaveAll}
-                    className="btn-primary"
-                    disabled={saveStatus === 'saving'}
+                    onClick={handleClose}
+                    className="btn-secondary text-sm"
                   >
-                    {saveStatus === 'saving' ? 'Saving...' : 'Save Changes'}
+                    {hasUnsavedChanges ? 'Cancel' : 'Close'}
                   </button>
-                )}
+
+                  {hasUnsavedChanges && (
+                    <button
+                      onClick={handleSaveAll}
+                      className="btn-primary text-sm"
+                      disabled={saveStatus === 'saving'}
+                    >
+                      {saveStatus === 'saving' ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </>

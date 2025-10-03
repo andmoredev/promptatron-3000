@@ -79,6 +79,71 @@
   border: 0;
 }
 
+/* Chad personality styling */
+.robot-chad-personality {
+  /* Chad gets a slightly different background to distinguish from original robot */
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border-color: #0ea5e9;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.robot-chad-personality.robot-state-idle {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border-color: #10b981;
+}
+
+.robot-chad-personality.robot-state-thinking {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-color: #f59e0b;
+}
+
+.robot-chad-personality.robot-state-talking {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  border-color: #3b82f6;
+}
+
+.robot-chad-personality.robot-state-error {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  border-color: #ef4444;
+}
+
+/* Chad reveal transition states */
+.robot-graphic.robot-revealing-chad {
+  transform: scale(1.05);
+  filter: brightness(1.1) saturate(1.1);
+  box-shadow: 0 0 20px rgba(37, 99, 235, 0.3);
+}
+
+.robot-graphic.robot-chad-emerging {
+  animation: chad-personality-emerge 0.6s ease-out;
+  animation-fill-mode: both;
+}
+
+/* Smooth transition between robot personalities */
+.robot-graphic.robot-personality-transition {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, filter, box-shadow;
+}
+
+/* Chad-specific enhancements */
+.robot-chad-personality::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, rgba(37, 99, 235, 0.1), rgba(16, 185, 129, 0.1));
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.robot-chad-personality:hover::before {
+  opacity: 1;
+}
+
 /* No animations class for accessibility */
 .robot-no-animations,
 .robot-no-animations *,
@@ -102,5 +167,37 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /* Chad reveal reduced motion alternatives */
+  .robot-graphic.robot-revealing-chad {
+    transform: none !important;
+    filter: none !important;
+    box-shadow: none !important;
+  }
+
+  .robot-graphic.robot-chad-emerging {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  .robot-graphic.robot-personality-transition {
+    transition: none !important;
+    will-change: auto !important;
+  }
+
+  .robot-chad-personality::before {
+    transition: none !important;
+  }
+
+  .robot-chad-personality:hover::before {
+    opacity: 0 !important;
+  }
+
+  /* Provide instant visual feedback instead of animations */
+  .robot-chad-personality {
+    border-width: 3px !important;
   }
 }

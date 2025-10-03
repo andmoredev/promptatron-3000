@@ -442,7 +442,7 @@
 
 /* Accessibility: Respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
-  /* Disable all animations */
+  /* Disable all animations including Chad reveal animations */
   .robot-eye-blink,
   .robot-thinking-pulse,
   .robot-thinking-pulse-delayed,
@@ -454,16 +454,27 @@
   .robot-speech-wave-2,
   .robot-speech-wave-3,
   .robot-error-pulse,
-  .robot-animated.robot-expression-happy .robot-head {
+  .robot-animated.robot-expression-happy .robot-head,
+  .floating-chad-entered,
+  .floating-chad-bounce-entered,
+  .floating-chad-face,
+  .floating-chad-glow,
+  .chad-revealing,
+  .chad-personality-emerging,
+  .chad-reveal-button-hiding {
     animation: none !important;
   }
 
-  /* Disable all transitions */
+  /* Disable all transitions including Chad reveal transitions */
   .robot-face-svg,
   .robot-animated .robot-head,
   .robot-animated *,
   .robot-animated *::before,
-  .robot-animated *::after {
+  .robot-animated *::after,
+  .floating-chad,
+  .robot-to-chad-transition,
+  .chad-revealing,
+  .chad-personality-emerging {
     transition: none !important;
   }
 
@@ -476,7 +487,10 @@
   .robot-animated .robot-speech-wave-1,
   .robot-animated .robot-speech-wave-2,
   .robot-animated .robot-speech-wave-3,
-  .robot-animated .robot-error-pulse {
+  .robot-animated .robot-error-pulse,
+  .floating-chad,
+  .chad-revealing,
+  .chad-personality-emerging {
     will-change: auto !important;
   }
 
@@ -491,6 +505,300 @@
 
   .robot-state-error .robot-head {
     filter: saturate(1.2);
+  }
+
+  /* Chad reveal reduced motion alternatives */
+  .chad-revealing {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  .chad-personality-emerging {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  .chad-reveal-button-hiding {
+    opacity: 0 !important;
+    transform: none !important;
+  }
+
+  /* Floating Chad reduced motion alternatives */
+  .floating-chad-no-animations {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .floating-chad-state-thinking {
+    filter: brightness(0.95);
+  }
+
+  .floating-chad-state-talking {
+    filter: brightness(1.05);
+  }
+
+  .floating-chad-state-error {
+    filter: saturate(1.2);
+  }
+
+  /* Instant reveal for reduced motion */
+  .floating-chad-entered,
+  .floating-chad-bounce-entered {
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+}
+
+/* Chad reveal transition animations */
+@keyframes chad-reveal-transform {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    opacity: 0.7;
+    transform: scale(1.1) rotate(2deg);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(0.9) rotate(-1deg);
+  }
+  75% {
+    opacity: 0.7;
+    transform: scale(1.05) rotate(1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes chad-reveal-button-fade {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+@keyframes chad-personality-emerge {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+    filter: blur(2px);
+  }
+  30% {
+    opacity: 0.6;
+    transform: scale(1.05) translateY(-2px);
+    filter: blur(1px);
+  }
+  70% {
+    opacity: 0.9;
+    transform: scale(0.98) translateY(1px);
+    filter: blur(0.5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* Floating Chad animations */
+@keyframes floating-chad-entrance {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.8);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translateY(-5px) scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes floating-chad-idle {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes floating-chad-glow-pulse {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes floating-chad-bounce-in {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scale(0.6) rotate(-5deg);
+  }
+  60% {
+    opacity: 0.8;
+    transform: translateY(-8px) scale(1.1) rotate(2deg);
+  }
+  80% {
+    opacity: 0.95;
+    transform: translateY(2px) scale(0.95) rotate(-1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+}
+
+/* Chad reveal animation classes */
+.chad-revealing {
+  animation: chad-reveal-transform 0.8s ease-in-out;
+  will-change: transform, opacity;
+}
+
+.chad-personality-emerging {
+  animation: chad-personality-emerge 0.6s ease-out;
+  animation-delay: 0.2s;
+  animation-fill-mode: both;
+}
+
+.chad-reveal-button-hiding {
+  animation: chad-reveal-button-fade 0.4s ease-in-out forwards;
+  pointer-events: none;
+}
+
+/* Robot to Chad transition */
+.robot-to-chad-transition {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.robot-to-chad-transition.transitioning {
+  transform: scale(1.05);
+  filter: brightness(1.1);
+}
+
+/* Floating Chad base styles */
+.floating-chad {
+  transition: all 0.3s ease-in-out;
+  will-change: transform, opacity;
+}
+
+.floating-chad-entered {
+  animation: floating-chad-entrance 0.6s ease-out;
+}
+
+.floating-chad-bounce-entered {
+  animation: floating-chad-bounce-in 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.floating-chad-entered:not(.floating-chad-no-animations) .floating-chad-face {
+  animation: floating-chad-idle 3s ease-in-out infinite;
+  animation-delay: 0.6s; /* Start after entrance completes */
+}
+
+.floating-chad-glow {
+  animation: floating-chad-glow-pulse 2s ease-in-out infinite;
+  animation-delay: 1s; /* Start after entrance and settle */
+}
+
+/* State-specific floating Chad animations */
+.floating-chad-state-thinking .floating-chad-face {
+  animation: floating-chad-idle 2s ease-in-out infinite;
+}
+
+.floating-chad-state-talking .floating-chad-face {
+  animation: floating-chad-idle 1.5s ease-in-out infinite;
+}
+
+.floating-chad-state-error .floating-chad-face {
+  animation: floating-chad-idle 1s ease-in-out infinite;
+}
+
+/* Responsive positioning and scaling for floating Chad */
+@media (max-width: 1024px) {
+  .floating-chad {
+    bottom: 18px !important;
+    left: 18px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .floating-chad {
+    bottom: 16px !important;
+    left: 16px !important;
+    transform: scale(0.9) !important;
+  }
+
+  .floating-chad-sm {
+    transform: scale(0.8) !important;
+  }
+
+  /* Adjust entrance animation for mobile */
+  .floating-chad-entered {
+    animation: floating-chad-entrance 0.5s ease-out;
+  }
+
+  .floating-chad-bounce-entered {
+    animation: floating-chad-bounce-in 0.7s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+  .floating-chad {
+    bottom: 12px !important;
+    left: 12px !important;
+    transform: scale(0.8) !important;
+  }
+
+  .floating-chad-sm {
+    transform: scale(0.7) !important;
+  }
+
+  /* Faster animations on small screens */
+  .floating-chad-entered {
+    animation: floating-chad-entrance 0.4s ease-out;
+  }
+
+  .floating-chad-bounce-entered {
+    animation: floating-chad-bounce-in 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+
+  .floating-chad-entered:not(.floating-chad-no-animations) .floating-chad-face {
+    animation: floating-chad-idle 2.5s ease-in-out infinite;
+    animation-delay: 0.4s;
+  }
+}
+
+/* Large screens - more prominent positioning */
+@media (min-width: 1200px) {
+  .floating-chad {
+    bottom: 24px !important;
+    left: 24px !important;
+  }
+
+  .floating-chad-md {
+    transform: scale(1.1) !important;
+  }
+
+  .floating-chad-lg {
+    transform: scale(1.2) !important;
   }
 }
 

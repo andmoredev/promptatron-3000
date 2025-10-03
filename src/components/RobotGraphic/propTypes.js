@@ -53,7 +53,8 @@ export const robotGraphicPropTypes = {
   currentState: robotStateKeyPropType.isRequired,
   size: robotSizePropType,
   className: PropTypes.string,
-  ariaLabel: PropTypes.string
+  ariaLabel: PropTypes.string,
+  isChad: PropTypes.bool
 };
 
 /**
@@ -72,7 +73,8 @@ export const robotFacePropTypes = {
 export const robotGraphicDefaultProps = {
   size: 'md',
   className: '',
-  ariaLabel: null
+  ariaLabel: null,
+  isChad: false
 };
 
 /**
