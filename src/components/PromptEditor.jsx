@@ -11,6 +11,8 @@ const PromptEditor = ({
   onUserPromptChange,
   systemPromptError,
   userPromptError,
+  systemPromptWarning,
+  userPromptWarning,
   selectedDataset,
   // Legacy props for backward compatibility
   prompt,
@@ -400,6 +402,9 @@ const PromptEditor = ({
             {systemPromptError && (
               <p className="mt-1 text-sm text-red-600">{systemPromptError}</p>
             )}
+            {!systemPromptError && systemPromptWarning && (
+              <p className="mt-1 text-sm text-yellow-600">{systemPromptWarning}</p>
+            )}
             <div className="flex justify-between items-center text-sm text-gray-500">
               <span>{systemPrompt.length} characters</span>
               <span>Optional: Defines AI behavior and expertise</span>
@@ -470,6 +475,9 @@ const PromptEditor = ({
             />
             {userPromptError && (
               <p className="mt-1 text-sm text-red-600">{userPromptError}</p>
+            )}
+            {!userPromptError && userPromptWarning && (
+              <p className="mt-1 text-sm text-yellow-600">{userPromptWarning}</p>
             )}
             <div className="flex justify-between items-center text-sm text-gray-500">
               <span>{userPrompt.length} characters</span>
@@ -557,6 +565,8 @@ PromptEditor.propTypes = {
   onUserPromptChange: PropTypes.func,
   systemPromptError: PropTypes.string,
   userPromptError: PropTypes.string,
+  systemPromptWarning: PropTypes.string,
+  userPromptWarning: PropTypes.string,
   selectedDataset: PropTypes.object,
 
   // Legacy single prompt mode props (for backward compatibility)
