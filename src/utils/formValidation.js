@@ -13,21 +13,17 @@ export const validationRules = {
   systemPrompt: {
     required: false,
     minLength: 0,
-    maxLength: 10000,
     messages: {
       required: 'System prompt is required',
-      minLength: 'System prompt cannot be empty',
-      maxLength: 'System prompt must be less than 10,000 characters'
+      minLength: 'System prompt cannot be empty'
     }
   },
   userPrompt: {
     required: true,
     minLength: 1,
-    maxLength: 10000,
     messages: {
       required: 'User prompt is required',
-      minLength: 'User prompt cannot be empty',
-      maxLength: 'User prompt must be less than 10,000 characters'
+      minLength: 'User prompt cannot be empty'
     }
   },
   dataset: {
@@ -101,8 +97,13 @@ function validateSystemPrompt(value, rules) {
       return { isValid: false, error: rules.messages.minLength }
     }
 
-    if (rules.maxLength && trimmedValue.length > rules.maxLength) {
-      return { isValid: false, error: rules.messages.maxLength }
+    // Add warning for very long prompts
+    if (trimmedValue.length > 10000) {
+      return {
+        isValid: true,
+        error: null,
+        warning: 'System prompt is very long and may affect performance'
+      }
     }
   }
 
@@ -126,8 +127,13 @@ function validateUserPrompt(value, rules) {
     return { isValid: false, error: rules.messages.minLength }
   }
 
-  if (rules.maxLength && trimmedValue.length > rules.maxLength) {
-    return { isValid: false, error: rules.messages.maxLength }
+  // Add warning for very long prompts
+  if (trimmedValue.length > 10000) {
+    return {
+      isValid: true,
+      error: null,
+      warning: 'User prompt is very long and may affect performance'
+    }
   }
 
   return { isValid: true, error: null }

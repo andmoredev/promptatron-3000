@@ -34,7 +34,7 @@ import {
 } from "./hooks/useStatePersistence";
 import { statePersistenceService } from "./services/statePersistenceService";
 import { useSettings, useDeterminismSettings } from "./hooks/useSettings";
-import { validateForm } from "./utils/formValidation";
+import { validateForm, validateField } from "./utils/formValidation";
 import { handleError, retryWithBackoff } from "./utils/errorHandling";
 import { hasToolServiceForDatasetType } from "./utils/toolServiceMapping";
 import {
@@ -95,6 +95,7 @@ function App() {
   const [validationErrors, setValidationErrors] = useState(
     uiState.validationErrors || {}
   );
+  const [validationWarnings, setValidationWarnings] = useState({});
   const [touchedFields, setTouchedFields] = useState(
     uiState.touchedFields || {}
   );
@@ -459,6 +460,21 @@ function App() {
     });
 
     setValidationErrors(filteredErrors);
+
+    // Check for individual field warnings
+    // Show warnings immediately for long prompts, regardless of touched state
+    const warnings = {};
+    const systemResult = validateField('systemPrompt', systemPrompt);
+    const userResult = validateField('userPrompt', userPrompt);
+
+    if (systemResult.warning) {
+      warnings.systemPrompt = systemResult.warning;
+    }
+    if (userResult.warning) {
+      warnings.userPrompt = userResult.warning;
+    }
+
+    setValidationWarnings(warnings);
 
     // Update persisted UI state
     if (statePersistenceInitialized) {
@@ -1944,6 +1960,8 @@ function App() {
                         onUserPromptChange={handleUserPromptChange}
                         systemPromptError={validationErrors.systemPrompt}
                         userPromptError={validationErrors.userPrompt}
+                        systemPromptWarning={validationWarnings.systemPrompt}
+                        userPromptWarning={validationWarnings.userPrompt}
                         selectedDataset={selectedDataset}
                       />
 
