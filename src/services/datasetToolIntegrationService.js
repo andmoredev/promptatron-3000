@@ -5,7 +5,6 @@
 
 import { toolConfigService } from './toolConfigService.js'
 import { handleToolError, validateToolConfigurationWithFeedback, ToolErrorTypes } from '../utils/toolErrorHandling.js'
-import { initializeToolServiceForDatasetType, hasToolServiceForDatasetType } from '../utils/toolServiceMapping.js'
 
 /**
  * Dataset Tool Integration Service
@@ -468,16 +467,16 @@ export class DatasetToolIntegrationService {
         result.warnings.push(`Manifest unavailable: ${toolErrorInfo.userMessage}`)
 
         // Try to get tools directly from service with enhanced error handling
-        const toolConfigResult = toolConfigService.getToolsForDatasetType(datasetType)
+        const toolConfig = toolConfigService.getToolsForDatasetType(datasetType)
 
-        if (toolConfigResult.success && toolConfigResult.config) {
+        if (toolConfig) {
           // Validate the configuration
-          const validation = validateToolConfigurationWithFeedback(toolConfigResult.config, datasetType)
+          const validation = validateToolConfigurationWithFeedback(toolConfig, datasetType)
           result.validationResult = validation
 
           if (validation.canProceed) {
             result.hasToolConfig = true
-            result.toolConfig = toolConfigResult.config
+            result.toolConfig = toolConfig
             result.fallbackMode = false
             result.message = `Tools loaded from service for ${datasetType} (manifest unavailable)`
             result.warnings.push(...validation.userMessages)
@@ -487,12 +486,9 @@ export class DatasetToolIntegrationService {
             result.gracefulDegradation = true
           }
         } else {
-          result.message = toolConfigResult.error || `No tools available for ${datasetType} and manifest unavailable`
+          result.message = toolConfigService.lastError || `No tools available for ${datasetType} and manifest unavailable`
           result.gracefulDegradation = true
-
-          if (toolConfigResult.hasGracefulDegradation) {
-            result.warnings.push('Analysis will proceed without tool capabilities')
-          }
+          result.warnings.push('Analysis will proceed without tool capabilities')
         }
         return result
       }
@@ -515,23 +511,23 @@ export class DatasetToolIntegrationService {
       }
 
       // Get tool configuration from service with enhanced error handling
-      const toolConfigResult = toolConfigService.getToolsForDatasetType(toolConfiguration.datasetType)
+      const toolConfig = toolConfigService.getToolsForDatasetType(toolConfiguration.datasetType)
 
-      if (!toolConfigResult.success) {
-        const errorInfo = handleToolError(toolConfigResult.error, {
+      if (!toolConfig) {
+        const errorInfo = handleToolError(toolConfigService.lastError || 'Tool configuration not found', {
           operation: 'getToolsForDatasetType',
           datasetType: toolConfiguration.datasetType,
           context: 'service_retrieval'
         })
 
         result.message = errorInfo.userMessage
-        result.errors.push(toolConfigResult.error)
+        result.errors.push(toolConfigService.lastError || 'Tool configuration not found')
         result.gracefulDegradation = errorInfo.gracefulDegradation
         return result
       }
 
       // Validate the retrieved configuration
-      const validation = validateToolConfigurationWithFeedback(toolConfigResult.config, datasetType)
+      const validation = validateToolConfigurationWithFeedback(toolConfig, datasetType)
       result.validationResult = validation
 
       if (!validation.canProceed) {
@@ -544,7 +540,7 @@ export class DatasetToolIntegrationService {
 
       // Success - tools are available
       result.hasToolConfig = true
-      result.toolConfig = toolConfigResult.config
+      result.toolConfig = toolConfig
       result.fallbackMode = false
       result.message = `Tools loaded for dataset type: ${datasetType}`
       result.toolsAvailable = toolConfiguration.toolsAvailable
@@ -701,8 +697,8 @@ export class DatasetToolIntegrationService {
 
       if (hasConfig) {
         // Configuration exists, verify it's valid
-        const configResult = toolConfigService.getToolsForDatasetType(datasetType)
-        if (configResult.success) {
+        const toolConfig = toolConfigService.getToolsForDatasetType(datasetType)
+        if (toolConfig) {
           return true
         }
       }
@@ -762,32 +758,7 @@ export class DatasetToolIntegrationService {
     }
   }
 
-  /**
-   * Get the tool service for a specific dataset type
-   * This method provides the mapping between dataset types and their corresponding tool services
-   * @param {string} datasetType - The dataset type
-   * @returns {Promise<Object|null>} The tool service instance or null if not found
-   */
-  async getToolServiceForDatasetType(datasetType) {
-    try {
-      // Use the centralized utility function
-      const serviceLoader = await import('../utils/toolServiceMapping.js')
-      const toolServiceLoader = serviceLoader.getToolServiceForDatasetType(datasetType)
 
-      if (!toolServiceLoader) {
-        console.info(`No tool service configured for dataset type: ${datasetType}`)
-        return null
-      }
-
-      // Load the service
-      const service = await toolServiceLoader()
-      return service
-
-    } catch (error) {
-      console.error(`Error getting tool service for dataset type ${datasetType}:`, error)
-      return null
-    }
-  }
 
   /**
    * Debug method to check current tool configuration state
@@ -805,7 +776,7 @@ export class DatasetToolIntegrationService {
       debug.specificDataset = {
         type: datasetType,
         hasConfig: toolConfigService.hasToolsForDatasetType(datasetType),
-        configResult: toolConfigService.getToolsForDatasetType(datasetType)
+        toolConfig: toolConfigService.getToolsForDatasetType(datasetType)
       }
     }
 
@@ -826,36 +797,7 @@ export class DatasetToolIntegrationService {
   }
 }
 
-/**
- * Get the tool service for a specific dataset type
- * This utility function provides the mapping between dataset types and their corresponding tool services
- * @param {string} datasetType - The dataset type
- * @returns {Object|null} The tool service instance or null if not found
- */
-export const getToolServiceForDatasetType = (datasetType) => {
-  // Import services dynamically to avoid circular dependencies
-  let shippingToolsService = null
-  let fraudToolsService = null
 
-  try {
-    // Try to get services from modules if they're available
-    if (datasetType === 'shipping-logistics') {
-      // The component using this will need to import shippingToolsService and pass it
-      // For now, we'll return null and let the component handle the import
-      return null
-    }
-
-    if (datasetType === 'fraud-detection') {
-      // The component using this will need to import fraudToolsService and pass it
-      // For now, we'll return null and let the component handle the import
-      return null
-    }
-  } catch (error) {
-    console.warn(`Could not load tool service for ${datasetType}:`, error)
-  }
-
-  return null
-}
 
 // Create and export singleton instance
 export const datasetToolIntegrationService = new DatasetToolIntegrationService()

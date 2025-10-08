@@ -1,6 +1,6 @@
 transaction_id,account_id,timestamp,amount,currency,mcc,mcc_desc,geo,device,hist_mean,hist_std,merchant_age_days,minutes_since_prev_txn,prior_outcome,is_anomaly,anomaly_type
 T0001,A1004,2025-09-08 21:55:23.202315,5.0,USD,7995,Betting,DE,known,255.67,85.47,491,,approved,False,
-T0002,A1002,2025-09-08 22:35:35.643739,114.49,USD,7995,Betting,MY,known,58.89,31.15,16,40.0,approved,False,
+T0002,A1002,2025-09-08 22:35:35.643739,114.49,USD,799,MY,known,58.89,31.15,16,40.0,approved,False,
 T0003,A1011,2025-09-09 01:34:49.946664,172.65,USD,5411,Restaurant,US,known,80.25,33.26,196,179.0,declined,False,
 T0004,A1006,2025-09-09 02:20:11.059272,43.7,USD,5812,Restaurant,US,new,163.4,36.65,31,45.0,approved,False,
 T0005,A1006,2025-09-09 02:44:52.489462,131.32,USD,5411,Grocery,DE,new,163.4,36.65,9,24.0,approved,False,

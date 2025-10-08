@@ -1,7 +1,0 @@
-{
-  "types": [
-    "fraud-detection",
-    "shipping-logistics"
-  ],
-  "description": "Available dataset types for the Bedrock LLM Analyzer"
-}

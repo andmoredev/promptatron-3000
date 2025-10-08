@@ -10,7 +10,9 @@ const ToolExecutionSettings = ({
   determinismEnabled,
   onDeterminismToggle,
   isExecuting,
-  isToolsAvailable = true
+  isToolsAvailable = true,
+  showExecutionToggle = true,
+  toolExecutionMode = 'execution'
 }) => {
   const [iterationInput, setIterationInput] = useState(maxIterations.toString())
   const [validationError, setValidationError] = useState('')
@@ -46,7 +48,7 @@ const ToolExecutionSettings = ({
   }
 
   const handleUseToolsToggle = () => {
-    if (!isExecuting) {
+    if (!isExecuting && showExecutionToggle) {
       const newValue = !useToolsEnabled
       onUseToolsToggle(newValue)
 
@@ -76,51 +78,70 @@ const ToolExecutionSettings = ({
       </div>
 
       <div className="space-y-6">
-        {/* Use Tools Toggle */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <label
-              htmlFor="use-tools-toggle"
-              className="text-sm font-medium text-gray-700"
-            >
-              Use Tools Mode
-            </label>
-            <HelpTooltip
-              content="When enabled, the LLM will actually execute tools instead of just showing what tools it would call. This allows for interactive tool usage and multi-turn conversations."
-              position="right"
-            />
-          </div>
-          <div className="flex items-center space-x-3">
-            <span className={`text-sm ${useToolsEnabled ? 'text-gray-500' : 'text-gray-900 font-medium'}`}>
-              Detection
-            </span>
-            <button
-              id="use-tools-toggle"
-              type="button"
-              onClick={handleUseToolsToggle}
-              disabled={isExecuting || !isToolsAvailable}
-              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
-                useToolsEnabled
-                  ? 'bg-primary-600'
-                  : 'bg-gray-200'
-              } ${
-                (isExecuting || !isToolsAvailable) ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              role="switch"
-              aria-checked={useToolsEnabled}
-              aria-labelledby="use-tools-toggle"
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  useToolsEnabled ? 'translate-x-5' : 'translate-x-0'
-                }`}
+        {/* Use Tools Toggle - only show if execution mode is available */}
+        {showExecutionToggle && (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <label
+                htmlFor="use-tools-toggle"
+                className="text-sm font-medium text-gray-700"
+              >
+                Use Tools Mode
+              </label>
+              <HelpTooltip
+                content="When enabled, the LLM will actually execute tools instead of just showing what tools it would call. This allows for interactive tool usage and multi-turn conversations."
+                position="right"
               />
-            </button>
-            <span className={`text-sm ${useToolsEnabled ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-              Execution
-            </span>
+            </div>
+            <div className="flex items-center space-x-3">
+              <span className={`text-sm ${useToolsEnabled ? 'text-gray-500' : 'text-gray-900 font-medium'}`}>
+                Detection
+              </span>
+              <button
+                id="use-tools-toggle"
+                type="button"
+                onClick={handleUseToolsToggle}
+                disabled={isExecuting || !isToolsAvailable}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+                  useToolsEnabled
+                    ? 'bg-primary-600'
+                    : 'bg-gray-200'
+                } ${
+                  (isExecuting || !isToolsAvailable) ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+                role="switch"
+                aria-checked={useToolsEnabled}
+                aria-labelledby="use-tools-toggle"
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    useToolsEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+              <span className={`text-sm ${useToolsEnabled ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                Execution
+              </span>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Detection Only Mode Info */}
+        {!showExecutionToggle && toolExecutionMode === 'detection' && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+            <div className="flex items-center space-x-2">
+              <svg className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <span className="text-sm font-medium text-yellow-800">Detection Mode Only</span>
+                <p className="text-xs text-yellow-700 mt-1">
+                  This scenario's tools support detection only. The LLM will identify when to use tools but won't execute them.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {!isToolsAvailable && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
@@ -135,8 +156,8 @@ const ToolExecutionSettings = ({
           </div>
         )}
 
-        {/* Maximum Iterations */}
-        {useToolsEnabled && (
+        {/* Maximum Iterations - only show if tools are enabled and execution mode is available */}
+        {useToolsEnabled && showExecutionToggle && (
           <div className="space-y-2">
             <div className="flex items-center space-x-2">
               <label
@@ -228,7 +249,7 @@ const ToolExecutionSettings = ({
           </div>
         </div>
 
-        {useToolsEnabled && (
+        {useToolsEnabled && showExecutionToggle && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <div className="flex items-start space-x-2">
               <svg className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -257,7 +278,9 @@ ToolExecutionSettings.propTypes = {
   determinismEnabled: PropTypes.bool.isRequired,
   onDeterminismToggle: PropTypes.func.isRequired,
   isExecuting: PropTypes.bool.isRequired,
-  isToolsAvailable: PropTypes.bool
+  isToolsAvailable: PropTypes.bool,
+  showExecutionToggle: PropTypes.bool,
+  toolExecutionMode: PropTypes.oneOf(['none', 'detection', 'execution'])
 }
 
 export default ToolExecutionSettings

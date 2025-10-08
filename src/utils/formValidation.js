@@ -27,12 +27,15 @@ export const validationRules = {
     }
   },
   dataset: {
-    required: true,
+    required: false,
     messages: {
-      typeRequired: 'Dataset type selection is required',
-      optionRequired: 'Dataset file selection is required',
+      typeRequired: 'Dataset selection is required',
       contentRequired: 'Dataset content not loaded'
     }
+  },
+  scenario: {
+    required: false,
+    message: 'Scenario selection is optional but recommended for guided workflows'
   }
 }
 
@@ -58,6 +61,8 @@ export function validateField(fieldType, value, options = {}) {
       return validateUserPrompt(value, rules)
     case 'dataset':
       return validateDataset(value, rules)
+    case 'scenario':
+      return validateScenario(value, rules)
     default:
       return { isValid: true, error: null }
   }
@@ -141,7 +146,7 @@ function validateUserPrompt(value, rules) {
 
 /**
  * Validate dataset selection
- * @param {Object} value - The dataset object with type, option, and content
+ * @param {Object} value - The dataset object with id, name, and content
  * @param {Object} rules - Validation rules
  * @returns {Object} Validation result
  */
@@ -151,12 +156,8 @@ function validateDataset(value, rules) {
   }
 
   if (rules.required) {
-    if (!value.type) {
+    if (!value.id) {
       return { isValid: false, error: rules.messages.typeRequired }
-    }
-
-    if (!value.option) {
-      return { isValid: false, error: rules.messages.optionRequired }
     }
 
     if (!value.content) {
@@ -164,6 +165,19 @@ function validateDataset(value, rules) {
     }
   }
 
+  return { isValid: true, error: null }
+}
+
+/**
+ * Validate scenario selection
+ * @param {string} value - The selected scenario ID
+ * @param {Object} rules - Validation rules
+ * @returns {Object} Validation result
+ */
+function validateScenario(value, rules) {
+  if (rules.required && (!value || value.trim() === '')) {
+    return { isValid: false, error: rules.message }
+  }
   return { isValid: true, error: null }
 }
 
@@ -197,11 +211,23 @@ export function validateForm(formData) {
     errors.userPrompt = userPromptResult.error
   }
 
-  // Validate dataset
-  const datasetResult = validateField('dataset', formData.selectedDataset)
-  results.dataset = datasetResult
-  if (!datasetResult.isValid) {
-    errors.dataset = datasetResult.error
+  // Scenario-aware dataset validation
+  if (formData.selectedScenario && formData.scenarioConfig) {
+    // Only validate dataset if scenario requires it
+    if (formData.scenarioConfig.showDatasetSelector) {
+      const datasetResult = validateField('dataset', formData.selectedDataset)
+      results.dataset = datasetResult
+      if (!datasetResult.isValid) {
+        errors.dataset = datasetResult.error
+      }
+    }
+  } else {
+    // Fallback to standard dataset validation for non-scenario mode
+    const datasetResult = validateField('dataset', formData.selectedDataset)
+    results.dataset = datasetResult
+    if (!datasetResult.isValid) {
+      errors.dataset = datasetResult.error
+    }
   }
 
   return {

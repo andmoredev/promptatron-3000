@@ -13,7 +13,7 @@ bedrock-llm-analyzer/
 │   ├── main.jsx            # React entry point
 │   └── index.css           # Global styles & Tailwind
 ├── public/
-│   └── datasets/           # Dataset files organized by use case
+│   └── scenarios/          # Scenario files with datasets organized by use case
 ├── .kiro/                  # Kiro IDE configuration
 └── [config files]         # Build & tool configuration
 ```

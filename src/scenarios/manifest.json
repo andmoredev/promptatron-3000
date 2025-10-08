@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "scenarios": [
+    {
+      "id": "fraud-detection-comprehensive",
+      "folder": "fraud-detection",
+      "configFile": "scenario.json",
+      "enabled": true
+    },
+    {
+      "id": "shipping-logistics",
+      "folder": "shipping-logistics",
+      "configFile": "scenario.json",
+      "enabled": true
+    }
+  ],
+  "metadata": {
+    "manifestVersion": "1.0.0",
+    "lastUpdated": "2025-10-07T16:00:00Z",
+    "totalScenarios": 2,
+    "description": "Consolidated scenario structure with all scenario files, datasets, and tools organized under /src/scenarios/"
+  }
+}

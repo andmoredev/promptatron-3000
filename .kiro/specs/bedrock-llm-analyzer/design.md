@@ -103,16 +103,16 @@ bedrock-test-harness/
 │   └── index.js
 ├── data/
 │   └── history.json
-└── datasets/
+└── scenarios/
     └── fraud-detection/
-        ├── dataset1.json
+        ├── scenario.json
         ├── dataset2.json
         └── dataset3.json
 ```
 
 **Data Files**:
 - `history.json`: Array of test results
-- `datasets/`: Directory structure for different use cases and datasets
+- `scenarios/`: Directory structure for different scenarios with datasets and configurations
 
 **Key Functions**:
 - `loadHistory()`: Read test history from JSON file
@@ -154,16 +154,20 @@ bedrock-test-harness/
 
 
 
-### Dataset Structure
+### Scenario Structure
 ```
-datasets/
-├── fraud-detection/          # Use case folder
-│   ├── dataset1.json         # Dataset option 1
-│   ├── dataset2.json         # Dataset option 2
-│   └── dataset3.json         # Dataset option 3
-└── [future-use-case]/        # Additional use cases
-    ├── option1.json
-    └── option2.json
+scenarios/
+├── fraud-detection/          # Scenario folder
+│   ├── scenario.json         # Scenario configuration
+│   └── datasets/             # Scenario datasets
+│       ├── dataset1.csv      # Dataset option 1
+│       ├── dataset2.csv      # Dataset option 2
+│       └── dataset3.csv      # Dataset option 3
+└── [future-scenario]/        # Additional scenarios
+    ├── scenario.json
+    └── datasets/
+        ├── option1.csv
+        └── option2.csv
 ```
 
 ## Implementation Details

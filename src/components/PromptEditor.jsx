@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
-import PropTypes from 'prop-types'
-import HelpTooltip from './HelpTooltip'
-import { uiErrorRecovery } from '../utils/uiErrorRecovery'
-import { datasetToolIntegrationService } from '../services/datasetToolIntegrationService'
+import { useState, useRef, useEffect, useMemo } from 'react';
+import PropTypes from 'prop-types';
+import HelpTooltip from './HelpTooltip';
+import { uiErrorRecovery } from '../utils/uiErrorRecovery';
+import { datasetToolIntegrationService } from '../services/datasetToolIntegrationService';
 
 const PromptEditor = ({
   systemPrompt = '',
@@ -11,6 +11,9 @@ const PromptEditor = ({
   onUserPromptChange,
   systemPromptError,
   userPromptError,
+  // Scenario-provided prompts
+  scenarioSystemPrompts = [],
+  scenarioUserPrompts = [],
   systemPromptWarning,
   userPromptWarning,
   selectedDataset,
@@ -19,86 +22,101 @@ const PromptEditor = ({
   onPromptChange,
   validationError
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false)
-  const [activeTab, setActiveTab] = useState('system')
-  const [datasetSystemPrompts, setDatasetSystemPrompts] = useState([])
-  const systemPromptRef = useRef(null)
-  const userPromptRef = useRef(null)
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState('system');
+  const [datasetSystemPrompts, setDatasetSystemPrompts] = useState([]);
+  const systemPromptRef = useRef(null);
+  const userPromptRef = useRef(null);
 
   // Determine if we're in legacy single prompt mode
-  const isLegacyMode = prompt !== undefined && onPromptChange && !onSystemPromptChange && !onUserPromptChange
+  const isLegacyMode = prompt !== undefined && onPromptChange && !onSystemPromptChange && !onUserPromptChange;
 
+  // Auto-resize textarea function
+  const autoResize = (textarea) => {
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.max(128, textarea.scrollHeight) + 'px'; // Minimum height of 128px (h-32)
+    }
+  };
+
+  // Auto-resize system prompt when content changes
+  useEffect(() => {
+    autoResize(systemPromptRef.current);
+  }, [systemPrompt]);
+
+  // Auto-resize user prompt when content changes
+  useEffect(() => {
+    autoResize(userPromptRef.current);
+  }, [userPrompt]);
 
   // Monitor for text wrapping issues in textareas
   useEffect(() => {
     // Small delay to ensure DOM is updated
     setTimeout(() => {
-      uiErrorRecovery.monitorTextOverflow('.prompt-editor-textarea', 'general')
-      uiErrorRecovery.monitorTextOverflow('.system-prompt-display', 'system-prompt')
-      uiErrorRecovery.monitorTextOverflow('.test-results-prompt', 'user-prompt')
-    }, 100)
-  }, [systemPrompt, userPrompt, prompt])
+      uiErrorRecovery.monitorTextOverflow('.prompt-editor-textarea', 'general');
+      uiErrorRecovery.monitorTextOverflow('.system-prompt-display', 'system-prompt');
+      uiErrorRecovery.monitorTextOverflow('.test-results-prompt', 'user-prompt');
+    }, 100);
+  }, [systemPrompt, userPrompt, prompt]);
 
   // Load dataset-specific system prompts when dataset changes
   useEffect(() => {
     if (selectedDataset?.type) {
-      loadDatasetSystemPrompts(selectedDataset.type)
+      loadDatasetSystemPrompts(selectedDataset.type);
     } else {
-      setDatasetSystemPrompts([])
+      setDatasetSystemPrompts([]);
     }
-  }, [selectedDataset?.type])
+  }, [selectedDataset?.type]);
 
   // Handle system prompt change
   const handleSystemPromptChange = (e) => {
-    onSystemPromptChange?.(e.target.value)
-  }
+    onSystemPromptChange?.(e.target.value);
+    // Small delay to ensure the value is updated before resizing
+    setTimeout(() => autoResize(e.target), 0);
+  };
 
   // Handle user prompt change
   const handleUserPromptChange = (e) => {
-    onUserPromptChange?.(e.target.value)
-  }
+    onUserPromptChange?.(e.target.value);
+    // Small delay to ensure the value is updated before resizing
+    setTimeout(() => autoResize(e.target), 0);
+  };
 
-  const systemPromptTemplates = [
-    {
-      name: 'Data Analyst',
-      template: 'You are an expert data analyst with deep knowledge of fraud detection patterns. Your role is to analyze data systematically and provide clear, actionable insights based on statistical evidence and domain expertise.'
-    },
-    {
-      name: 'Classification Expert',
-      template: 'You are a classification specialist trained to categorize data accurately. You should examine each data point carefully and assign appropriate categories based on established criteria, providing reasoning for your decisions.'
-    },
-    {
-      name: 'Security Analyst',
-      template: 'You are a cybersecurity expert specializing in fraud detection and risk assessment. Your role is to identify potential security threats and anomalies in data patterns with high accuracy and detailed explanations.'
-    },
-    {
-      name: 'Business Intelligence',
-      template: 'You are a business intelligence analyst focused on extracting meaningful insights from data to support decision-making. Provide clear, business-focused analysis with actionable recommendations.'
-    }
-  ]
+  // Combine scenario-provided and dataset-specific system prompts
+  const systemPromptTemplates = useMemo(() => {
+    const templates = [];
 
-  const userPromptTemplates = [
-    {
-      name: 'Analyze Data',
-      template: 'Please analyze the following data and provide insights about patterns, anomalies, and key findings:\n\n'
-    },
-    {
-      name: 'Classify Records',
-      template: 'Please classify the following data records into appropriate categories. Provide your reasoning for each classification:\n\n'
-    },
-    {
-      name: 'Detect Fraud',
-      template: 'Please examine the following data for potential fraud indicators. Identify suspicious patterns, explain your reasoning, and act on high risk possibilities.'
-    },
-    {
-      name: 'Summarize Findings',
-      template: 'Please provide a concise summary of the following data, highlighting the most important findings and trends:\n\n'
-    },
-    {
-      name: 'Answer Questions',
-      template: 'Based on the following data, please answer questions accurately and provide supporting evidence from the data:\n\n'
+    // Add scenario-provided system prompts (if any)
+    if (scenarioSystemPrompts && scenarioSystemPrompts.length > 0) {
+      scenarioSystemPrompts.forEach(prompt => {
+        templates.push({
+          name: prompt.name,
+          template: prompt.content,
+          isScenario: true
+        });
+      });
     }
-  ]
+
+    return templates;
+  }, [scenarioSystemPrompts]);
+
+  // Use only scenario-provided user prompts
+  const userPromptTemplates = useMemo(() => {
+    const templates = [];
+
+    // Add scenario-provided user prompts (if any)
+    if (scenarioUserPrompts && scenarioUserPrompts.length > 0) {
+      scenarioUserPrompts.forEach(prompt => {
+        templates.push({
+          name: prompt.name,
+          template: prompt.content,
+          isScenario: true
+        });
+      });
+    }
+
+    return templates;
+  }, [scenarioUserPrompts]);
 
   // Legacy templates for backward compatibility
   const legacyPromptTemplates = [
@@ -118,56 +136,64 @@ const PromptEditor = ({
       name: 'Question Answering',
       template: 'Based on the following data, please answer questions accurately and provide supporting evidence:\n\n'
     }
-  ]
+  ];
 
   // Enhanced system prompt templates combining hardcoded and dataset-specific
   const allSystemPromptTemplates = useMemo(() => {
     return [
-      ...systemPromptTemplates, // Existing hardcoded templates
+      ...systemPromptTemplates, // Scenario-provided templates
       ...datasetSystemPrompts   // Dataset-specific templates
-    ]
-  }, [datasetSystemPrompts])
+    ];
+  }, [systemPromptTemplates, datasetSystemPrompts]);
 
   const handleSystemTemplateSelect = (template) => {
     if (onSystemPromptChange && typeof onSystemPromptChange === 'function') {
-      onSystemPromptChange(template)
+      onSystemPromptChange(template);
+      // Trigger auto-resize after template is applied
+      setTimeout(() => autoResize(systemPromptRef.current), 0);
     }
-  }
+  };
 
   const handleUserTemplateSelect = (template) => {
     if (onUserPromptChange && typeof onUserPromptChange === 'function') {
-      onUserPromptChange(template)
+      onUserPromptChange(template);
+      // Trigger auto-resize after template is applied
+      setTimeout(() => autoResize(userPromptRef.current), 0);
     }
-  }
+  };
 
   const handleLegacyTemplateSelect = (template) => {
     if (onPromptChange && typeof onPromptChange === 'function') {
-      onPromptChange(template)
+      onPromptChange(template);
     }
-  }
+  };
 
   const handleClearSystem = () => {
     if (onSystemPromptChange && typeof onSystemPromptChange === 'function') {
-      onSystemPromptChange('')
+      onSystemPromptChange('');
+      // Trigger auto-resize after clearing
+      setTimeout(() => autoResize(systemPromptRef.current), 0);
     }
-  }
+  };
 
   const handleClearUser = () => {
     if (onUserPromptChange && typeof onUserPromptChange === 'function') {
-      onUserPromptChange('')
+      onUserPromptChange('');
+      // Trigger auto-resize after clearing
+      setTimeout(() => autoResize(userPromptRef.current), 0);
     }
-  }
+  };
 
   const handleClearLegacy = () => {
     if (onPromptChange && typeof onPromptChange === 'function') {
-      onPromptChange('')
+      onPromptChange('');
     }
-  }
+  };
 
   // Load dataset-specific system prompts
   const loadDatasetSystemPrompts = async (datasetType) => {
     try {
-      const manifest = await datasetToolIntegrationService.loadDatasetManifest(datasetType)
+      const manifest = await datasetToolIntegrationService.loadDatasetManifest(datasetType);
 
       if (manifest.systemPrompts && Array.isArray(manifest.systemPrompts)) {
         const processedPrompts = manifest.systemPrompts.map(prompt => ({
@@ -175,17 +201,17 @@ const PromptEditor = ({
           template: prompt.prompt.replace(/\\n/g, '\n'), // Convert escaped newlines
           source: 'dataset',
           datasetType: datasetType
-        }))
+        }));
 
-        setDatasetSystemPrompts(processedPrompts)
+        setDatasetSystemPrompts(processedPrompts);
       } else {
-        setDatasetSystemPrompts([])
+        setDatasetSystemPrompts([]);
       }
     } catch (error) {
-      console.error(`Failed to load system prompts for ${datasetType}:`, error)
-      setDatasetSystemPrompts([])
+      console.error(`Failed to load system prompts for ${datasetType}:`, error);
+      setDatasetSystemPrompts([]);
     }
-  }
+  };
 
   // Legacy single prompt mode
   if (isLegacyMode) {
@@ -245,11 +271,10 @@ const PromptEditor = ({
             value={prompt || ''}
             onChange={(e) => onPromptChange && typeof onPromptChange === 'function' && onPromptChange(e.target.value)}
             placeholder="Enter your prompt here. The selected dataset will be automatically appended to your prompt when the test runs."
-            className={`input-field resize-none prompt-editor-textarea ${
-              isExpanded ? 'h-64' : 'h-32'
-            } transition-all duration-200 ${
-              validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
-            }`}
+            className={`input-field resize-none prompt-editor-textarea ${isExpanded ? 'h-64' : 'h-32'
+              } transition-all duration-200 ${validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+              }`}
+            style={{ whiteSpace: 'pre-wrap' }}
           />
           {validationError && (
             <p className="mt-1 text-sm text-red-600">{validationError}</p>
@@ -274,7 +299,7 @@ const PromptEditor = ({
           </div>
         )}
       </div>
-    )
+    );
   }
 
   return (
@@ -301,31 +326,28 @@ const PromptEditor = ({
       <div className="flex border-b border-gray-200 mb-4">
         <button
           onClick={() => setActiveTab('system')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${
-            activeTab === 'system'
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${activeTab === 'system'
               ? 'border-primary-500 text-primary-600'
               : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
+            }`}
         >
           System Prompt
         </button>
         <button
           onClick={() => setActiveTab('user')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${
-            activeTab === 'user'
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${activeTab === 'user'
               ? 'border-primary-500 text-primary-600'
               : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
+            }`}
         >
           User Prompt
         </button>
         <button
           onClick={() => setActiveTab('preview')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${
-            activeTab === 'preview'
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${activeTab === 'preview'
               ? 'border-primary-500 text-primary-600'
               : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
+            }`}
         >
           Combined Preview
         </button>
@@ -335,36 +357,48 @@ const PromptEditor = ({
       {activeTab === 'system' && (
         <div className="space-y-4">
           {/* System Prompt Templates */}
-          <div>
-            <div className="flex items-center space-x-2 mb-2">
-              <span className="block text-sm font-medium text-gray-700">
-                System Prompt Templates
-              </span>
-              <HelpTooltip
-                content="System prompts define the AI's role, expertise, and behavior. Choose a template that matches the type of analysis you want to perform."
-                position="right"
-              />
+          {(systemPromptTemplates.length > 0 || allSystemPromptTemplates.length > 0) && (
+            <div>
+              <div className="flex items-center space-x-2 mb-2">
+                <span className="block text-sm font-medium text-gray-700">
+                  Templates
+                </span>
+                <HelpTooltip
+                  content="System prompts define the AI's role, expertise, and behavior. These templates are provided by the selected scenario and dataset."
+                  position="right"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {allSystemPromptTemplates.map((template) => (
+                  <button
+                    key={`${template.source || 'scenario'}-${template.name}`}
+                    onClick={() => handleSystemTemplateSelect(template.template)}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors duration-200 ${template.source === 'dataset'
+                        ? 'bg-green-100 hover:bg-green-200 text-green-700 border border-green-300'
+                        : template.isScenario
+                          ? 'bg-primary-100 hover:bg-primary-200 text-primary-700 border border-primary-300'
+                          : 'bg-blue-100 hover:bg-blue-200 text-blue-700'
+                      }`}
+                    title={
+                      template.source === 'dataset'
+                        ? `Dataset-specific prompt from ${template.datasetType}`
+                        : template.isScenario
+                          ? 'Scenario-provided prompt template'
+                          : 'Built-in prompt template'
+                    }
+                  >
+                    {template.source === 'dataset' && (
+                      <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1" aria-hidden="true"></span>
+                    )}
+                    {template.isScenario && (
+                      <span className="inline-block w-2 h-2 bg-primary-500 rounded-full mr-1" aria-hidden="true"></span>
+                    )}
+                    {template.name}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {allSystemPromptTemplates.map((template) => (
-                <button
-                  key={`${template.source || 'hardcoded'}-${template.name}`}
-                  onClick={() => handleSystemTemplateSelect(template.template)}
-                  className={`px-3 py-1 text-sm rounded-md transition-colors duration-200 ${
-                    template.source === 'dataset'
-                      ? 'bg-green-100 hover:bg-green-200 text-green-700 border border-green-300'
-                      : 'bg-blue-100 hover:bg-blue-200 text-blue-700'
-                  }`}
-                  title={template.source === 'dataset' ? `Dataset-specific prompt from ${template.datasetType}` : 'Built-in prompt template'}
-                >
-                  {template.source === 'dataset' && (
-                    <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1" aria-hidden="true"></span>
-                  )}
-                  {template.name}
-                </button>
-              ))}
-            </div>
-          </div>
+          )}
 
           {/* System Prompt Input */}
           <div className="space-y-2">
@@ -393,11 +427,9 @@ const PromptEditor = ({
               value={systemPrompt}
               onChange={handleSystemPromptChange}
               placeholder="Optional: Define the AI's role and expertise. Leave empty for natural responses, or specify like: 'You are an expert data analyst specializing in fraud detection...'"
-              className={`input-field resize-none transition-all duration-200 prompt-editor-textarea ${
-                isExpanded ? 'h-64' : 'h-32'
-              } ${
-                systemPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-blue-200 focus:border-blue-500 focus:ring-blue-500'
-              }`}
+              className={`input-field resize-none transition-all duration-200 prompt-editor-textarea ${systemPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-blue-200 focus:border-blue-500 focus:ring-blue-500'
+                }`}
+              style={{ overflow: 'hidden', minHeight: '128px', whiteSpace: 'pre-wrap' }}
             />
             {systemPromptError && (
               <p className="mt-1 text-sm text-red-600">{systemPromptError}</p>
@@ -422,28 +454,30 @@ const PromptEditor = ({
       {activeTab === 'user' && (
         <div className="space-y-4">
           {/* User Prompt Templates */}
-          <div>
-            <div className="flex items-center space-x-2 mb-2">
-              <span className="block text-sm font-medium text-gray-700">
-                User Prompt Templates
-              </span>
-              <HelpTooltip
-                content="User prompts contain your specific request or question. Choose a template that matches the type of task you want to perform on your data."
-                position="right"
-              />
+          {userPromptTemplates.length > 0 && (
+            <div>
+              <div className="flex items-center space-x-2 mb-2">
+                <span className="block text-sm font-medium text-gray-700">
+                  Templates
+                </span>
+                <HelpTooltip
+                  content="User prompts contain your specific request or question. These templates are provided by the selected scenario."
+                  position="right"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {userPromptTemplates.map((template) => (
+                  <button
+                    key={template.name}
+                    onClick={() => handleUserTemplateSelect(template.template)}
+                    className="px-3 py-1 text-sm rounded-md transition-colors duration-200 bg-primary-100 hover:bg-primary-200 text-primary-700 border border-primary-300"
+                  >
+                    {template.name}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {userPromptTemplates.map((template) => (
-                <button
-                  key={template.name}
-                  onClick={() => handleUserTemplateSelect(template.template)}
-                  className="px-3 py-1 text-sm bg-green-100 hover:bg-green-200 text-green-700 rounded-md transition-colors duration-200"
-                >
-                  {template.name}
-                </button>
-              ))}
-            </div>
-          </div>
+          )}
 
           {/* User Prompt Input */}
           <div className="space-y-2">
@@ -472,11 +506,9 @@ const PromptEditor = ({
               value={userPrompt}
               onChange={handleUserPromptChange}
               placeholder="Enter your specific request or question. For example: 'Please analyze the following data for fraud patterns...'"
-              className={`input-field resize-none transition-all duration-200 prompt-editor-textarea ${
-                isExpanded ? 'h-64' : 'h-32'
-              } ${
-                userPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-green-200 focus:border-green-500 focus:ring-green-500'
-              }`}
+              className={`input-field resize-none transition-all duration-200 prompt-editor-textarea ${userPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-green-200 focus:border-green-500 focus:ring-green-500'
+                }`}
+              style={{ overflow: 'hidden', minHeight: '128px', whiteSpace: 'pre-wrap' }}
             />
             {userPromptError && (
               <p className="mt-1 text-sm text-red-600">{userPromptError}</p>
@@ -565,8 +597,8 @@ const PromptEditor = ({
         </div>
       )}
     </div>
-  )
-}
+  );
+};
 
 PromptEditor.propTypes = {
   systemPrompt: PropTypes.string,
@@ -579,10 +611,22 @@ PromptEditor.propTypes = {
   userPromptWarning: PropTypes.string,
   selectedDataset: PropTypes.object,
 
+  // Scenario-provided prompts
+  scenarioSystemPrompts: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired,
+    content: PropTypes.string.isRequired
+  })),
+  scenarioUserPrompts: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired,
+    content: PropTypes.string.isRequired
+  })),
+
   // Legacy single prompt mode props (for backward compatibility)
   prompt: PropTypes.string,
   onPromptChange: PropTypes.func,
   validationError: PropTypes.string
-}
+};
 
-export default PromptEditor
+export default PromptEditor;

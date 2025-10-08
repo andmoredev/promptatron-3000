@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import ModelSelector from "./components/ModelSelector";
-import DatasetSelector from "./components/DatasetSelector";
+import ScenarioSelector from "./components/ScenarioSelector";
+import ConditionalDatasetSelector from "./components/ConditionalDatasetSelector";
+import ConditionalExecutionSettings from "./components/ConditionalExecutionSettings";
 import PromptEditor from "./components/PromptEditor";
 import TestResults from "./components/TestResults";
 import History from "./components/History";
@@ -17,11 +19,14 @@ import FloatingChad from "./components/RobotGraphic/FloatingChad";
 import { useChadReveal } from "./components/RobotGraphic/useChadReveal";
 import StreamingPerformanceMonitor from "./components/StreamingPerformanceMonitor";
 import SettingsDialog from "./components/SettingsDialog";
+import ScenarioBuilder from "./components/ScenarioBuilder";
 
 import ToolExecutionSettings from "./components/ToolExecutionSettings";
 import ToolExecutionMonitor from "./components/ToolExecutionMonitor";
 import { bedrockService } from "./services/bedrockService";
 import { datasetToolIntegrationService } from "./services/datasetToolIntegrationService";
+import { scenarioToolIntegrationService } from "./services/scenarioToolIntegrationService";
+import { scenarioService } from "./services/scenarioService";
 import { toolExecutionService } from "./services/toolExecutionService";
 import { workflowTrackingService } from "./services/workflowTrackingService";
 import { useHistory } from "./hooks/useHistory";
@@ -36,7 +41,6 @@ import { statePersistenceService } from "./services/statePersistenceService";
 import { useSettings, useDeterminismSettings } from "./hooks/useSettings";
 import { validateForm, validateField } from "./utils/formValidation";
 import { handleError, retryWithBackoff } from "./utils/errorHandling";
-import { hasToolServiceForDatasetType } from "./utils/toolServiceMapping";
 import {
   loadFormState,
   saveFormState,
@@ -81,8 +85,11 @@ function App() {
   const [selectedModel, setSelectedModel] = useState(
     savedFormState.selectedModel
   );
+  const [selectedScenario, setSelectedScenario] = useState(
+    savedFormState.selectedScenario || ''
+  );
   const [selectedDataset, setSelectedDataset] = useState(
-    savedFormState.selectedDataset
+    savedFormState.selectedDataset || { id: '', name: '', content: null }
   );
   const [systemPrompt, setSystemPrompt] = useState(savedFormState.systemPrompt);
   const [userPrompt, setUserPrompt] = useState(savedFormState.userPrompt);
@@ -127,16 +134,9 @@ function App() {
   // Settings dialog state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // Chad reveal state management
-  const chadRevealState = useChadReveal();
-  const {
-    isRevealed: isChadRevealed,
-    isRevealing: isChadRevealing,
-    revealChad,
-    shouldShowRevealButton
-  } = chadRevealState;
-
-
+  // Scenario builder state
+  const [isScenarioBuilderOpen, setIsScenarioBuilderOpen] = useState(false);
+  const [editingScenario, setEditingScenario] = useState(null);
 
   // Determinism evaluation state (initialized from saved state)
   const [determinismEnabled, setDeterminismEnabled] = useState(
@@ -163,6 +163,27 @@ function App() {
   const [toolExecutionId, setToolExecutionId] = useState(null);
   const [toolExecutionStatus, setToolExecutionStatus] = useState("idle"); // 'idle' | 'executing' | 'completed' | 'error' | 'cancelled'
   const [conflictMessage, setConflictMessage] = useState(null);
+
+  // Scenario configuration state
+  const [scenarioConfig, setScenarioConfig] = useState({
+    showDatasetSelector: false,
+    showSystemPromptSelector: false,
+    showUserPromptSelector: false,
+    showToolSettings: false,
+    allowCustomPrompts: true,
+    allowDatasetModification: false,
+    defaultStreamingEnabled: true,
+    maxIterations: 10,
+    recommendedModels: []
+  });
+  const [scenarioConfigLoaded, setScenarioConfigLoaded] = useState(false);
+  const [availableSystemPrompts, setAvailableSystemPrompts] = useState([]);
+  const [availableUserPrompts, setAvailableUserPrompts] = useState([]);
+  const [selectedSystemPromptId, setSelectedSystemPromptId] = useState('');
+  const [selectedUserPromptId, setSelectedUserPromptId] = useState('');
+
+  // Track if this is the initial load
+  const isInitialLoad = useRef(true);
 
   // Initialize settings system
   const {
@@ -259,13 +280,32 @@ function App() {
     return guidance;
   };
 
-  // Helper function to check if tools are available for the current dataset
+  // Helper function to check if tools are available for the current scenario
   const areToolsAvailable = () => {
-    // Check if the selected dataset type has a tool service mapped
-    if (!selectedDataset.type) return false;
+    if (selectedScenario && scenarioConfigLoaded) {
+      // Check scenario-based tool availability only if config is loaded
+      const result = scenarioConfig.showToolSettings;
+      return result;
+    }
 
-    // Use the tool service mapping to determine availability dynamically
-    return hasToolServiceForDatasetType(selectedDataset.type);
+    // During initial load, if we have a scenario but config isn't loaded yet,
+    // try to get a quick preview from the scenario service if it's initialized
+    if (selectedScenario && scenarioService.isInitialized && !scenarioConfigLoaded) {
+      try {
+        const scenarioMetadata = scenarioService.getScenarioMetadata(selectedScenario);
+        if (scenarioMetadata) {
+          // Quick check if scenario has tools without full config loading
+          const scenario = scenarioService.getScenario(selectedScenario);
+          const hasTools = scenario && scenario.tools && scenario.tools.length > 0;
+          return hasTools;
+        }
+      } catch (error) {
+        // Silently handle errors during quick check
+      }
+    }
+
+    // Return false if scenario config not loaded yet or no scenario selected
+    return false;
   };
 
   // Helper function to provide recovery suggestions for tool execution errors
@@ -344,12 +384,24 @@ function App() {
   // Enhanced form validation function with detailed checking
   const isFormValid = () => {
     const hasValidationErrors = Object.keys(validationErrors).length > 0;
-    const hasRequiredFields =
-      selectedModel &&
-      userPrompt.trim() &&
-      selectedDataset.type &&
-      selectedDataset.option &&
-      selectedDataset.content;
+
+    // Base requirements
+    let hasRequiredFields = selectedModel && userPrompt.trim();
+
+    // Scenario-based validation
+    if (selectedScenario) {
+      // If scenario requires datasets, check dataset selection
+      if (scenarioConfig.showDatasetSelector) {
+        hasRequiredFields = hasRequiredFields &&
+          selectedDataset.id &&
+          selectedDataset.content;
+      }
+    } else {
+      // Fallback to dataset-based validation for backward compatibility
+      hasRequiredFields = hasRequiredFields &&
+        selectedDataset.id &&
+        selectedDataset.content;
+    }
 
     return !hasValidationErrors && hasRequiredFields;
   };
@@ -362,7 +414,7 @@ function App() {
     if (conflictMessage) {
       setConflictMessage(null);
     }
-  }, [selectedModel, selectedDataset, systemPrompt, userPrompt]);
+  }, [selectedModel, selectedScenario, selectedDataset, systemPrompt, userPrompt]);
 
   // Cleanup tool execution state when component unmounts or critical changes occur
   useEffect(() => {
@@ -374,13 +426,146 @@ function App() {
     };
   }, []);
 
-  // Reset tool execution state when switching datasets or models during execution
+  // Reset tool execution state when switching scenarios, datasets or models during execution
   useEffect(() => {
-    if (isToolExecuting && (selectedModel || selectedDataset.type)) {
+    if (isToolExecuting && (selectedModel || selectedScenario || selectedDataset.type)) {
       // If user changes critical settings during execution, reset execution state
       resetToolExecutionState();
     }
-  }, [selectedModel, selectedDataset.type, isToolExecuting]);
+  }, [selectedModel, selectedScenario, selectedDataset.id, isToolExecuting]);
+
+  // Initialize scenario service on app startup
+  useEffect(() => {
+    const initializeScenarioService = async () => {
+      try {
+        if (!scenarioService.isInitialized) {
+          setIsLoading(true);
+          await scenarioService.initialize();
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error('[App] Failed to initialize scenario service:', error);
+        setError(`Failed to initialize scenarios: ${error.message}`);
+        setIsLoading(false);
+      }
+    };
+
+    initializeScenarioService();
+  }, []);
+
+  // Load scenario configuration when scenario changes (only after initial load)
+  useEffect(() => {
+    if (!isInitialLoad.current && scenarioService.isInitialized && selectedScenario) {
+      // Only run this when scenario changes after initial load
+      setScenarioConfigLoaded(false); // Reset the flag when scenario changes
+      loadScenarioConfiguration();
+    }
+  }, [selectedScenario]);
+
+  // Handle initial scenario loading after service initialization (for page refresh)
+  useEffect(() => {
+    if (scenarioService.isInitialized && selectedScenario && !scenarioConfigLoaded) {
+      loadScenarioConfiguration().then(() => {
+        // Mark that initial load is complete
+        isInitialLoad.current = false;
+      });
+    }
+  }, [scenarioService.isInitialized, selectedScenario, scenarioConfigLoaded]);
+
+  // Additional effect to handle the case where scenario service initializes after scenario is already selected
+  useEffect(() => {
+    // If we have a selected scenario but service wasn't initialized when it was set,
+    // and now the service is initialized, load the configuration
+    if (scenarioService.isInitialized && selectedScenario && !scenarioConfigLoaded && isInitialLoad.current) {
+      loadScenarioConfiguration().then(() => {
+        isInitialLoad.current = false;
+      });
+    }
+  }, [scenarioService.isInitialized]);
+
+  const loadScenarioConfiguration = async () => {
+    if (!selectedScenario) {
+      // Reset to default configuration when no scenario is selected
+      setScenarioConfig({
+        showDatasetSelector: false,
+        showSystemPromptSelector: false,
+        showUserPromptSelector: false,
+        showToolSettings: false,
+        allowCustomPrompts: true,
+        allowDatasetModification: false,
+        defaultStreamingEnabled: true,
+        maxIterations: 10,
+        recommendedModels: []
+      });
+      setAvailableSystemPrompts([]);
+      setAvailableUserPrompts([]);
+      setSelectedSystemPromptId('');
+      setSelectedUserPromptId('');
+      setScenarioConfigLoaded(false);
+      return;
+    }
+
+    try {
+      // Initialize scenario service if not already initialized
+      if (!scenarioService.isInitialized) {
+        await scenarioService.initialize();
+      }
+
+      // Initialize scenario tool integration service if not already initialized
+      if (!scenarioToolIntegrationService.isInitialized) {
+        await scenarioToolIntegrationService.initialize();
+      }
+
+      // Check if scenario exists before loading configuration
+      const scenarioMetadata = scenarioService.getScenarioMetadata(selectedScenario);
+      if (!scenarioMetadata) {
+        console.warn(`Scenario ${selectedScenario} not found, clearing selection`);
+        setSelectedScenario('');
+        return;
+      }
+
+      // Load scenario configuration
+      const config = await scenarioService.getUIConfiguration(selectedScenario);
+      setScenarioConfig(config);
+      setScenarioConfigLoaded(true);
+
+      // Load available prompts
+      const systemPrompts = await scenarioService.getSystemPrompts(selectedScenario);
+      const userPrompts = await scenarioService.getUserPrompts(selectedScenario);
+
+      setAvailableSystemPrompts(systemPrompts);
+      setAvailableUserPrompts(userPrompts);
+
+      // Auto-select first prompts if available and current prompts are empty
+      if (systemPrompts.length > 0 && !systemPrompt.trim()) {
+        setSelectedSystemPromptId(systemPrompts[0].id);
+        setSystemPrompt(systemPrompts[0].content);
+      }
+
+      if (userPrompts.length > 0 && !userPrompt.trim()) {
+        setSelectedUserPromptId(userPrompts[0].id);
+        setUserPrompt(userPrompts[0].content);
+      }
+
+      // Apply scenario configuration defaults
+      if (config.defaultStreamingEnabled !== undefined && !hasFormState()) {
+        setStreamingEnabled(config.defaultStreamingEnabled);
+      }
+
+      if (config.maxIterations && !hasFormState()) {
+        setMaxIterations(config.maxIterations);
+      }
+
+    } catch (error) {
+      console.error('Error loading scenario configuration:', error);
+      // If scenario doesn't exist, clear the selection
+      if (error.message && error.message.includes('not found')) {
+        console.warn(`Scenario ${selectedScenario} not found, clearing selection`);
+        setSelectedScenario('');
+      }
+      // Keep current configuration on other errors
+    }
+  };
 
   // Real-time monitoring of tool execution progress
   useEffect(() => {
@@ -426,8 +611,7 @@ function App() {
             }
           }
         } catch (error) {
-          console.warn("Failed to get tool execution status:", error);
-          // Don't clear interval on monitoring errors, just log them
+          // Don't clear interval on monitoring errors, just continue
         }
       }, 500);
     }
@@ -442,11 +626,19 @@ function App() {
 
   // Real-time validation using enhanced validation utility
   useEffect(() => {
+    // Skip validation if scenario service is not initialized and we have a selected scenario
+    // This prevents "scenario does not exist" errors during page refresh
+    if (selectedScenario && !scenarioService.isInitialized) {
+      return;
+    }
+
     const formData = {
       selectedModel,
       systemPrompt,
       userPrompt,
       selectedDataset,
+      selectedScenario,
+      scenarioConfig
     };
 
     const validationResult = validateForm(formData);
@@ -480,7 +672,7 @@ function App() {
     if (statePersistenceInitialized) {
       updateUIState({ validationErrors: filteredErrors });
     }
-  }, [selectedModel, systemPrompt, userPrompt, selectedDataset, touchedFields]);
+  }, [selectedModel, systemPrompt, userPrompt, selectedDataset, selectedScenario, scenarioConfig, touchedFields, scenarioService.isInitialized]);
 
   // Create debounced save function for form state persistence (silent background saving)
   const debouncedSave = useMemo(() => createDebouncedSave(1500), []);
@@ -489,6 +681,7 @@ function App() {
   useEffect(() => {
     const formState = {
       selectedModel,
+      selectedScenario,
       selectedDataset,
       systemPrompt,
       userPrompt,
@@ -499,11 +692,12 @@ function App() {
     };
 
     // Only save if we have some meaningful data (avoid saving empty initial state)
-    if (selectedModel || systemPrompt || userPrompt || selectedDataset.type) {
+    if (selectedModel || selectedScenario || systemPrompt || userPrompt || selectedDataset.id) {
       debouncedSave(formState);
     }
   }, [
     selectedModel,
+    selectedScenario,
     selectedDataset,
     systemPrompt,
     userPrompt,
@@ -518,13 +712,11 @@ function App() {
   useEffect(() => {
     // Only trigger on initial load if we have a saved dataset selection but no content
     if (
-      savedFormState.selectedDataset.type &&
-      savedFormState.selectedDataset.option &&
+      savedFormState.selectedDataset.id &&
       !selectedDataset.content &&
-      selectedDataset.type === savedFormState.selectedDataset.type &&
-      selectedDataset.option === savedFormState.selectedDataset.option
+      selectedDataset.id === savedFormState.selectedDataset.id
     ) {
-      // The DatasetSelector component will handle reloading the content
+      // The ScenarioDatasetSelector component will handle reloading the content
       // We just need to ensure the selection is properly set
     }
   }, []); // Only run on mount
@@ -565,6 +757,7 @@ function App() {
   useEffect(() => {
     const appState = {
       selectedModel,
+      selectedScenario,
       selectedDataset,
       systemPrompt,
       userPrompt,
@@ -583,6 +776,7 @@ function App() {
     backupState(appState);
   }, [
     selectedModel,
+    selectedScenario,
     selectedDataset,
     systemPrompt,
     userPrompt,
@@ -740,10 +934,19 @@ function App() {
         setIsSettingsOpen(true);
       }
 
+      // Ctrl/Cmd + N: New Scenario
+      if ((event.ctrlKey || event.metaKey) && event.key === "n") {
+        event.preventDefault();
+        setEditingScenario(null);
+        setIsScenarioBuilderOpen(true);
+      }
+
       // Escape: Clear current selection or close modals
       if (event.key === "Escape") {
         if (isSettingsOpen) {
           setIsSettingsOpen(false);
+        } else if (isScenarioBuilderOpen) {
+          setIsScenarioBuilderOpen(false);
         } else if (selectedForComparison.length > 0) {
           setSelectedForComparison([]);
         } else if (error) {
@@ -760,6 +963,7 @@ function App() {
     selectedForComparison.length,
     error,
     isSettingsOpen,
+    isScenarioBuilderOpen,
   ]);
 
   const validateTestConfiguration = () => {
@@ -882,7 +1086,7 @@ function App() {
             }
           }
 
-          // Get tool configuration for the selected dataset with enhanced error handling
+          // Get tool configuration for the selected scenario or dataset with enhanced error handling
           setProgressStatus("Loading tool configuration...");
           setProgressValue(40);
 
@@ -890,40 +1094,39 @@ function App() {
           let toolConfigurationStatus = null;
 
           try {
-            const toolConfigResult =
-              await datasetToolIntegrationService.getToolConfigurationForDataset(
-                selectedDataset
-              );
+            let toolConfigResult;
+
+            if (selectedScenario) {
+              // Ensure scenario service is initialized before getting tool configuration
+              if (!scenarioService.isInitialized) {
+                await scenarioService.initialize();
+              }
+
+              // Use scenario-based tool configuration
+              toolConfigResult = await scenarioToolIntegrationService.getToolConfigurationForScenario(selectedScenario);
+            } else {
+              // Fallback to dataset-based tool configuration
+              toolConfigResult =
+                await datasetToolIntegrationService.getToolConfigurationForDataset(
+                  selectedDataset
+                );
+            }
+
             toolConfigurationStatus = toolConfigResult;
 
             if (toolConfigResult.hasToolConfig) {
               toolConfig = toolConfigResult.toolConfig;
 
               // Show warnings if any
-              if (toolConfigResult.warnings?.length > 0) {
-                console.warn(
-                  "Tool configuration warnings:",
-                  toolConfigResult.warnings
-                );
-              }
+
             } else {
-              // Check if this is an error condition or expected behavior
-              if (toolConfigResult.errors?.length > 0) {
-                console.warn(
-                  "Tool configuration errors:",
-                  toolConfigResult.errors
-                );
-              }
+
 
               if (toolConfigResult.gracefulDegradation) {
                 // Using graceful degradation - analysis will proceed without tools
               }
             }
           } catch (toolError) {
-            console.warn(
-              "Failed to load tool configuration, proceeding without tools:",
-              toolError.message
-            );
 
             // Create a fallback status for error display
             toolConfigurationStatus = {
@@ -943,22 +1146,7 @@ function App() {
           let streamingMetrics = null;
           let workflowData = null;
 
-          // Debug logging for execution path
-          console.log("🔧 Execution Path Debug:", {
-            useToolsEnabled,
-            hasToolConfig: !!toolConfig,
-            toolCount: toolConfig?.tools?.length || 0,
-            streamingEnabled,
-            executionPath:
-              useToolsEnabled &&
-              toolConfig &&
-              toolConfig.tools &&
-              toolConfig.tools.length > 0
-                ? "tool_execution"
-                : streamingEnabled
-                ? "tool_detection_streaming"
-                : "tool_detection_standard",
-          });
+
 
           // Branch based on tool execution mode
           if (
@@ -1006,7 +1194,7 @@ function App() {
                 {
                   maxIterations: maxIterations,
                   executionId: executionId,
-                  datasetType: selectedDataset.type,
+                  datasetType: selectedDataset.id,
                   onStreamUpdate: (update) => {
                     // Update streaming content with workflow progress
                     setStreamingContent(prevContent => {
@@ -1130,10 +1318,6 @@ function App() {
                     shouldPreservePartialResults = true;
                   }
                 } catch (statusError) {
-                  console.warn(
-                    "Failed to get partial execution status:",
-                    statusError
-                  );
                 }
               }
 
@@ -1370,9 +1554,7 @@ function App() {
             },
           });
 
-          if (!finalUpdateSuccess) {
-            console.warn("Failed to update output manager with final response");
-          }
+
 
           return {
             id: testId,
@@ -1380,8 +1562,9 @@ function App() {
             systemPrompt: systemPrompt,
             userPrompt: userPrompt,
             prompt: userPrompt, // Legacy field for backward compatibility
-            datasetType: selectedDataset.type,
-            datasetOption: selectedDataset.option,
+            scenarioId: selectedScenario || null,
+            datasetType: selectedDataset.id,
+            datasetName: selectedDataset.name,
             datasetContent: selectedDataset.content, // Include dataset content for determinism evaluation
             response: response.text,
             usage: response.usage,
@@ -1446,7 +1629,7 @@ function App() {
         component: "App",
         action: "runTest",
         model: selectedModel,
-        datasetType: selectedDataset.type,
+        datasetType: selectedDataset.id,
         systemPromptLength: systemPrompt.length,
         userPromptLength: userPrompt.length,
         toolExecutionEnabled: useToolsEnabled,
@@ -1458,7 +1641,7 @@ function App() {
         component: "App",
         action: "runTest",
         model: selectedModel,
-        datasetType: selectedDataset.type,
+        datasetType: selectedDataset.id,
         systemPromptLength: systemPrompt.length,
         userPromptLength: userPrompt.length,
         toolExecutionEnabled: useToolsEnabled,
@@ -1514,8 +1697,8 @@ function App() {
   const handleLoadFromHistory = (historyItem) => {
     setSelectedModel(historyItem.modelId);
     setSelectedDataset({
-      type: historyItem.datasetType,
-      option: historyItem.datasetOption,
+      id: historyItem.datasetType,
+      name: historyItem.datasetName || historyItem.datasetType,
       content: null, // Will be loaded when dataset selector processes this
     });
 
@@ -1606,9 +1789,103 @@ function App() {
     markFieldAsTouched("model");
   };
 
+  const handleScenarioSelect = async (scenarioId) => {
+    setSelectedScenario(scenarioId);
+    markFieldAsTouched("scenario");
+
+    // Clear dataset selection when switching scenarios
+    if (scenarioId) {
+      setSelectedDataset({ id: "", name: "", content: null });
+    }
+  };
+
+  const handleRefreshSeedData = async (scenarioId) => {
+    try {
+      // Initialize scenario service if not already done
+      if (!scenarioService.isInitialized) {
+        await scenarioService.initialize();
+      }
+
+      // Refresh the specific scenario's seed data
+      const refreshResult = await scenarioService.refreshScenarioSeedData(scenarioId);
+
+      if (!refreshResult.success) {
+        throw new Error(refreshResult.message);
+      }
+
+      // If we have a selected dataset, reload its content
+      if (selectedDataset.id) {
+        try {
+          const refreshedContent = await scenarioService.getDatasetContent(scenarioId, selectedDataset.id);
+          setSelectedDataset(prev => ({
+            ...prev,
+            content: refreshedContent
+          }));
+        } catch (datasetError) {
+          console.warn('Could not refresh dataset content:', datasetError);
+          // Don't fail the entire refresh if dataset reload fails
+        }
+      }
+
+      // Reload scenario configuration to reflect any changes
+      await loadScenarioConfiguration();
+    } catch (error) {
+      setError(`Failed to refresh seed data: ${error.message}`);
+    }
+  };
+
   const handleDatasetSelect = (dataset) => {
     setSelectedDataset(dataset);
     markFieldAsTouched("dataset");
+  };
+
+  // ScenarioBuilder handlers
+  const handleOpenScenarioBuilder = useCallback(() => {
+    setEditingScenario(null);
+    setIsScenarioBuilderOpen(true);
+  }, []);
+
+  const handleEditScenario = useCallback((scenario) => {
+    setEditingScenario(scenario);
+    setIsScenarioBuilderOpen(true);
+  }, []);
+
+  const handleCloseScenarioBuilder = useCallback(() => {
+    setIsScenarioBuilderOpen(false);
+    setEditingScenario(null);
+  }, []);
+
+  const handleSaveScenario = useCallback(async (scenarioData, filename) => {
+    try {
+      // Scenario is saved to disk by the ScenarioBuilder
+      // We just need to reload the scenarios in the service
+      await scenarioService.reloadScenarios();
+
+      // Optionally select the newly created/edited scenario
+      if (scenarioData.id) {
+        setSelectedScenario(scenarioData.id);
+      }
+    } catch (error) {
+      console.error('Error handling scenario save:', error);
+    }
+  }, []);
+
+  const handleSystemPromptSelect = (promptId) => {
+    setSelectedSystemPromptId(promptId);
+    const prompt = availableSystemPrompts.find(p => p.id === promptId);
+    if (prompt) {
+      setSystemPrompt(prompt.content);
+    }
+    markFieldAsTouched("systemPrompt");
+  };
+
+  const handleUserPromptSelect = (promptId) => {
+    setSelectedUserPromptId(promptId);
+    const prompt = availableUserPrompts.find(p => p.id === promptId);
+    if (prompt) {
+      setUserPrompt(prompt.content);
+    }
+    markFieldAsTouched("userPrompt");
   };
 
   const handleSystemPromptChange = (prompt) => {
@@ -1746,9 +2023,12 @@ function App() {
 
       // Reset form to default values
       setSelectedModel("");
-      setSelectedDataset({ type: "", option: "", content: null });
+      setSelectedScenario("");
+      setSelectedDataset({ id: "", name: "", content: null });
       setSystemPrompt("");
       setUserPrompt("");
+      setSelectedSystemPromptId("");
+      setSelectedUserPromptId("");
       setDeterminismEnabled(true);
       setStreamingEnabled(true);
       setUseToolsEnabled(false);
@@ -1808,46 +2088,7 @@ function App() {
               <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
                 {/* Header with Robot */}
                 <div className="text-center mb-3 relative">
-                  {/* Chad Reveal Button - positioned in top right */}
-                  {shouldShowRevealButton() && (
-                    <div className="absolute top-0 right-0 z-10">
-                      <ChadRevealButton
-                        onReveal={revealChad}
-                        isRevealed={isChadRevealed}
-                        isRevealing={isChadRevealing}
-                        className="text-xs sm:text-sm"
-                      />
-                    </div>
-                  )}
-
                   <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
-                    {!isChadRevealed && (
-                      <div className="flex-shrink-0 order-2 sm:order-1">
-                        <RobotGraphicContainer
-                          appState={{
-                            isLoading,
-                            error,
-                            progressStatus,
-                            progressValue,
-                            testResults,
-                            isStreaming,
-                            streamingContent,
-                            streamingProgress,
-                            isRequestPending,
-                            streamingError,
-                          }}
-                          size="md"
-                          className="mx-auto"
-                          enableDebug={isRobotDebugEnabled}
-                          chadState={chadRevealState}
-                          options={{
-                            talkingDuration: 2000,
-                            debounceDelay: 100,
-                            enableTransitions: true,
-                          }}
-                        />
-                      </div>
-                    )}
                     <div className="order-1 sm:order-2">
                       <h1 className="text-2xl md:text-3xl font-bold text-primary-700 mb-1">
                         Promptatron 3000
@@ -1947,11 +2188,22 @@ function App() {
                         externalError={error}
                       />
 
-                      <DatasetSelector
-                        selectedDataset={selectedDataset}
-                        onDatasetSelect={handleDatasetSelect}
-                        validationError={validationErrors.dataset}
+                      <ScenarioSelector
+                        selectedScenario={selectedScenario}
+                        onScenarioSelect={handleScenarioSelect}
+                        validationError={validationErrors.scenario}
+                        onCreateScenario={handleOpenScenarioBuilder}
+                        onRefreshSeedData={handleRefreshSeedData}
                       />
+
+                      {scenarioConfig.showDatasetSelector && (
+                        <ConditionalDatasetSelector
+                          scenario={selectedScenario}
+                          selectedDataset={selectedDataset}
+                          onDatasetSelect={handleDatasetSelect}
+                          validationError={validationErrors.dataset}
+                        />
+                      )}
 
                       <PromptEditor
                         systemPrompt={systemPrompt}
@@ -1960,179 +2212,33 @@ function App() {
                         onUserPromptChange={handleUserPromptChange}
                         systemPromptError={validationErrors.systemPrompt}
                         userPromptError={validationErrors.userPrompt}
+                        scenarioSystemPrompts={availableSystemPrompts}
+                        scenarioUserPrompts={availableUserPrompts}
                         systemPromptWarning={validationWarnings.systemPrompt}
                         userPromptWarning={validationWarnings.userPrompt}
                         selectedDataset={selectedDataset}
                       />
 
-                      {/* Tool Execution Settings */}
-                      {areToolsAvailable() && (
-                        <ToolExecutionSettings
-                          useToolsEnabled={useToolsEnabled}
-                          onUseToolsToggle={handleUseToolsToggle}
-                          maxIterations={maxIterations}
-                          onMaxIterationsChange={handleMaxIterationsChange}
-                          determinismEnabled={determinismEnabled}
-                          onDeterminismToggle={handleDeterminismToggle}
-                          isExecuting={isLoading || isToolExecuting}
-                          isToolsAvailable={areToolsAvailable()}
-                        />
-                      )}
-
-                      {/* Advanced Options - only show if there are options to display */}
-                      {(!areToolsAvailable() ||
-                        !useToolsEnabled ||
-                        conflictMessage ||
-                        hasFormState()) && (
-                        <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4">
-                          {/* Determinism Evaluation Toggle - only show when tools are not available or not enabled */}
-                          {(!areToolsAvailable() || !useToolsEnabled) && (
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-3">
-                                <svg
-                                  className="w-5 h-5 text-primary-600"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                                  />
-                                </svg>
-                                <div>
-                                  <h3 className="text-sm font-medium text-gray-900">
-                                    Determinism Evaluation
-                                  </h3>
-                                  <p className="text-xs text-gray-500">
-                                    Analyze response consistency across multiple
-                                    runs
-                                  </p>
-                                </div>
-                              </div>
-                              <button
-                                onClick={() =>
-                                  handleDeterminismToggle(!determinismEnabled)
-                                }
-                                disabled={isLoading}
-                                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
-                                  determinismEnabled
-                                    ? "bg-primary-600"
-                                    : "bg-gray-200"
-                                } ${
-                                  isLoading
-                                    ? "opacity-50 cursor-not-allowed"
-                                    : ""
-                                }`}
-                              >
-                                <span
-                                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                                    determinismEnabled
-                                      ? "translate-x-5"
-                                      : "translate-x-0"
-                                  }`}
-                                />
-                              </button>
-                            </div>
-                          )}
-
-                          {/* Conflict message */}
-                          {conflictMessage && (
-                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                              <div className="flex items-center space-x-2">
-                                <svg
-                                  className="h-5 w-5 text-yellow-600"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  stroke="currentColor"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 15.5c-.77.833.192 2.5 1.732 2.5z"
-                                  />
-                                </svg>
-                                <span className="text-sm text-yellow-800">
-                                  {conflictMessage}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Streaming Toggle */}
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3">
-                              <svg
-                                className="w-5 h-5 text-primary-600"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                                />
-                              </svg>
-                              <div>
-                                <h3 className="text-sm font-medium text-gray-900">
-                                  Streaming Response
-                                </h3>
-                                <p className="text-xs text-gray-500">
-                                  Show response as it's generated in real-time
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() =>
-                                setStreamingEnabled(!streamingEnabled)
-                              }
-                              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
-                                streamingEnabled
-                                  ? "bg-primary-600"
-                                  : "bg-gray-200"
-                              }`}
-                            >
-                              <span
-                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                                  streamingEnabled
-                                    ? "translate-x-5"
-                                    : "translate-x-0"
-                                }`}
-                              />
-                            </button>
-                          </div>
-
-                          {/* Clear Saved Settings */}
-                          {hasFormState() && (
-                            <div className="pt-4 border-t border-gray-200">
-                              <button
-                                onClick={handleClearSavedSettings}
-                                className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
-                              >
-                                <svg
-                                  className="w-4 h-4"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1-1H8a1 1 0 00-1 1v3M4 7h16"
-                                  />
-                                </svg>
-                                <span>Clear saved settings</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      {/* Execution Settings */}
+                      <ConditionalExecutionSettings
+                        key={`${selectedScenario}-${scenarioConfigLoaded}`}
+                        scenario={selectedScenario}
+                        showToolSettings={scenarioConfig.showToolSettings}
+                        scenarioConfigLoaded={scenarioConfigLoaded}
+                        useToolsEnabled={useToolsEnabled}
+                        onUseToolsToggle={handleUseToolsToggle}
+                        maxIterations={maxIterations}
+                        onMaxIterationsChange={handleMaxIterationsChange}
+                        determinismEnabled={determinismEnabled}
+                        onDeterminismToggle={handleDeterminismToggle}
+                        streamingEnabled={streamingEnabled}
+                        onStreamingToggle={setStreamingEnabled}
+                        isExecuting={isLoading || isToolExecuting}
+                        conflictMessage={conflictMessage}
+                        hasFormState={hasFormState()}
+                        onClearSavedSettings={handleClearSavedSettings}
+                        areToolsAvailable={areToolsAvailable()}
+                      />
 
                       {/* Enhanced Validation Summary with Dual Prompt Guidance */}
                       {Object.keys(validationErrors).length > 0 && (
@@ -2389,10 +2495,6 @@ function App() {
                               );
                             }
                           } else {
-                            console.warn(
-                              "Cannot save determinism evaluation - missing testResults or grade:",
-                              { testResults: !!testResults, grade: !!grade }
-                            );
                           }
                         }}
                         isStreaming={isStreaming}
@@ -2434,13 +2536,37 @@ function App() {
                 </div>
               )}
 
-              {/* Floating Settings Button */}
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="fixed bottom-4 right-4 bg-primary-600 hover:bg-primary-700 text-white p-3 rounded-full shadow-lg transition-colors z-40"
-                title="Settings (Ctrl/Cmd + ,)"
-                aria-label="Open settings"
-              >
+              {/* Floating Action Buttons */}
+              <div className="fixed bottom-4 right-4 flex flex-col space-y-3 z-40">
+                {/* Scenario Builder Button */}
+                <button
+                  onClick={handleOpenScenarioBuilder}
+                  className="bg-secondary-600 hover:bg-secondary-700 text-white p-3 rounded-full shadow-lg transition-colors"
+                  title="Create New Scenario (Ctrl/Cmd + N)"
+                  aria-label="Create new scenario"
+                >
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4"
+                    />
+                  </svg>
+                </button>
+
+                {/* Settings Button */}
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="bg-primary-600 hover:bg-primary-700 text-white p-3 rounded-full shadow-lg transition-colors"
+                  title="Settings (Ctrl/Cmd + ,)"
+                  aria-label="Open settings"
+                >
                 <svg
                   className="w-6 h-6"
                   fill="none"
@@ -2460,7 +2586,8 @@ function App() {
                     d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                   />
                 </svg>
-              </button>
+                </button>
+              </div>
 
               {/* Streaming Performance Monitor - Debug Mode */}
               {isStreamingDebugEnabled && (
@@ -2479,7 +2606,7 @@ function App() {
 
           {/* Floating Chad Companion */}
           <FloatingChad
-            isVisible={isChadRevealed}
+            isVisible={true}
             currentState={
               error || streamingError
                 ? 'error'
@@ -2501,6 +2628,14 @@ function App() {
               // Settings are automatically saved by the SettingsService
               // This callback is for any additional actions needed
             }}
+          />
+
+          {/* Scenario Builder Dialog */}
+          <ScenarioBuilder
+            isOpen={isScenarioBuilderOpen}
+            onClose={handleCloseScenarioBuilder}
+            onSave={handleSaveScenario}
+            editingScenario={editingScenario}
           />
         </BrowserCompatibility>
       </ThemeProvider>
