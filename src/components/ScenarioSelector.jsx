@@ -1,36 +1,36 @@
-import { useState, useEffect } from 'react'
-import PropTypes from 'prop-types'
-import HelpTooltip from './HelpTooltip'
-import ScenarioErrorDisplay from './ScenarioErrorDisplay'
-import ScenarioValidationDisplay from './ScenarioValidationDisplay'
-import { scenarioService } from '../services/scenarioService.js'
-import { analyzeError } from '../utils/errorHandling.js'
+import { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
+import HelpTooltip from './HelpTooltip';
+import ScenarioErrorDisplay from './ScenarioErrorDisplay';
+import ScenarioValidationDisplay from './ScenarioValidationDisplay';
+import { scenarioService } from '../services/scenarioService.js';
+import { analyzeError } from '../utils/errorHandling.js';
 
 const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError, onCreateScenario, onRefreshSeedData }) => {
-  const [scenarios, setScenarios] = useState([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [scenarioMetadata, setScenarioMetadata] = useState(null)
-  const [validationResult, setValidationResult] = useState(null)
-  const [recoveryAttempts, setRecoveryAttempts] = useState(new Map())
-  const [isRefreshingSeedData, setIsRefreshingSeedData] = useState(false)
+  const [scenarios, setScenarios] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [scenarioMetadata, setScenarioMetadata] = useState(null);
+  const [validationResult, setValidationResult] = useState(null);
+  const [recoveryAttempts, setRecoveryAttempts] = useState(new Map());
+  const [isRefreshingSeedData, setIsRefreshingSeedData] = useState(false);
 
   useEffect(() => {
-    loadAvailableScenarios()
-  }, [])
+    loadAvailableScenarios();
+  }, []);
 
   // Load scenario metadata when selection changes
   useEffect(() => {
     if (selectedScenario) {
-      loadScenarioMetadata(selectedScenario)
+      loadScenarioMetadata(selectedScenario);
     } else {
-      setScenarioMetadata(null)
+      setScenarioMetadata(null);
     }
-  }, [selectedScenario])
+  }, [selectedScenario]);
 
   const loadAvailableScenarios = async () => {
-    setIsLoading(true)
-    setError(null)
+    setIsLoading(true);
+    setError(null);
 
     try {
       // Wait for scenario service to be initialized (it should be initialized by App)
@@ -44,64 +44,64 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
 
       // If still not initialized after waiting, try to initialize it
       if (!scenarioService.isInitialized) {
-        const initResult = await scenarioService.initialize()
+        const initResult = await scenarioService.initialize();
         if (!initResult.success) {
-          throw new Error(initResult.message || 'Failed to initialize scenario service')
+          throw new Error(initResult.message || 'Failed to initialize scenario service');
         }
       }
 
       // Get list of available scenarios
-      const scenarioList = await scenarioService.getScenarioList()
+      const scenarioList = scenarioService.getScenarioList();
 
       if (scenarioList.length === 0) {
-        const noScenariosError = new Error('No scenarios found. Please add scenario files to the /src/scenarios/ directory.')
+        const noScenariosError = new Error('No scenarios found. Please add scenario files to the /src/scenarios/ directory.');
         const errorInfo = analyzeError(noScenariosError, {
           operation: 'loadScenarios',
           component: 'ScenarioSelector'
-        })
-        setError(errorInfo)
+        });
+        setError(errorInfo);
       } else {
-        setScenarios(scenarioList)
+        setScenarios(scenarioList);
       }
     } catch (err) {
-      console.error('Error loading scenarios:', err)
+      console.error('Error loading scenarios:', err);
 
       const errorInfo = analyzeError(err, {
         operation: 'loadScenarios',
         component: 'ScenarioSelector',
         scenarioCount: scenarios.length
-      })
+      });
 
-      setError(errorInfo)
-      setScenarios([])
+      setError(errorInfo);
+      setScenarios([]);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const loadScenarioMetadata = async (scenarioId) => {
     try {
-      const metadata = scenarioService.getScenarioMetadata(scenarioId)
-      setScenarioMetadata(metadata)
+      const metadata = scenarioService.getScenarioMetadata(scenarioId);
+      setScenarioMetadata(metadata);
 
       // Also validate the scenario if it's loaded
-      const scenario = await scenarioService.getScenario(scenarioId)
+      const scenario = await scenarioService.getScenario(scenarioId);
       if (scenario) {
         const validation = await scenarioService.validateScenarioWithEnhancedErrors(scenario, {
           validateFiles: false // Skip file validation for UI performance
-        })
-        setValidationResult(validation)
+        });
+        setValidationResult(validation);
       } else {
-        setValidationResult(null)
+        setValidationResult(null);
       }
     } catch (err) {
-      console.error('Error loading scenario metadata:', err)
+      console.error('Error loading scenario metadata:', err);
 
       const errorInfo = analyzeError(err, {
         operation: 'loadMetadata',
         scenarioId,
         component: 'ScenarioSelector'
-      })
+      });
 
       // Store metadata loading error but don't show it prominently
       setScenarioMetadata({
@@ -110,96 +110,96 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
         description: `Failed to load scenario metadata: ${err.message}`,
         hasError: true,
         errorInfo
-      })
-      setValidationResult(null)
+      });
+      setValidationResult(null);
     }
-  }
+  };
 
   const handleScenarioChange = async (scenarioId) => {
     if (!scenarioId) {
-      onScenarioSelect('')
-      setScenarioMetadata(null)
-      setValidationResult(null)
-      return
+      onScenarioSelect('');
+      setScenarioMetadata(null);
+      setValidationResult(null);
+      return;
     }
 
     try {
       // Set the current scenario in the service
-      const success = await scenarioService.setCurrentScenario(scenarioId)
+      const success = await scenarioService.setCurrentScenario(scenarioId);
 
       if (success) {
-        onScenarioSelect(scenarioId)
+        onScenarioSelect(scenarioId);
         // Metadata will be loaded by useEffect
       } else {
-        const loadError = new Error(`Failed to load scenario: ${scenarioId}`)
+        const loadError = new Error(`Failed to load scenario: ${scenarioId}`);
         const errorInfo = analyzeError(loadError, {
           operation: 'selectScenario',
           scenarioId,
           component: 'ScenarioSelector'
-        })
-        setError(errorInfo)
+        });
+        setError(errorInfo);
       }
     } catch (err) {
-      console.error('Error selecting scenario:', err)
+      console.error('Error selecting scenario:', err);
 
       const errorInfo = analyzeError(err, {
         operation: 'selectScenario',
         scenarioId,
         component: 'ScenarioSelector'
-      })
+      });
 
-      setError(errorInfo)
+      setError(errorInfo);
     }
-  }
+  };
 
   const handleReloadScenarios = async () => {
-    setIsLoading(true)
-    setError(null)
+    setIsLoading(true);
+    setError(null);
 
     try {
-      const reloadResult = await scenarioService.reloadScenarios()
+      const reloadResult = await scenarioService.reloadScenarios();
 
       if (reloadResult.success) {
-        const scenarioList = await scenarioService.getScenarioList()
-        setScenarios(scenarioList)
+        const scenarioList = await scenarioService.getScenarioList();
+        setScenarios(scenarioList);
 
         // Clear current selection if it no longer exists
         if (selectedScenario && !scenarioList.some(s => s.id === selectedScenario)) {
-          onScenarioSelect('')
-          setScenarioMetadata(null)
-          setValidationResult(null)
+          onScenarioSelect('');
+          setScenarioMetadata(null);
+          setValidationResult(null);
         }
 
 
       } else {
-        const reloadError = new Error(reloadResult.message || 'Failed to reload scenarios')
+        const reloadError = new Error(reloadResult.message || 'Failed to reload scenarios');
         const errorInfo = analyzeError(reloadError, {
           operation: 'reloadScenarios',
           component: 'ScenarioSelector',
           reloadResult
-        })
-        setError(errorInfo)
+        });
+        setError(errorInfo);
       }
     } catch (err) {
-      console.error('Error reloading scenarios:', err)
+      console.error('Error reloading scenarios:', err);
 
       const errorInfo = analyzeError(err, {
         operation: 'reloadScenarios',
         component: 'ScenarioSelector'
-      })
+      });
 
-      setError(errorInfo)
+      setError(errorInfo);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const handleErrorRecovery = async (scenarioId, error) => {
-    const attemptKey = `${scenarioId}-${error.type}`
+    const attemptKey = `${scenarioId}-${error.type}`;
 
     // Prevent multiple recovery attempts for the same error
     if (recoveryAttempts.has(attemptKey)) {
-      return
+      return;
     }
 
     try {
@@ -207,11 +207,11 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
         enableFallback: true,
         createPlaceholder: true,
         logRecovery: true
-      })
+      });
 
       if (recoveryResult.success) {
         // Mark recovery attempt
-        setRecoveryAttempts(prev => new Map(prev).set(attemptKey, true))
+        setRecoveryAttempts(prev => new Map(prev).set(attemptKey, true));
 
         // Update error with recovery information
         setError({
@@ -219,66 +219,66 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
           recovered: true,
           recoveryMethod: recoveryResult.method,
           recoveryWarnings: recoveryResult.warnings
-        })
+        });
 
         // Reload scenarios to reflect recovery
-        await loadAvailableScenarios()
+        await loadAvailableScenarios();
       }
     } catch (recoveryError) {
-      console.error(`[ScenarioSelector] Recovery attempt failed:`, recoveryError)
+      console.error(`[ScenarioSelector] Recovery attempt failed:`, recoveryError);
     }
-  }
+  };
 
   const handleValidationFix = async (errorKey, errorData) => {
     if (!selectedScenario || !errorData.fixable) {
-      return
+      return;
     }
 
     try {
       // This would typically call a service method to fix the validation error
       // Reload metadata after fix attempt
-      await loadScenarioMetadata(selectedScenario)
+      await loadScenarioMetadata(selectedScenario);
     } catch (error) {
-      console.error('Failed to fix validation error:', error)
+      console.error('Failed to fix validation error:', error);
     }
-  }
+  };
 
   const handleRetry = async () => {
-    setError(null)
-    await loadAvailableScenarios()
-  }
+    setError(null);
+    await loadAvailableScenarios();
+  };
 
   const handleDismissError = () => {
-    setError(null)
-  }
+    setError(null);
+  };
 
   const handleRefreshSeedData = async () => {
-    if (!selectedScenario || !scenarioMetadata?.hasSeedData) return
+    if (!selectedScenario || !scenarioMetadata?.hasSeedData) return;
 
-    setIsRefreshingSeedData(true)
+    setIsRefreshingSeedData(true);
     try {
       if (onRefreshSeedData) {
         // Use the provided refresh handler
-        await onRefreshSeedData(selectedScenario)
+        await onRefreshSeedData(selectedScenario);
       } else {
         // Fallback: simulate a refresh operation
         // Simulate async operation
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
       // Reload scenario metadata after refresh
-      await loadScenarioMetadata(selectedScenario)
+      await loadScenarioMetadata(selectedScenario);
     } catch (error) {
       const errorInfo = analyzeError(error, {
         operation: 'refreshSeedData',
         scenarioId: selectedScenario,
         component: 'ScenarioSelector'
-      })
-      setError(errorInfo)
+      });
+      setError(errorInfo);
     } finally {
-      setIsRefreshingSeedData(false)
+      setIsRefreshingSeedData(false);
     }
-  }
+  };
 
   return (
     <div className="card">
@@ -346,7 +346,7 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
               >
                 <svg className={`w-4 h-4 ${isRefreshingSeedData ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
               </button>
             )}
@@ -355,9 +355,8 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
             id="scenario-select"
             value={selectedScenario || ''}
             onChange={(e) => handleScenarioChange(e.target.value)}
-            className={`select-field ${
-              validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
-            }`}
+            className={`select-field ${validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+              }`}
             disabled={isLoading}
           >
             <option value="">
@@ -429,8 +428,8 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
         <p className="mt-1 text-sm text-red-600">{validationError}</p>
       )}
     </div>
-  )
-}
+  );
+};
 
 ScenarioSelector.propTypes = {
   selectedScenario: PropTypes.string,
@@ -438,13 +437,13 @@ ScenarioSelector.propTypes = {
   validationError: PropTypes.string,
   onCreateScenario: PropTypes.func,
   onRefreshSeedData: PropTypes.func
-}
+};
 
 ScenarioSelector.defaultProps = {
   selectedScenario: '',
   validationError: null,
   onCreateScenario: null,
   onRefreshSeedData: null
-}
+};
 
-export default ScenarioSelector
+export default ScenarioSelector;

@@ -29,21 +29,11 @@ const ConditionalExecutionSettings = ({
   const [iterationInput, setIterationInput] = useState(maxIterations.toString())
   const [iterationValidationError, setIterationValidationError] = useState('')
 
-  console.log('[ConditionalExecutionSettings] Render - scenario:', scenario, 'showToolSettings:', showToolSettings, 'scenarioConfigLoaded:', scenarioConfigLoaded, 'shouldShowTools:', shouldShowTools);
-  console.log('[ConditionalExecutionSettings] Props received - areToolsAvailable:', areToolsAvailable);
+
 
   useEffect(() => {
-    console.log('[ConditionalExecutionSettings] useEffect triggered with:', {
-      scenario,
-      scenarioConfigLoaded,
-      showToolSettings,
-      areToolsAvailable
-    });
-
     if (scenario && scenarioConfigLoaded) {
       // Scenario configuration has been loaded, use the showToolSettings flag
-      console.log('[ConditionalExecutionSettings] Using loaded config - showToolSettings:', showToolSettings);
-      console.log('[ConditionalExecutionSettings] Setting shouldShowTools to:', showToolSettings);
       setShouldShowTools(showToolSettings)
 
       // Determine the correct execution mode by checking the scenario tools
@@ -51,7 +41,6 @@ const ConditionalExecutionSettings = ({
         // Get the execution mode from the service without triggering loading state
         scenarioToolIntegrationService.getToolConfigurationForScenario(scenario)
           .then(toolConfigResult => {
-            console.log('[ConditionalExecutionSettings] Got tool config result for execution mode:', toolConfigResult.executionMode);
             setToolExecutionMode(toolConfigResult.executionMode || 'detection')
           })
           .catch(error => {
@@ -64,19 +53,15 @@ const ConditionalExecutionSettings = ({
 
       setValidationErrors([])
       setIsLoading(false)
-      console.log('[ConditionalExecutionSettings] State updated - shouldShowTools should now be:', showToolSettings);
     } else if (scenario && !scenarioConfigLoaded) {
       // Scenario is selected but configuration not loaded yet
       // Try to get a quick preview if areToolsAvailable indicates tools are present
-      console.log('[ConditionalExecutionSettings] Config not loaded, areToolsAvailable:', areToolsAvailable);
       if (areToolsAvailable) {
-        console.log('[ConditionalExecutionSettings] Config not loaded but areToolsAvailable is true, showing tools optimistically');
         setShouldShowTools(true)
 
         // Get the execution mode optimistically
         scenarioToolIntegrationService.getToolConfigurationForScenario(scenario)
           .then(toolConfigResult => {
-            console.log('[ConditionalExecutionSettings] Optimistic tool config result:', toolConfigResult.executionMode);
             setToolExecutionMode(toolConfigResult.executionMode || 'detection')
           })
           .catch(error => {
@@ -86,19 +71,16 @@ const ConditionalExecutionSettings = ({
 
         setIsLoading(false)
       } else {
-        console.log('[ConditionalExecutionSettings] Waiting for scenario config to load for:', scenario);
         setIsLoading(true)
       }
     } else if (!scenario) {
       // No scenario selected
-      console.log('[ConditionalExecutionSettings] No scenario selected');
       setShouldShowTools(false)
       setToolExecutionMode('none')
       setValidationErrors([])
       setIsLoading(false)
     } else {
       // Fallback to checking tool settings visibility via service
-      console.log('[ConditionalExecutionSettings] Fallback to service check');
       checkToolSettingsVisibility()
     }
   }, [scenario, showToolSettings, scenarioConfigLoaded, areToolsAvailable])
@@ -107,33 +89,22 @@ const ConditionalExecutionSettings = ({
     setIterationInput(maxIterations.toString())
   }, [maxIterations])
 
-  // Debug effect to track shouldShowTools changes
-  useEffect(() => {
-    console.log('[ConditionalExecutionSettings] shouldShowTools changed to:', shouldShowTools);
-  }, [shouldShowTools])
 
-  // Debug useEffect to track prop changes
-  useEffect(() => {
-    console.log('[ConditionalExecutionSettings] Props changed - scenario:', scenario, 'showToolSettings:', showToolSettings, 'scenarioConfigLoaded:', scenarioConfigLoaded);
-  }, [scenario, showToolSettings, scenarioConfigLoaded])
 
   const checkToolSettingsVisibility = async () => {
     if (!scenario) {
-      console.log('[ConditionalExecutionSettings] No scenario, hiding tools');
       setShouldShowTools(false)
       setToolExecutionMode('none')
       setValidationErrors([])
       return
     }
 
-    console.log('[ConditionalExecutionSettings] Checking tool visibility for scenario:', scenario);
     setIsLoading(true)
 
     try {
       // Get tool configuration from scenario tool integration service
       const toolConfigResult = await scenarioToolIntegrationService.getToolConfigurationForScenario(scenario)
 
-      console.log('[ConditionalExecutionSettings] Tool config result:', toolConfigResult);
       setShouldShowTools(toolConfigResult.hasToolConfig)
       setToolExecutionMode(toolConfigResult.executionMode)
 
@@ -245,8 +216,6 @@ const ConditionalExecutionSettings = ({
 
   const showExecutionToggle = toolExecutionMode === 'execution'
 
-  console.log('[ConditionalExecutionSettings] toolExecutionMode:', toolExecutionMode, 'showExecutionToggle:', showExecutionToggle);
-
   // Show tools if scenario config is loaded and showToolSettings is true,
   // OR if we have optimistic loading based on areToolsAvailable
   // OR if shouldShowTools is explicitly set to true
@@ -254,16 +223,10 @@ const ConditionalExecutionSettings = ({
                            (scenario && !scenarioConfigLoaded && areToolsAvailable) ||
                            (scenario && shouldShowTools)
 
-  console.log('[ConditionalExecutionSettings] Final calculation - scenario:', scenario, 'scenarioConfigLoaded:', scenarioConfigLoaded, 'showToolSettings:', showToolSettings, 'shouldShowTools:', shouldShowTools, 'areToolsAvailable:', areToolsAvailable, 'isToolsAvailable:', isToolsAvailable);
-
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">Execution Settings</h3>
-        {/* Debug info - remove this later */}
-        <div className="text-xs text-gray-500">
-          S:{scenario ? '✓' : '✗'} C:{scenarioConfigLoaded ? '✓' : '✗'} T:{showToolSettings ? '✓' : '✗'}
-        </div>
         {isExecuting && (
           <div className="flex items-center space-x-2">
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
@@ -279,16 +242,7 @@ const ConditionalExecutionSettings = ({
       </div>
 
       <div className="space-y-4">
-        {/* Debug info */}
-        <div className="text-xs text-gray-400 p-2 bg-gray-50 rounded">
-          Debug: isToolsAvailable={String(isToolsAvailable)} | shouldShowTools={String(shouldShowTools)} |
-          scenario={scenario} | configLoaded={String(scenarioConfigLoaded)} | showToolSettings={String(showToolSettings)} |
-          areToolsAvailable={String(areToolsAvailable)}
-        </div>
-
         {/* Tools Mode Toggle - only show if tools are available */}
-        {/* Debug: condition = {String(isToolsAvailable)} */}
-        {/* Force show tools if scenario has tools defined */}
         {(isToolsAvailable || (scenario && showToolSettings)) && (
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">

@@ -285,7 +285,6 @@ function App() {
     if (selectedScenario && scenarioConfigLoaded) {
       // Check scenario-based tool availability only if config is loaded
       const result = scenarioConfig.showToolSettings;
-      console.log('[App] areToolsAvailable - scenario:', selectedScenario, 'showToolSettings:', result, 'configLoaded:', scenarioConfigLoaded);
       return result;
     }
 
@@ -298,16 +297,14 @@ function App() {
           // Quick check if scenario has tools without full config loading
           const scenario = scenarioService.getScenario(selectedScenario);
           const hasTools = scenario && scenario.tools && scenario.tools.length > 0;
-          console.log('[App] areToolsAvailable - quick check during loading:', selectedScenario, 'hasTools:', hasTools);
           return hasTools;
         }
       } catch (error) {
-        console.log('[App] areToolsAvailable - error during quick check:', error.message);
+        // Silently handle errors during quick check
       }
     }
 
     // Return false if scenario config not loaded yet or no scenario selected
-    console.log('[App] areToolsAvailable - no scenario or config not loaded');
     return false;
   };
 
@@ -442,13 +439,9 @@ function App() {
     const initializeScenarioService = async () => {
       try {
         if (!scenarioService.isInitialized) {
-          console.log('[App] Initializing scenario service...');
           setIsLoading(true);
           await scenarioService.initialize();
-          console.log('[App] Scenario service initialized successfully');
           setIsLoading(false);
-        } else {
-          console.log('[App] Scenario service already initialized');
         }
       } catch (error) {
         console.error('[App] Failed to initialize scenario service:', error);
@@ -464,7 +457,6 @@ function App() {
   useEffect(() => {
     if (!isInitialLoad.current && scenarioService.isInitialized && selectedScenario) {
       // Only run this when scenario changes after initial load
-      console.log('[App] Scenario changed, reloading configuration for:', selectedScenario);
       setScenarioConfigLoaded(false); // Reset the flag when scenario changes
       loadScenarioConfiguration();
     }
@@ -473,12 +465,9 @@ function App() {
   // Handle initial scenario loading after service initialization (for page refresh)
   useEffect(() => {
     if (scenarioService.isInitialized && selectedScenario && !scenarioConfigLoaded) {
-      console.log('[App] Initial load - Loading scenario configuration after service initialization:', selectedScenario);
-      console.log('[App] Service initialized:', scenarioService.isInitialized, 'Selected scenario:', selectedScenario, 'Config loaded:', scenarioConfigLoaded);
       loadScenarioConfiguration().then(() => {
         // Mark that initial load is complete
         isInitialLoad.current = false;
-        console.log('[App] Initial load complete, future scenario changes will trigger reload');
       });
     }
   }, [scenarioService.isInitialized, selectedScenario, scenarioConfigLoaded]);
@@ -488,10 +477,8 @@ function App() {
     // If we have a selected scenario but service wasn't initialized when it was set,
     // and now the service is initialized, load the configuration
     if (scenarioService.isInitialized && selectedScenario && !scenarioConfigLoaded && isInitialLoad.current) {
-      console.log('[App] Service became ready after scenario was selected, loading configuration:', selectedScenario);
       loadScenarioConfiguration().then(() => {
         isInitialLoad.current = false;
-        console.log('[App] Configuration loaded after service initialization');
       });
     }
   }, [scenarioService.isInitialized]);
@@ -541,11 +528,6 @@ function App() {
       const config = await scenarioService.getUIConfiguration(selectedScenario);
       setScenarioConfig(config);
       setScenarioConfigLoaded(true);
-
-      console.log('[App] Loaded scenario configuration:', selectedScenario, config);
-      console.log('[App] showToolSettings:', config.showToolSettings);
-      console.log('[App] scenarioConfigLoaded set to true');
-      console.log('[App] Current state - selectedScenario:', selectedScenario, 'scenarioConfigLoaded will be:', true);
 
       // Load available prompts
       const systemPrompts = await scenarioService.getSystemPrompts(selectedScenario);
