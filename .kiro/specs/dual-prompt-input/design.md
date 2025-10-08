@@ -152,14 +152,12 @@ Enhanced validation structure:
 ```javascript
 {
   systemPrompt: {
-    required: true,
-    minLength: 1,
-    maxLength: 10000
+    required: false, // System prompt is optional
+    minLength: 0
   },
   userPrompt: {
     required: true,
-    minLength: 1,
-    maxLength: 10000
+    minLength: 1
   }
 }
 ```

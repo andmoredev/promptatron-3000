@@ -14,6 +14,8 @@ const PromptEditor = ({
   // Scenario-provided prompts
   scenarioSystemPrompts = [],
   scenarioUserPrompts = [],
+  systemPromptWarning,
+  userPromptWarning,
   selectedDataset,
   // Legacy props for backward compatibility
   prompt,
@@ -66,14 +68,14 @@ const PromptEditor = ({
     }
   }, [selectedDataset?.type]);
 
-  // Handle system prompt change with auto-resize
+  // Handle system prompt change
   const handleSystemPromptChange = (e) => {
     onSystemPromptChange?.(e.target.value);
     // Small delay to ensure the value is updated before resizing
     setTimeout(() => autoResize(e.target), 0);
   };
 
-  // Handle user prompt change with auto-resize
+  // Handle user prompt change
   const handleUserPromptChange = (e) => {
     onUserPromptChange?.(e.target.value);
     // Small delay to ensure the value is updated before resizing
@@ -432,6 +434,14 @@ const PromptEditor = ({
             {systemPromptError && (
               <p className="mt-1 text-sm text-red-600">{systemPromptError}</p>
             )}
+            {!systemPromptError && systemPromptWarning && (
+              <p className="validation-warning-text">
+                <svg className="h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <span>{systemPromptWarning}</span>
+              </p>
+            )}
             <div className="flex justify-between items-center text-sm text-gray-500">
               <span>{systemPrompt.length} characters</span>
               <span>Optional: Defines AI behavior and expertise</span>
@@ -502,6 +512,14 @@ const PromptEditor = ({
             />
             {userPromptError && (
               <p className="mt-1 text-sm text-red-600">{userPromptError}</p>
+            )}
+            {!userPromptError && userPromptWarning && (
+              <p className="validation-warning-text">
+                <svg className="h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <span>{userPromptWarning}</span>
+              </p>
             )}
             <div className="flex justify-between items-center text-sm text-gray-500">
               <span>{userPrompt.length} characters</span>
@@ -589,6 +607,8 @@ PromptEditor.propTypes = {
   onUserPromptChange: PropTypes.func,
   systemPromptError: PropTypes.string,
   userPromptError: PropTypes.string,
+  systemPromptWarning: PropTypes.string,
+  userPromptWarning: PropTypes.string,
   selectedDataset: PropTypes.object,
 
   // Scenario-provided prompts
