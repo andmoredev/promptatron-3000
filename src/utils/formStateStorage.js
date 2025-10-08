@@ -12,8 +12,8 @@ const DEFAULT_FORM_STATE = {
   selectedModel: '',
   selectedScenario: '',
   selectedDataset: {
-    type: '',
-    option: '',
+    id: '',
+    name: '',
     content: null
   },
   systemPrompt: '',
@@ -35,8 +35,8 @@ export const saveFormState = (formState) => {
       selectedModel: formState.selectedModel || '',
       selectedScenario: formState.selectedScenario || '',
       selectedDataset: {
-        type: formState.selectedDataset?.type || '',
-        option: formState.selectedDataset?.option || '',
+        id: formState.selectedDataset?.id || '',
+        name: formState.selectedDataset?.name || '',
         // Don't save actual content, just the selection
         content: null
       },

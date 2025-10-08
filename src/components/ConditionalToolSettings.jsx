@@ -36,6 +36,11 @@ const ConditionalToolSettings = ({
     setIsLoading(true)
 
     try {
+      // Ensure scenario service is initialized before getting tool configuration
+      if (!scenarioService.isInitialized) {
+        await scenarioService.initialize();
+      }
+
       // Get tool configuration from scenario tool integration service
       const toolConfigResult = await scenarioToolIntegrationService.getToolConfigurationForScenario(scenario)
 

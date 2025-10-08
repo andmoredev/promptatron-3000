@@ -1,7 +1,5 @@
 import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { analyzeError, handleError, ErrorTypes } from '../utils/errorHandling.js';
-import { fraudToolsService } from './fraudToolsService.js';
-import { shippingToolsService } from './shippingToolsService.js';
 import { workflowTrackingService } from './workflowTrackingService.js';
 
 /**
@@ -347,7 +345,7 @@ export class ToolExecutionService {
             errors: executionState.errors
           });
         } catch (trackingError) {
-          console.warn('Failed to complete workflow tracking:', trackingError);
+          // Silently handle tracking errors
         }
       }
 
@@ -442,7 +440,8 @@ export class ToolExecutionService {
           const result = await this.executeTool(toolUse.name, toolUse.input, {
             executionId: executionState.executionId,
             toolConfig: toolConfig,
-            datasetType: executionState.options.datasetType
+            datasetType: executionState.options.datasetType,
+            scenarioId: executionState.options.datasetType // Use datasetType as scenarioId
           });
 
           toolResults.push({
@@ -528,32 +527,116 @@ export class ToolExecutionService {
    */
   async executeTool(toolName, parameters, context) {
     try {
-      // Determine which tool service to use based on dataset type
-      const datasetType = context.datasetType || context.toolConfig?.datasetType;
-      let toolService;
+      const toolConfig = this.getToolConfig(toolName, context);
 
-      if (datasetType === 'fraud-detection') {
-        toolService = fraudToolsService;
-      } else if (datasetType === 'shipping-logistics') {
-        toolService = shippingToolsService;
+      if (toolConfig.handler) {
+        return await this.executeHandler(toolConfig.handler, parameters, context);
       } else {
-        throw new Error(`No tool service available for dataset type: ${datasetType}`);
+        throw new Error(`Tool "${toolName}" does not have a handler configuration. All tools must use handler-based execution.`);
       }
-
-      // Initialize the appropriate tool service if not already done
-      if (!toolService.isInitialized && context.toolConfig) {
-        await toolService.initialize(context.toolConfig);
-      }
-
-      // Execute the tool using the appropriate service
-      const result = await toolService.executeTool(toolName, parameters, context);
-
-      return result;
 
     } catch (error) {
       throw new Error(`Tool execution failed for ${toolName}: ${error.message}`);
     }
   }
+
+  /**
+   * Execute a handler-based tool
+   * @param {string} handler - Handler string in format "filename.entryPoint"
+   * @param {Object} parameters - Tool parameters
+   * @param {Object} context - Execution context
+   * @returns {Promise<Object>} Tool execution result
+   */
+  async executeHandler(handler, parameters, context) {
+    try {
+
+
+      // Parse handler string (e.g., "tools/carrierStatus.getCarrierStatus")
+      const [filePath, entryPoint] = handler.split('.');
+      if (!filePath || !entryPoint) {
+        throw new Error(`Invalid handler format: ${handler}. Expected format: "filename.entryPoint"`);
+      }
+
+
+
+      // Get scenario ID from context or toolConfig
+      let scenarioId = context.scenarioId || context.datasetType;
+
+      // If not in context, try to extract from toolConfig
+      if (!scenarioId && context.toolConfig && context.toolConfig.scenarioId) {
+        scenarioId = context.toolConfig.scenarioId;
+      }
+
+      // If still not found, try to extract from toolConfig.id (format: "scenario-id-tools")
+      if (!scenarioId && context.toolConfig && context.toolConfig.id) {
+        const match = context.toolConfig.id.match(/^(.+)-tools$/);
+        if (match) {
+          scenarioId = match[1];
+        }
+      }
+
+      if (!scenarioId) {
+        throw new Error('Scenario ID not found in context or toolConfig');
+      }
+
+      // Construct the full path to the handler file
+      const handlerPath = `../scenarios/${scenarioId}/${filePath}.js`;
+
+      // Dynamically import the handler module
+      const handlerModule = await import(/* @vite-ignore */ handlerPath);
+
+      // Get the specific function from the module
+      const handlerFunction = handlerModule[entryPoint];
+      if (!handlerFunction) {
+        throw new Error(`Function '${entryPoint}' not found in ${handlerPath}`);
+      }
+
+
+
+      // Execute the handler function
+      const result = await handlerFunction(parameters, context);
+
+      return result;
+
+    } catch (error) {
+      console.error('[ToolExecutionService] Handler execution failed:', error);
+      throw new Error(`Handler execution failed: ${error.message}`);
+    }
+  }
+
+
+
+
+
+
+
+
+
+  /**
+   * Get tool configuration for a specific tool
+   * @param {string} toolName - Name of the tool
+   * @param {Object} context - Execution context
+   * @returns {Object} Tool configuration
+   */
+  getToolConfig(toolName, context) {
+    const toolConfig = context.toolConfig;
+    if (!toolConfig || !toolConfig.tools) {
+      throw new Error('Tool configuration not available in context');
+    }
+
+    const tool = toolConfig.tools.find(t => t.toolSpec && t.toolSpec.name === toolName);
+    if (!tool) {
+      throw new Error(`Tool configuration not found for: ${toolName}`);
+    }
+
+    // Return the toolSpec with handler information
+    return {
+      ...tool.toolSpec,
+      handler: tool.toolSpec.handler
+    };
+  }
+
+
 
   /**
    * Cancel an active execution
@@ -581,7 +664,7 @@ export class ToolExecutionService {
         try {
           await workflowTrackingService.cancelExecution(executionId, 'Cancelled by user');
         } catch (trackingError) {
-          console.warn('Failed to cancel workflow tracking:', trackingError);
+          // Silently handle tracking errors
         }
       }
 

@@ -139,10 +139,10 @@ const PromptEditor = ({
   // Enhanced system prompt templates combining hardcoded and dataset-specific
   const allSystemPromptTemplates = useMemo(() => {
     return [
-      ...systemPromptTemplates, // Existing hardcoded templates
+      ...systemPromptTemplates, // Scenario-provided templates
       ...datasetSystemPrompts   // Dataset-specific templates
     ];
-  }, [datasetSystemPrompts]);
+  }, [systemPromptTemplates, datasetSystemPrompts]);
 
   const handleSystemTemplateSelect = (template) => {
     if (onSystemPromptChange && typeof onSystemPromptChange === 'function') {
@@ -272,6 +272,7 @@ const PromptEditor = ({
             className={`input-field resize-none prompt-editor-textarea ${isExpanded ? 'h-64' : 'h-32'
               } transition-all duration-200 ${validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
               }`}
+            style={{ whiteSpace: 'pre-wrap' }}
           />
           {validationError && (
             <p className="mt-1 text-sm text-red-600">{validationError}</p>
@@ -358,7 +359,7 @@ const PromptEditor = ({
             <div>
               <div className="flex items-center space-x-2 mb-2">
                 <span className="block text-sm font-medium text-gray-700">
-                  System Prompt Templates
+                  Templates
                 </span>
                 <HelpTooltip
                   content="System prompts define the AI's role, expertise, and behavior. These templates are provided by the selected scenario and dataset."
@@ -426,7 +427,7 @@ const PromptEditor = ({
               placeholder="Optional: Define the AI's role and expertise. Leave empty for natural responses, or specify like: 'You are an expert data analyst specializing in fraud detection...'"
               className={`input-field resize-none transition-all duration-200 prompt-editor-textarea ${systemPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-blue-200 focus:border-blue-500 focus:ring-blue-500'
                 }`}
-              style={{ overflow: 'hidden', minHeight: '128px' }}
+              style={{ overflow: 'hidden', minHeight: '128px', whiteSpace: 'pre-wrap' }}
             />
             {systemPromptError && (
               <p className="mt-1 text-sm text-red-600">{systemPromptError}</p>
@@ -447,7 +448,7 @@ const PromptEditor = ({
             <div>
               <div className="flex items-center space-x-2 mb-2">
                 <span className="block text-sm font-medium text-gray-700">
-                  User Prompt Templates
+                  Templates
                 </span>
                 <HelpTooltip
                   content="User prompts contain your specific request or question. These templates are provided by the selected scenario."
@@ -497,7 +498,7 @@ const PromptEditor = ({
               placeholder="Enter your specific request or question. For example: 'Please analyze the following data for fraud patterns...'"
               className={`input-field resize-none transition-all duration-200 prompt-editor-textarea ${userPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-green-200 focus:border-green-500 focus:ring-green-500'
                 }`}
-              style={{ overflow: 'hidden', minHeight: '128px' }}
+              style={{ overflow: 'hidden', minHeight: '128px', whiteSpace: 'pre-wrap' }}
             />
             {userPromptError && (
               <p className="mt-1 text-sm text-red-600">{userPromptError}</p>

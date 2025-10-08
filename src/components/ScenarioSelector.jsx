@@ -6,13 +6,14 @@ import ScenarioValidationDisplay from './ScenarioValidationDisplay'
 import { scenarioService } from '../services/scenarioService.js'
 import { analyzeError } from '../utils/errorHandling.js'
 
-const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError, onCreateScenario }) => {
+const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError, onCreateScenario, onRefreshSeedData }) => {
   const [scenarios, setScenarios] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
   const [scenarioMetadata, setScenarioMetadata] = useState(null)
   const [validationResult, setValidationResult] = useState(null)
   const [recoveryAttempts, setRecoveryAttempts] = useState(new Map())
+  const [isRefreshingSeedData, setIsRefreshingSeedData] = useState(false)
 
   useEffect(() => {
     loadAvailableScenarios()
@@ -32,16 +33,20 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
     setError(null)
 
     try {
-      // Initialize scenario service if not already done
+      // Wait for scenario service to be initialized (it should be initialized by App)
+      let retryCount = 0;
+      const maxRetries = 10;
+
+      while (!scenarioService.isInitialized && retryCount < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        retryCount++;
+      }
+
+      // If still not initialized after waiting, try to initialize it
       if (!scenarioService.isInitialized) {
         const initResult = await scenarioService.initialize()
         if (!initResult.success) {
           throw new Error(initResult.message || 'Failed to initialize scenario service')
-        }
-
-        // Check for initialization warnings
-        if (initResult.errors && initResult.errors.length > 0) {
-          console.warn('Scenario service initialized with errors:', initResult.errors)
         }
       }
 
@@ -49,7 +54,7 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
       const scenarioList = await scenarioService.getScenarioList()
 
       if (scenarioList.length === 0) {
-        const noScenariosError = new Error('No scenarios found. Please add scenario files to the /public/scenarios/ directory.')
+        const noScenariosError = new Error('No scenarios found. Please add scenario files to the /src/scenarios/ directory.')
         const errorInfo = analyzeError(noScenariosError, {
           operation: 'loadScenarios',
           component: 'ScenarioSelector'
@@ -57,9 +62,6 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
         setError(errorInfo)
       } else {
         setScenarios(scenarioList)
-
-        // Log successful load
-        console.log(`[ScenarioSelector] Loaded ${scenarioList.length} scenarios successfully`)
       }
     } catch (err) {
       console.error('Error loading scenarios:', err)
@@ -168,7 +170,7 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
           setValidationResult(null)
         }
 
-        console.log(`[ScenarioSelector] Reloaded ${scenarioList.length} scenarios`)
+
       } else {
         const reloadError = new Error(reloadResult.message || 'Failed to reload scenarios')
         const errorInfo = analyzeError(reloadError, {
@@ -197,13 +199,10 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
 
     // Prevent multiple recovery attempts for the same error
     if (recoveryAttempts.has(attemptKey)) {
-      console.log(`[ScenarioSelector] Recovery already attempted for ${scenarioId}`)
       return
     }
 
     try {
-      console.log(`[ScenarioSelector] Attempting error recovery for ${scenarioId}`)
-
       const recoveryResult = await scenarioService.attemptErrorRecovery(scenarioId, error, {
         enableFallback: true,
         createPlaceholder: true,
@@ -224,10 +223,6 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
 
         // Reload scenarios to reflect recovery
         await loadAvailableScenarios()
-
-        console.log(`[ScenarioSelector] Recovery successful for ${scenarioId}:`, recoveryResult.method)
-      } else {
-        console.error(`[ScenarioSelector] Recovery failed for ${scenarioId}:`, recoveryResult.errors)
       }
     } catch (recoveryError) {
       console.error(`[ScenarioSelector] Recovery attempt failed:`, recoveryError)
@@ -240,12 +235,7 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
     }
 
     try {
-      console.log(`[ScenarioSelector] Attempting to fix validation error: ${errorKey}`)
-
       // This would typically call a service method to fix the validation error
-      // For now, we'll just log the attempt
-      console.log('Fix attempt for:', { errorKey, errorData, scenarioId: selectedScenario })
-
       // Reload metadata after fix attempt
       await loadScenarioMetadata(selectedScenario)
     } catch (error) {
@@ -262,13 +252,41 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
     setError(null)
   }
 
+  const handleRefreshSeedData = async () => {
+    if (!selectedScenario || !scenarioMetadata?.hasSeedData) return
+
+    setIsRefreshingSeedData(true)
+    try {
+      if (onRefreshSeedData) {
+        // Use the provided refresh handler
+        await onRefreshSeedData(selectedScenario)
+      } else {
+        // Fallback: simulate a refresh operation
+        // Simulate async operation
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+
+      // Reload scenario metadata after refresh
+      await loadScenarioMetadata(selectedScenario)
+    } catch (error) {
+      const errorInfo = analyzeError(error, {
+        operation: 'refreshSeedData',
+        scenarioId: selectedScenario,
+        component: 'ScenarioSelector'
+      })
+      setError(errorInfo)
+    } finally {
+      setIsRefreshingSeedData(false)
+    }
+  }
+
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
           <h3 className="text-lg font-semibold text-gray-900">Select Scenario</h3>
           <HelpTooltip
-            content="Choose a pre-configured scenario that includes datasets, prompts, and tools for specific use cases. Scenarios are stored in the /public/scenarios/ directory."
+            content="Choose a pre-configured scenario that includes datasets, prompts, and tools for specific use cases. Scenarios are stored in the /src/scenarios/ directory."
             position="right"
           />
         </div>
@@ -312,12 +330,27 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
       <div className="space-y-4">
         {/* Scenario Selection */}
         <div>
-          <label htmlFor="scenario-select" className="block text-sm font-medium text-gray-700 mb-2">
-            Available Scenarios
-            {isLoading && (
-              <span className="ml-2 text-xs text-blue-600">Loading scenarios...</span>
+          <div className="flex items-center justify-between mb-2">
+            <label htmlFor="scenario-select" className="block text-sm font-medium text-gray-700">
+              Available Scenarios
+              {isLoading && (
+                <span className="ml-2 text-xs text-blue-600">Loading scenarios...</span>
+              )}
+            </label>
+            {scenarioMetadata?.hasSeedData && (
+              <button
+                onClick={handleRefreshSeedData}
+                disabled={isRefreshingSeedData}
+                className="text-primary-600 hover:text-primary-700 disabled:opacity-50 transition-colors"
+                title="Refresh seed data"
+              >
+                <svg className={`w-4 h-4 ${isRefreshingSeedData ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
             )}
-          </label>
+          </div>
           <select
             id="scenario-select"
             value={selectedScenario || ''}
@@ -344,78 +377,23 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
           )}
         </div>
 
-        {/* Scenario Description and Metadata */}
+        {/* Simplified Scenario Information - Only show tools when available */}
         {scenarioMetadata && !scenarioMetadata.hasError && (
-          <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-            <h4 className="text-sm font-medium text-gray-900 mb-2">{scenarioMetadata.name}</h4>
-            <p className="text-sm text-gray-700 mb-3">{scenarioMetadata.description}</p>
+          <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+            <h4 className="text-sm font-medium text-gray-900 mb-2">Scenario Information</h4>
 
-            {/* Scenario Capabilities Summary */}
-            <div className="grid grid-cols-2 gap-4 text-xs">
-              <div className="space-y-1">
-                <div className="flex items-center space-x-2">
-                  <span className={`inline-block w-2 h-2 rounded-full ${
-                    scenarioMetadata.hasDatasets ? 'bg-green-400' : 'bg-gray-300'
-                  }`}></span>
-                  <span className="text-gray-600">
-                    {scenarioMetadata.hasDatasets
-                      ? `${scenarioMetadata.datasetCount} dataset${scenarioMetadata.datasetCount !== 1 ? 's' : ''}`
-                      : 'No datasets'
-                    }
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className={`inline-block w-2 h-2 rounded-full ${
-                    scenarioMetadata.hasSystemPrompts ? 'bg-green-400' : 'bg-gray-300'
-                  }`}></span>
-                  <span className="text-gray-600">
-                    {scenarioMetadata.hasSystemPrompts
-                      ? `${scenarioMetadata.systemPromptCount} system prompt${scenarioMetadata.systemPromptCount !== 1 ? 's' : ''}`
-                      : 'No system prompts'
-                    }
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center space-x-2">
-                  <span className={`inline-block w-2 h-2 rounded-full ${
-                    scenarioMetadata.hasUserPrompts ? 'bg-green-400' : 'bg-gray-300'
-                  }`}></span>
-                  <span className="text-gray-600">
-                    {scenarioMetadata.hasUserPrompts
-                      ? `${scenarioMetadata.userPromptCount} user prompt${scenarioMetadata.userPromptCount !== 1 ? 's' : ''}`
-                      : 'No user prompts'
-                    }
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className={`inline-block w-2 h-2 rounded-full ${
-                    scenarioMetadata.hasTools ? 'bg-green-400' : 'bg-gray-300'
-                  }`}></span>
-                  <span className="text-gray-600">
-                    {scenarioMetadata.hasTools
-                      ? `${scenarioMetadata.toolCount} tool${scenarioMetadata.toolCount !== 1 ? 's' : ''}`
-                      : 'No tools'
-                    }
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Tools Information - Enhanced display when tools are available */}
-            {scenarioMetadata.hasTools && (
-              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-start space-x-2">
-                  <svg className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div>
-                    <h5 className="text-xs font-medium text-blue-800 mb-1">Scenario Tools Available</h5>
-                    <p className="text-xs text-blue-700">
-                      {scenarioMetadata.toolCount} tool{scenarioMetadata.toolCount !== 1 ? 's' : ''} configured for enhanced AI capabilities
-                    </p>
-                  </div>
-                </div>
+            {/* Only show tools if available */}
+            {scenarioMetadata.hasTools && scenarioMetadata.toolNames && (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-600 font-medium">Available Tools:</p>
+                <ul className="text-xs text-gray-700 space-y-1">
+                  {scenarioMetadata.toolNames.map(toolName => (
+                    <li key={toolName} className="flex items-center space-x-2">
+                      <span className="inline-block w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+                      <span>{toolName}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>
@@ -458,13 +436,15 @@ ScenarioSelector.propTypes = {
   selectedScenario: PropTypes.string,
   onScenarioSelect: PropTypes.func.isRequired,
   validationError: PropTypes.string,
-  onCreateScenario: PropTypes.func
+  onCreateScenario: PropTypes.func,
+  onRefreshSeedData: PropTypes.func
 }
 
 ScenarioSelector.defaultProps = {
   selectedScenario: '',
   validationError: null,
-  onCreateScenario: null
+  onCreateScenario: null,
+  onRefreshSeedData: null
 }
 
 export default ScenarioSelector

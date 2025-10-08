@@ -1,6 +1,6 @@
 {
   "id": "fraud-detection-comprehensive",
-  "name": "Enterprise Fraud Detection - Comprehensive Analysis",
+  "name": "Fraud Detection",
   "description": "Complete fraud detection scenario with multiple transaction datasets, specialized prompts, and comprehensive fraud action tools for enterprise-level fraud prevention and risk management",
   "datasets": [
     {
@@ -12,7 +12,7 @@
     {
       "id": "international-transactions",
       "name": "International Transaction Data",
-      "description": "Cross-border transaction data with enhanced fraud indicators, anomaly detection, and risk scoring",
+      "description": "Crosssaction data with enhanced fraud indicators, anomaly detection, and risk scoring",
       "file": "datasets/international.csv"
     },
     {
@@ -81,6 +81,7 @@
     {
       "name": "freeze_account",
       "description": "Immediately freeze an account to prevent further transactions due to suspected fraudulent activity. This action should be taken when there is strong evidence of fraud or when multiple risk indicators are present.",
+      "handler": "tools/freezeAccount.freezeAccount",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -209,11 +210,12 @@
           "recommended_action"
         ]
       },
-      "handler": "mockFraudTools.flagTransaction"
+      "handler": "tools/flagTransaction.flagSuspiciousTransaction"
     },
     {
       "name": "create_fraud_alert",
       "description": "Create a fraud alert for patterns or behaviors that require immediate attention from the fraud investigation team. Use this for complex fraud schemes or when multiple accounts may be involved.",
+      "handler": "tools/createAlert.createFraudAlert",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -282,6 +284,7 @@
     {
       "name": "update_risk_profile",
       "description": "Update the risk profile for an account based on new information or behavioral changes. This helps maintain accurate risk assessments for future transaction monitoring.",
+      "handler": "tools/updateRisk.updateRiskProfile",
       "inputSchema": {
         "type": "object",
         "properties": {

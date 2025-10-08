@@ -64,6 +64,12 @@ export const useScenarioUI = (selectedScenario) => {
     setUIState(prev => ({ ...prev, isLoading: true, error: null }))
 
     try {
+      // Ensure scenario service is initialized
+      if (!scenarioService.isInitialized) {
+        console.log('[useScenarioUI] Scenario service not initialized, initializing...');
+        await scenarioService.initialize();
+      }
+
       // Get UI configuration from scenario service
       const uiConfig = await scenarioService.getUIConfiguration(selectedScenario)
 

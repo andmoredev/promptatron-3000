@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import PropTypes from 'prop-types'
+import { useState } from 'react';
+import PropTypes from 'prop-types';
 
 /**
  * Enhanced error display component for scenario-related errors
@@ -13,16 +13,16 @@ const ScenarioErrorDisplay = ({
   onRecovery,
   showDiagnostics = false
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false)
-  const [showSuggestions, setShowSuggestions] = useState(true)
-  const [isRecovering, setIsRecovering] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(true);
+  const [isRecovering, setIsRecovering] = useState(false);
 
-  if (!error) return null
+  if (!error) return null;
 
-  const errorType = error.type || 'unknown'
-  const errorMessage = error.userMessage || error.message || 'An unknown error occurred'
-  const suggestions = error.suggestedActions || error.suggestions || []
-  const isRecoverable = error.recoverable !== false
+  const errorType = error.type || 'unknown';
+  const errorMessage = error.userMessage || error.message || 'An unknown error occurred';
+  const suggestions = error.suggestedActions || error.suggestions || [];
+  const isRecoverable = error.recoverable !== false;
 
   const getErrorIcon = () => {
     switch (error.severity) {
@@ -32,58 +32,58 @@ const ScenarioErrorDisplay = ({
           <svg className="h-5 w-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
-        )
+        );
       case 'medium':
         return (
           <svg className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-        )
+        );
       default:
         return (
           <svg className="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-        )
+        );
     }
-  }
+  };
 
   const getErrorBorderColor = () => {
     switch (error.severity) {
       case 'high':
       case 'critical':
-        return 'border-red-200'
+        return 'border-red-200';
       case 'medium':
-        return 'border-yellow-200'
+        return 'border-yellow-200';
       default:
-        return 'border-blue-200'
+        return 'border-blue-200';
     }
-  }
+  };
 
   const getErrorBackgroundColor = () => {
     switch (error.severity) {
       case 'high':
       case 'critical':
-        return 'bg-red-50'
+        return 'bg-red-50';
       case 'medium':
-        return 'bg-yellow-50'
+        return 'bg-yellow-50';
       default:
-        return 'bg-blue-50'
+        return 'bg-blue-50';
     }
-  }
+  };
 
   const handleRecovery = async () => {
-    if (!onRecovery || isRecovering) return
+    if (!onRecovery || isRecovering) return;
 
-    setIsRecovering(true)
+    setIsRecovering(true);
     try {
-      await onRecovery(scenarioId, error)
+      await onRecovery(scenarioId, error);
     } catch (recoveryError) {
-      console.error('Recovery failed:', recoveryError)
+      console.error('Recovery failed:', recoveryError);
     } finally {
-      setIsRecovering(false)
+      setIsRecovering(false);
     }
-  }
+  };
 
   const renderSuggestion = (suggestion, index) => {
     if (typeof suggestion === 'string') {
@@ -91,16 +91,16 @@ const ScenarioErrorDisplay = ({
         <li key={index} className="text-sm text-gray-700">
           {suggestion}
         </li>
-      )
+      );
     }
 
     const priorityColors = {
       high: 'text-red-700 bg-red-100',
       medium: 'text-yellow-700 bg-yellow-100',
       low: 'text-gray-700 bg-gray-100'
-    }
+    };
 
-    const priorityColor = priorityColors[suggestion.priority] || priorityColors.low
+    const priorityColor = priorityColors[suggestion.priority] || priorityColors.low;
 
     return (
       <li key={index} className="text-sm">
@@ -119,11 +119,11 @@ const ScenarioErrorDisplay = ({
           </div>
         </div>
       </li>
-    )
-  }
+    );
+  };
 
   return (
-    <div className={`border rounded-lg p-4 ${getErrorBorderColor()} ${getErrorBandColor()}`}>
+    <div className={`border rounded-lg p-4 ${getErrorBorderColor()} ${getErrorBackgroundColor()}`}>
       {/* Error Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-start space-x-3">
@@ -278,8 +278,8 @@ const ScenarioErrorDisplay = ({
         </div>
       )}
     </div>
-  )
-}
+  );
+};
 
 ScenarioErrorDisplay.propTypes = {
   error: PropTypes.shape({
@@ -303,6 +303,6 @@ ScenarioErrorDisplay.propTypes = {
   onDismiss: PropTypes.func,
   onRecovery: PropTypes.func,
   showDiagnostics: PropTypes.bool
-}
+};
 
-export default ScenarioErrorDisplay
+export default ScenarioErrorDisplay;

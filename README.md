@@ -82,15 +82,30 @@ promptatron-3000/
 │   ├── App.jsx             # Main application component
 │   ├── main.jsx            # React entry point
 │   └── index.css           # Global styles & Tailwind
-├── public/
-│   └── scenarios/          # Scenario files with datasets organized by use case
-│       ├── manifest.json           # Global dataset registry
-│       └── fraud-detection/        # Example use case
-│           ├── manifest.json       # Use case configuration
-│           ├── tools.json          # Tool definitions
-│           ├── international.csv   # Dataset files
-│           ├── mixed.csv
-│           └── retail.csv
+├── public/                     # Static assets
+├── src/
+│   ├── scenarios/          # Consolidated scenario files with datasets organized by use case
+│   │   ├── manifest.json           # Global scenario registry
+│   │   ├── fraud-detection/        # Example scenario
+│   │   │   ├── scenario.json       # Scenario configuration
+│   │   │   ├── datasets/           # Dataset files
+│   │   │   │   ├── international.csv
+│   │   │   │   ├── mixed.csv
+│   │   │   │   ├── retail-transactions.csv
+│   │   │   │   └── retail.csv
+│   │   │   └── tools/              # Tool handlers
+│   │   │       ├── flagTransaction.js
+│   │   │       ├── freezeAccount.js
+│   │   │       ├── generateReport.js
+│   │   │       ├── handlerUtils.js
+│   │   │       └── noActionRequired.js
+│   │   └── shipping-logistics/     # Another scenario
+│   │       ├── scenario.json
+│   │       ├── seed-data.json
+│   │       └── tools/
+│   │           ├── carrierStatus.js
+│   │           ├── customerTier.js
+│   │           └── [other-tools].js
 ├── .kiro/                  # Kiro IDE configuration
 │   ├── steering/           # AI assistant guidance
 │   └── specs/              # Feature specifications
@@ -99,23 +114,32 @@ promptatron-3000/
 
 ## 📊 Dataset & Tool Integration
 
-Datasets are organized in the `public/scenarios/` directory by use case, with optional tool configurations that enable AI models to take actions during analysis.
+Datasets are organized in the `src/scenarios/` directory by use case, with integrated tool configurations that enable AI models to take actions during analysis. This consolidated structure provides better organization and build system integration.
 
 ### Directory Structure
 ```
-public/scenarios/
+src/scenarios/
 ├── manifest.json           # Global scenario registry
 ├── [scenario-name]/        # Scenario folder (e.g., "fraud-detection")
-│   ├── manifest.json       # Use case configuration & tool settings
-│   ├── tools.json          # Tool definitions (optional)
-│   ├── dataset1.csv        # Dataset files (CSV/JSON format)
-│   ├── dataset2.csv
-│   └── dataset3.csv
-└── [another-use-case]/
-    ├── manifest.json
-    ├── option1.csv
-    └── option2.csv
+│   ├── scenario.json       # Scenario configuration & tool settings
+│   ├── datasets/           # Dataset files directory
+│   │   ├── dataset1.csv    # Dataset files (CSV/JSON format)
+│   │   ├── dataset2.csv
+│   │   └── dataset3.csv
+│   └── tools/              # Tool handler files
+│       ├── tool1.js        # JavaScript tool handlers
+│       ├── tool2.js
+│       └── utils.js
+└── [another-scenario]/
+    ├── scenario.json
+    ├── datasets/
+    │   ├── option1.csv
+    │   └── option2.csv
+    └── tools/
+        └── handlers.js
 ```
+
+For detailed information about the scenario structure, see [SCENARIO_STRUCTURE.md](SCENARIO_STRUCTURE.md).
 
 ### Tool Integration
 
@@ -164,70 +188,99 @@ The application supports AI models using tools during analysis. For example, in 
 
 ```
 
-### Adding Your Own Datasets
+### Adding Your Own Scenarios
 
-1. **Create a scenario folder** in `public/scenarios/`:
+1. **Create a scenario folder** in `src/scenarios/`:
    ```bash
-   mkdir public/scenarios/my-scenario
+   mkdir src/scenarios/my-scenario
+   mkdir src/scenarios/my-scenario/datasets
+   mkdir src/scenarios/my-scenario/tools
    ```
 
 2. **Add dataset files**:
    ```bash
    # Example: Customer support tickets
-   mkdir public/scenarios/customer-support
-   mkdir public/scenarios/customer-support/datasets
-   cp my-tickets.csv public/scenarios/customer-support/datasets/
+   cp my-tickets.csv src/scenarios/my-scenario/datasets/tickets-2024.csv
    ```
 
-3. **Create manifest.json** for the use case:
+3. **Create scenario.json** for the scenario:
    ```json
    {
+     "id": "customer-support",
      "name": "Customer Support Analysis",
      "description": "Customer support ticket analysis datasets",
-     "version": "1.0",
-     "files": ["tickets-2024.csv", "tickets-2023.csv"],
-     "toolConfiguration": {
-       "enabled": false,
-       "datasetType": "customer-support"
-     }
-   }
-   ```
-
-4. **Optional: Add tool integration**:
-   ```json
-   {
-     "toolConfiguration": {
-       "enabled": true,
-       "datasetType": "customer-support",
-       "tools": [
-         {
-           "toolSpec": {
-             "name": "escalate_ticket",
-             "description": "Escalate a support ticket to management",
-             "inputSchema": {
-               "json": {
-                 "type": "object",
-                 "properties": {
-                   "ticket_id": { "type": "string" },
-                   "priority": { "type": "string", "enum": ["high", "urgent", "critical"] },
-                   "reason": { "type": "string" }
-                 },
-                 "required": ["ticket_id", "priority", "reason"]
-               }
-             }
-           }
+     "datasets": [
+       {
+         "id": "tickets-2024",
+         "name": "2024 Support Tickets",
+         "description": "Customer support tickets from 2024",
+         "file": "datasets/tickets-2024.csv"
+       }
+     ],
+     "tools": [
+       {
+         "name": "escalateTicket",
+         "description": "Escalate a support ticket to management",
+         "handler": "tools/ticketTools.escalateTicket",
+         "inputSchema": {
+           "type": "object",
+           "properties": {
+             "ticket_id": { "type": "string" },
+             "priority": { "type": "string", "enum": ["high", "urgent", "critical"] },
+             "reason": { "type": "string" }
+           },
+           "required": ["ticket_id", "priority", "reason"]
          }
-       ]
+       }
+     ],
+     "systemPrompts": [
+       "You are a customer support analyst..."
+     ],
+     "userPrompts": [
+       "Analyze the following support tickets..."
+     ],
+     "configuration": {
+       "toolsEnabled": true,
+       "streamingEnabled": true
      }
    }
    ```
 
-5. **Update global manifest** (`public/scenarios/manifest.json`):
+4. **Create tool handlers**:
+   ```javascript
+   // src/scenarios/customer-support/tools/ticketTools.js
+   export const escalateTicket = async (params) => {
+     const { ticket_id, priority, reason } = params;
+     return {
+       success: true,
+       message: `Ticket ${ticket_id} escalated with ${priority} priority: ${reason}`,
+       data: { ticket_id, priority, reason, escalated_at: new Date().toISOString() }
+     };
+   };
+   ```
+
+5. **Update global manifest** (`src/scenarios/manifest.json`):
    ```json
    {
-     "types": ["fraud-detection", "customer-support"]
+     "version": "1.0.0",
+     "scenarios": [
+       {
+         "id": "fraud-detection",
+         "folder": "fraud-detection",
+         "configFile": "scenario.json",
+         "enabled": true
+       },
+       {
+         "id": "customer-support",
+         "folder": "customer-support",
+         "configFile": "scenario.json",
+         "enabled": true
+       }
+     ]
    }
    ```
+
+For detailed instructions, see [SCENARIO_STRUCTURE.md](SCENARIO_STRUCTURE.md).
 
 ### Supported File Formats
 - **CSV**: Comma-separated values (recommended)
@@ -446,7 +499,7 @@ window.debugToolConfig('fraud-detection')
 window.reloadToolConfig('fraud-detection')
 
 # Verify scenario structure
-cat public/scenarios/fraud-detection/scenario.json
+cat src/scenarios/fraud-detection/scenario.json
 ```
 
 ## 🔧 Troubleshooting
@@ -488,11 +541,11 @@ npm run dev -- --port 3001
 ### Dataset & Tool Issues
 
 **Dataset Loading Problems:**
-- Ensure datasets are in `public/scenarios/` directory structure
+- Ensure datasets are in `src/scenarios/` directory structure
 - Check CSV/JSON file format and UTF-8 encoding
 - Verify scenario.json files exist and are valid
 - Check browser console for specific error messages
-- Ensure file permissions allow reading
+- Ensure all file paths in scenario.json are relative and correct
 
 **Tool Integration Issues:**
 - Verify tool configuration in dataset manifest

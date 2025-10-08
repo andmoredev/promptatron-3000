@@ -30,6 +30,11 @@ const ConditionalSystemPromptSelector = ({
     setError(null)
 
     try {
+      // Ensure scenario service is initialized
+      if (!scenarioService.isInitialized) {
+        await scenarioService.initialize();
+      }
+
       // Get UI configuration for this scenario
       const uiConfig = await scenarioService.getUIConfiguration(scenario)
       setShouldShow(uiConfig.showSystemPromptSelector)

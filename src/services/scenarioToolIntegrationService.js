@@ -62,6 +62,11 @@ export class ScenarioToolIntegrationService {
         return result
       }
 
+      // Ensure scenario service is initialized
+      if (!scenarioService.isInitialized) {
+        await scenarioService.initialize();
+      }
+
       // Get scenario from service
       const scenario = await scenarioService.getScenario(scenarioId)
 
@@ -150,9 +155,9 @@ export class ScenarioToolIntegrationService {
           description: tool.description,
           inputSchema: {
             json: tool.inputSchema
-          }
-        },
-        handler: tool.handler || null
+          },
+          handler: tool.handler || null
+        }
       })),
       metadata: {
         source: 'scenario',

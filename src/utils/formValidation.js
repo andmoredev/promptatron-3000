@@ -31,10 +31,9 @@ export const validationRules = {
     }
   },
   dataset: {
-    required: true,
+    required: false,
     messages: {
-      typeRequired: 'Dataset type selection is required',
-      optionRequired: 'Dataset file selection is required',
+      typeRequired: 'Dataset selection is required',
       contentRequired: 'Dataset content not loaded'
     }
   },
@@ -141,7 +140,7 @@ function validateUserPrompt(value, rules) {
 
 /**
  * Validate dataset selection
- * @param {Object} value - The dataset object with type, option, and content
+ * @param {Object} value - The dataset object with id, name, and content
  * @param {Object} rules - Validation rules
  * @returns {Object} Validation result
  */
@@ -151,12 +150,8 @@ function validateDataset(value, rules) {
   }
 
   if (rules.required) {
-    if (!value.type) {
+    if (!value.id) {
       return { isValid: false, error: rules.messages.typeRequired }
-    }
-
-    if (!value.option) {
-      return { isValid: false, error: rules.messages.optionRequired }
     }
 
     if (!value.content) {

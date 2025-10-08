@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import HelpTooltip from './HelpTooltip'
-import { scenarioService } from '../servicoService.js'
+
 import { scenarioToolIntegrationService } from '../services/scenarioToolIntegrationService.js'
 
 const ConditionalExecutionSettings = ({
   scenario,
+  showToolSettings,
+  scenarioConfigLoaded,
   useToolsEnabled,
   onUseToolsToggle,
   maxIterations,
@@ -27,28 +29,111 @@ const ConditionalExecutionSettings = ({
   const [iterationInput, setIterationInput] = useState(maxIterations.toString())
   const [iterationValidationError, setIterationValidationError] = useState('')
 
+  console.log('[ConditionalExecutionSettings] Render - scenario:', scenario, 'showToolSettings:', showToolSettings, 'scenarioConfigLoaded:', scenarioConfigLoaded, 'shouldShowTools:', shouldShowTools);
+  console.log('[ConditionalExecutionSettings] Props received - areToolsAvailable:', areToolsAvailable);
+
   useEffect(() => {
-    checkToolSettingsVisibility()
-  }, [scenario])
+    console.log('[ConditionalExecutionSettings] useEffect triggered with:', {
+      scenario,
+      scenarioConfigLoaded,
+      showToolSettings,
+      areToolsAvailable
+    });
+
+    if (scenario && scenarioConfigLoaded) {
+      // Scenario configuration has been loaded, use the showToolSettings flag
+      console.log('[ConditionalExecutionSettings] Using loaded config - showToolSettings:', showToolSettings);
+      console.log('[ConditionalExecutionSettings] Setting shouldShowTools to:', showToolSettings);
+      setShouldShowTools(showToolSettings)
+
+      // Determine the correct execution mode by checking the scenario tools
+      if (showToolSettings) {
+        // Get the execution mode from the service without triggering loading state
+        scenarioToolIntegrationService.getToolConfigurationForScenario(scenario)
+          .then(toolConfigResult => {
+            console.log('[ConditionalExecutionSettings] Got tool config result for execution mode:', toolConfigResult.executionMode);
+            setToolExecutionMode(toolConfigResult.executionMode || 'detection')
+          })
+          .catch(error => {
+            console.error('[ConditionalExecutionSettings] Error getting tool config:', error);
+            setToolExecutionMode('detection') // fallback
+          })
+      } else {
+        setToolExecutionMode('none')
+      }
+
+      setValidationErrors([])
+      setIsLoading(false)
+      console.log('[ConditionalExecutionSettings] State updated - shouldShowTools should now be:', showToolSettings);
+    } else if (scenario && !scenarioConfigLoaded) {
+      // Scenario is selected but configuration not loaded yet
+      // Try to get a quick preview if areToolsAvailable indicates tools are present
+      console.log('[ConditionalExecutionSettings] Config not loaded, areToolsAvailable:', areToolsAvailable);
+      if (areToolsAvailable) {
+        console.log('[ConditionalExecutionSettings] Config not loaded but areToolsAvailable is true, showing tools optimistically');
+        setShouldShowTools(true)
+
+        // Get the execution mode optimistically
+        scenarioToolIntegrationService.getToolConfigurationForScenario(scenario)
+          .then(toolConfigResult => {
+            console.log('[ConditionalExecutionSettings] Optimistic tool config result:', toolConfigResult.executionMode);
+            setToolExecutionMode(toolConfigResult.executionMode || 'detection')
+          })
+          .catch(error => {
+            console.error('[ConditionalExecutionSettings] Error in optimistic tool config:', error);
+            setToolExecutionMode('detection') // fallback
+          })
+
+        setIsLoading(false)
+      } else {
+        console.log('[ConditionalExecutionSettings] Waiting for scenario config to load for:', scenario);
+        setIsLoading(true)
+      }
+    } else if (!scenario) {
+      // No scenario selected
+      console.log('[ConditionalExecutionSettings] No scenario selected');
+      setShouldShowTools(false)
+      setToolExecutionMode('none')
+      setValidationErrors([])
+      setIsLoading(false)
+    } else {
+      // Fallback to checking tool settings visibility via service
+      console.log('[ConditionalExecutionSettings] Fallback to service check');
+      checkToolSettingsVisibility()
+    }
+  }, [scenario, showToolSettings, scenarioConfigLoaded, areToolsAvailable])
 
   useEffect(() => {
     setIterationInput(maxIterations.toString())
   }, [maxIterations])
 
+  // Debug effect to track shouldShowTools changes
+  useEffect(() => {
+    console.log('[ConditionalExecutionSettings] shouldShowTools changed to:', shouldShowTools);
+  }, [shouldShowTools])
+
+  // Debug useEffect to track prop changes
+  useEffect(() => {
+    console.log('[ConditionalExecutionSettings] Props changed - scenario:', scenario, 'showToolSettings:', showToolSettings, 'scenarioConfigLoaded:', scenarioConfigLoaded);
+  }, [scenario, showToolSettings, scenarioConfigLoaded])
+
   const checkToolSettingsVisibility = async () => {
     if (!scenario) {
+      console.log('[ConditionalExecutionSettings] No scenario, hiding tools');
       setShouldShowTools(false)
       setToolExecutionMode('none')
       setValidationErrors([])
       return
     }
 
+    console.log('[ConditionalExecutionSettings] Checking tool visibility for scenario:', scenario);
     setIsLoading(true)
 
     try {
       // Get tool configuration from scenario tool integration service
       const toolConfigResult = await scenarioToolIntegrationService.getToolConfigurationForScenario(scenario)
 
+      console.log('[ConditionalExecutionSettings] Tool config result:', toolConfigResult);
       setShouldShowTools(toolConfigResult.hasToolConfig)
       setToolExecutionMode(toolConfigResult.executionMode)
 
@@ -159,23 +244,52 @@ const ConditionalExecutionSettings = ({
   }
 
   const showExecutionToggle = toolExecutionMode === 'execution'
-  const isToolsAvailable = shouldShowTools || areToolsAvailable
+
+  console.log('[ConditionalExecutionSettings] toolExecutionMode:', toolExecutionMode, 'showExecutionToggle:', showExecutionToggle);
+
+  // Show tools if scenario config is loaded and showToolSettings is true,
+  // OR if we have optimistic loading based on areToolsAvailable
+  // OR if shouldShowTools is explicitly set to true
+  const isToolsAvailable = (scenario && scenarioConfigLoaded && showToolSettings) ||
+                           (scenario && !scenarioConfigLoaded && areToolsAvailable) ||
+                           (scenario && shouldShowTools)
+
+  console.log('[ConditionalExecutionSettings] Final calculation - scenario:', scenario, 'scenarioConfigLoaded:', scenarioConfigLoaded, 'showToolSettings:', showToolSettings, 'shouldShowTools:', shouldShowTools, 'areToolsAvailable:', areToolsAvailable, 'isToolsAvailable:', isToolsAvailable);
 
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">Execution Settings</h3>
+        {/* Debug info - remove this later */}
+        <div className="text-xs text-gray-500">
+          S:{scenario ? '✓' : '✗'} C:{scenarioConfigLoaded ? '✓' : '✗'} T:{showToolSettings ? '✓' : '✗'}
+        </div>
         {isExecuting && (
           <div className="flex items-center space-x-2">
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
             <span className="text-sm text-green-600 font-medium">Executing</span>
           </div>
         )}
+        {isLoading && scenario && !scenarioConfigLoaded && (
+          <div className="flex items-center space-x-2">
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+            <span className="text-sm text-blue-600 font-medium">Loading configuration...</span>
+          </div>
+        )}
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-4">
+        {/* Debug info */}
+        <div className="text-xs text-gray-400 p-2 bg-gray-50 rounded">
+          Debug: isToolsAvailable={String(isToolsAvailable)} | shouldShowTools={String(shouldShowTools)} |
+          scenario={scenario} | configLoaded={String(scenarioConfigLoaded)} | showToolSettings={String(showToolSettings)} |
+          areToolsAvailable={String(areToolsAvailable)}
+        </div>
+
         {/* Tools Mode Toggle - only show if tools are available */}
-        {isToolsAvailable && (
+        {/* Debug: condition = {String(isToolsAvailable)} */}
+        {/* Force show tools if scenario has tools defined */}
+        {(isToolsAvailable || (scenario && showToolSettings)) && (
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <svg
@@ -242,39 +356,24 @@ const ConditionalExecutionSettings = ({
           </div>
         )}
 
-        {/* Detection Only Mode Info */}
-        {isToolsAvailable && !showExecutionToggle && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-            <div className="flex items-center space-x-2">
-              <svg className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div>
-                <span className="text-sm font-medium text-yellow-800">Detection Mode Only</span>
-                <p className="text-xs text-yellow-700 mt-1">
-                  This scenario's tools support detection only. The LLM will identify when to use tools but won't execute them.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+
 
         {/* Maximum Iterations - only show if tools are enabled and execution mode is available */}
         {useToolsEnabled && showExecutionToggle && (
-          <div className="space-y-2">
+          <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <label
                 htmlFor="max-iterations"
                 className="text-sm font-medium text-gray-700"
               >
-                Maximum Iterations
+                Max Iterations
               </label>
               <HelpTooltip
                 content="The maximum number of tool execution rounds allowed. This prevents infinite loops if the LLM gets stuck in a tool usage cycle. Each iteration includes the LLM's response and any tool executions."
                 position="right"
               />
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
               <input
                 id="max-iterations"
                 type="number"
@@ -283,7 +382,7 @@ const ConditionalExecutionSettings = ({
                 value={iterationInput}
                 onChange={handleIterationChange}
                 disabled={isExecuting}
-                className={`w-20 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
+                className={`w-16 px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
                   iterationValidationError
                     ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
                     : 'border-gray-300'
@@ -292,14 +391,10 @@ const ConditionalExecutionSettings = ({
                 }`}
                 aria-describedby="max-iterations-help"
               />
-              <span className="text-sm text-gray-500">iterations</span>
+              {iterationValidationError && (
+                <p className="text-sm text-red-600 ml-2">{iterationValidationError}</p>
+              )}
             </div>
-            {iterationValidationError && (
-              <p className="text-sm text-red-600">{iterationValidationError}</p>
-            )}
-            <p id="max-iterations-help" className="text-xs text-gray-500">
-              Range: 1-50 iterations
-            </p>
           </div>
         )}
 
@@ -413,23 +508,7 @@ const ConditionalExecutionSettings = ({
           </div>
         )}
 
-        {/* Tool Execution Mode Active Info */}
-        {useToolsEnabled && showExecutionToggle && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <div className="flex items-start space-x-2">
-              <svg className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div>
-                <h4 className="text-sm font-medium text-blue-800 mb-1">Tool Execution Mode Active</h4>
-                <p className="text-xs text-blue-700">
-                  The LLM will actually execute tools and use their results in multi-turn conversations.
-                  Determinism evaluation is automatically disabled to prevent state conflicts.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+
 
         {/* Clear Saved Settings */}
         {hasFormState && (
@@ -462,6 +541,8 @@ const ConditionalExecutionSettings = ({
 
 ConditionalExecutionSettings.propTypes = {
   scenario: PropTypes.string,
+  showToolSettings: PropTypes.bool,
+  scenarioConfigLoaded: PropTypes.bool,
   useToolsEnabled: PropTypes.bool.isRequired,
   onUseToolsToggle: PropTypes.func.isRequired,
   maxIterations: PropTypes.number.isRequired,

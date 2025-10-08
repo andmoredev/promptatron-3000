@@ -674,13 +674,6 @@ export class BedrockService {
         throw new Error(`Tool definition not found: ${toolName}`);
       }
 
-      // For fraud detection tools, use fraudToolsService
-      if (toolName.includes('fraud') || toolName.includes('account') || toolName.includes('transaction')) {
-        // Import fraudToolsService dynamically to avoid circular dependencies
-        const { fraudToolsService } = await import('./fraudToolsService.js');
-        return await fraudToolsService.executeTool(toolName, parameters);
-      }
-
       // For other tools, implement generic execution
       return {
         success: true,

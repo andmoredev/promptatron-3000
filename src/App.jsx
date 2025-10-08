@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import ModelSelector from "./components/ModelSelector";
 import ScenarioSelector from "./components/ScenarioSelector";
 import ConditionalDatasetSelector from "./components/ConditionalDatasetSelector";
@@ -41,7 +41,6 @@ import { statePersistenceService } from "./services/statePersistenceService";
 import { useSettings, useDeterminismSettings } from "./hooks/useSettings";
 import { validateForm } from "./utils/formValidation";
 import { handleError, retryWithBackoff } from "./utils/errorHandling";
-import { hasToolServiceForDatasetType } from "./utils/toolServiceMapping";
 import {
   loadFormState,
   saveFormState,
@@ -90,7 +89,7 @@ function App() {
     savedFormState.selectedScenario || ''
   );
   const [selectedDataset, setSelectedDataset] = useState(
-    savedFormState.selectedDataset
+    savedFormState.selectedDataset || { id: '', name: '', content: null }
   );
   const [systemPrompt, setSystemPrompt] = useState(savedFormState.systemPrompt);
   const [userPrompt, setUserPrompt] = useState(savedFormState.userPrompt);
@@ -176,10 +175,14 @@ function App() {
     maxIterations: 10,
     recommendedModels: []
   });
+  const [scenarioConfigLoaded, setScenarioConfigLoaded] = useState(false);
   const [availableSystemPrompts, setAvailableSystemPrompts] = useState([]);
   const [availableUserPrompts, setAvailableUserPrompts] = useState([]);
   const [selectedSystemPromptId, setSelectedSystemPromptId] = useState('');
   const [selectedUserPromptId, setSelectedUserPromptId] = useState('');
+
+  // Track if this is the initial load
+  const isInitialLoad = useRef(true);
 
   // Initialize settings system
   const {
@@ -278,12 +281,33 @@ function App() {
 
   // Helper function to check if tools are available for the current scenario
   const areToolsAvailable = () => {
-    if (selectedScenario) {
-      // Check scenario-based tool availability
-      return scenarioConfig.showToolSettings;
+    if (selectedScenario && scenarioConfigLoaded) {
+      // Check scenario-based tool availability only if config is loaded
+      const result = scenarioConfig.showToolSettings;
+      console.log('[App] areToolsAvailable - scenario:', selectedScenario, 'showToolSettings:', result, 'configLoaded:', scenarioConfigLoaded);
+      return result;
     }
-    // Fallback to dataset-based check for backward compatibility
-    return selectedDataset.type === "fraud-detection";
+
+    // During initial load, if we have a scenario but config isn't loaded yet,
+    // try to get a quick preview from the scenario service if it's initialized
+    if (selectedScenario && scenarioService.isInitialized && !scenarioConfigLoaded) {
+      try {
+        const scenarioMetadata = scenarioService.getScenarioMetadata(selectedScenario);
+        if (scenarioMetadata) {
+          // Quick check if scenario has tools without full config loading
+          const scenario = scenarioService.getScenario(selectedScenario);
+          const hasTools = scenario && scenario.tools && scenario.tools.length > 0;
+          console.log('[App] areToolsAvailable - quick check during loading:', selectedScenario, 'hasTools:', hasTools);
+          return hasTools;
+        }
+      } catch (error) {
+        console.log('[App] areToolsAvailable - error during quick check:', error.message);
+      }
+    }
+
+    // Return false if scenario config not loaded yet or no scenario selected
+    console.log('[App] areToolsAvailable - no scenario or config not loaded');
+    return false;
   };
 
   // Helper function to provide recovery suggestions for tool execution errors
@@ -371,15 +395,13 @@ function App() {
       // If scenario requires datasets, check dataset selection
       if (scenarioConfig.showDatasetSelector) {
         hasRequiredFields = hasRequiredFields &&
-          selectedDataset.type &&
-          selectedDataset.option &&
+          selectedDataset.id &&
           selectedDataset.content;
       }
     } else {
       // Fallback to dataset-based validation for backward compatibility
       hasRequiredFields = hasRequiredFields &&
-        selectedDataset.type &&
-        selectedDataset.option &&
+        selectedDataset.id &&
         selectedDataset.content;
     }
 
@@ -412,12 +434,66 @@ function App() {
       // If user changes critical settings during execution, reset execution state
       resetToolExecutionState();
     }
-  }, [selectedModel, selectedScenario, selectedDataset.type, isToolExecuting]);
+  }, [selectedModel, selectedScenario, selectedDataset.id, isToolExecuting]);
 
-  // Load scenario configuration when scenario changes
+  // Initialize scenario service on app startup
   useEffect(() => {
-    loadScenarioConfiguration();
+    const initializeScenarioService = async () => {
+      try {
+        if (!scenarioService.isInitialized) {
+          console.log('[App] Initializing scenario service...');
+          setIsLoading(true);
+          await scenarioService.initialize();
+          console.log('[App] Scenario service initialized successfully');
+          setIsLoading(false);
+        } else {
+          console.log('[App] Scenario service already initialized');
+        }
+      } catch (error) {
+        console.error('[App] Failed to initialize scenario service:', error);
+        setError(`Failed to initialize scenarios: ${error.message}`);
+        setIsLoading(false);
+      }
+    };
+
+    initializeScenarioService();
+  }, []);
+
+  // Load scenario configuration when scenario changes (only after initial load)
+  useEffect(() => {
+    if (!isInitialLoad.current && scenarioService.isInitialized && selectedScenario) {
+      // Only run this when scenario changes after initial load
+      console.log('[App] Scenario changed, reloading configuration for:', selectedScenario);
+      setScenarioConfigLoaded(false); // Reset the flag when scenario changes
+      loadScenarioConfiguration();
+    }
   }, [selectedScenario]);
+
+  // Handle initial scenario loading after service initialization (for page refresh)
+  useEffect(() => {
+    if (scenarioService.isInitialized && selectedScenario && !scenarioConfigLoaded) {
+      console.log('[App] Initial load - Loading scenario configuration after service initialization:', selectedScenario);
+      console.log('[App] Service initialized:', scenarioService.isInitialized, 'Selected scenario:', selectedScenario, 'Config loaded:', scenarioConfigLoaded);
+      loadScenarioConfiguration().then(() => {
+        // Mark that initial load is complete
+        isInitialLoad.current = false;
+        console.log('[App] Initial load complete, future scenario changes will trigger reload');
+      });
+    }
+  }, [scenarioService.isInitialized, selectedScenario, scenarioConfigLoaded]);
+
+  // Additional effect to handle the case where scenario service initializes after scenario is already selected
+  useEffect(() => {
+    // If we have a selected scenario but service wasn't initialized when it was set,
+    // and now the service is initialized, load the configuration
+    if (scenarioService.isInitialized && selectedScenario && !scenarioConfigLoaded && isInitialLoad.current) {
+      console.log('[App] Service became ready after scenario was selected, loading configuration:', selectedScenario);
+      loadScenarioConfiguration().then(() => {
+        isInitialLoad.current = false;
+        console.log('[App] Configuration loaded after service initialization');
+      });
+    }
+  }, [scenarioService.isInitialized]);
 
   const loadScenarioConfiguration = async () => {
     if (!selectedScenario) {
@@ -437,18 +513,38 @@ function App() {
       setAvailableUserPrompts([]);
       setSelectedSystemPromptId('');
       setSelectedUserPromptId('');
+      setScenarioConfigLoaded(false);
       return;
     }
 
     try {
+      // Initialize scenario service if not already initialized
+      if (!scenarioService.isInitialized) {
+        await scenarioService.initialize();
+      }
+
       // Initialize scenario tool integration service if not already initialized
       if (!scenarioToolIntegrationService.isInitialized) {
         await scenarioToolIntegrationService.initialize();
       }
 
+      // Check if scenario exists before loading configuration
+      const scenarioMetadata = scenarioService.getScenarioMetadata(selectedScenario);
+      if (!scenarioMetadata) {
+        console.warn(`Scenario ${selectedScenario} not found, clearing selection`);
+        setSelectedScenario('');
+        return;
+      }
+
       // Load scenario configuration
       const config = await scenarioService.getUIConfiguration(selectedScenario);
       setScenarioConfig(config);
+      setScenarioConfigLoaded(true);
+
+      console.log('[App] Loaded scenario configuration:', selectedScenario, config);
+      console.log('[App] showToolSettings:', config.showToolSettings);
+      console.log('[App] scenarioConfigLoaded set to true');
+      console.log('[App] Current state - selectedScenario:', selectedScenario, 'scenarioConfigLoaded will be:', true);
 
       // Load available prompts
       const systemPrompts = await scenarioService.getSystemPrompts(selectedScenario);
@@ -479,7 +575,12 @@ function App() {
 
     } catch (error) {
       console.error('Error loading scenario configuration:', error);
-      // Keep current configuration on error
+      // If scenario doesn't exist, clear the selection
+      if (error.message && error.message.includes('not found')) {
+        console.warn(`Scenario ${selectedScenario} not found, clearing selection`);
+        setSelectedScenario('');
+      }
+      // Keep current configuration on other errors
     }
   };
 
@@ -527,8 +628,7 @@ function App() {
             }
           }
         } catch (error) {
-          console.warn("Failed to get tool execution status:", error);
-          // Don't clear interval on monitoring errors, just log them
+          // Don't clear interval on monitoring errors, just continue
         }
       }, 500);
     }
@@ -543,6 +643,12 @@ function App() {
 
   // Real-time validation using enhanced validation utility
   useEffect(() => {
+    // Skip validation if scenario service is not initialized and we have a selected scenario
+    // This prevents "scenario does not exist" errors during page refresh
+    if (selectedScenario && !scenarioService.isInitialized) {
+      return;
+    }
+
     const formData = {
       selectedModel,
       systemPrompt,
@@ -568,7 +674,7 @@ function App() {
     if (statePersistenceInitialized) {
       updateUIState({ validationErrors: filteredErrors });
     }
-  }, [selectedModel, systemPrompt, userPrompt, selectedDataset, selectedScenario, scenarioConfig, touchedFields]);
+  }, [selectedModel, systemPrompt, userPrompt, selectedDataset, selectedScenario, scenarioConfig, touchedFields, scenarioService.isInitialized]);
 
   // Create debounced save function for form state persistence (silent background saving)
   const debouncedSave = useMemo(() => createDebouncedSave(1500), []);
@@ -588,7 +694,7 @@ function App() {
     };
 
     // Only save if we have some meaningful data (avoid saving empty initial state)
-    if (selectedModel || selectedScenario || systemPrompt || userPrompt || selectedDataset.type) {
+    if (selectedModel || selectedScenario || systemPrompt || userPrompt || selectedDataset.id) {
       debouncedSave(formState);
     }
   }, [
@@ -608,13 +714,11 @@ function App() {
   useEffect(() => {
     // Only trigger on initial load if we have a saved dataset selection but no content
     if (
-      savedFormState.selectedDataset.type &&
-      savedFormState.selectedDataset.option &&
+      savedFormState.selectedDataset.id &&
       !selectedDataset.content &&
-      selectedDataset.type === savedFormState.selectedDataset.type &&
-      selectedDataset.option === savedFormState.selectedDataset.option
+      selectedDataset.id === savedFormState.selectedDataset.id
     ) {
-      // The DatasetSelector component will handle reloading the content
+      // The ScenarioDatasetSelector component will handle reloading the content
       // We just need to ensure the selection is properly set
     }
   }, []); // Only run on mount
@@ -995,6 +1099,11 @@ function App() {
             let toolConfigResult;
 
             if (selectedScenario) {
+              // Ensure scenario service is initialized before getting tool configuration
+              if (!scenarioService.isInitialized) {
+                await scenarioService.initialize();
+              }
+
               // Use scenario-based tool configuration
               toolConfigResult = await scenarioToolIntegrationService.getToolConfigurationForScenario(selectedScenario);
             } else {
@@ -1011,30 +1120,15 @@ function App() {
               toolConfig = toolConfigResult.toolConfig;
 
               // Show warnings if any
-              if (toolConfigResult.warnings?.length > 0) {
-                console.warn(
-                  "Tool configuration warnings:",
-                  toolConfigResult.warnings
-                );
-              }
+
             } else {
-              // Check if this is an error condition or expected behavior
-              if (toolConfigResult.errors?.length > 0) {
-                console.warn(
-                  "Tool configuration errors:",
-                  toolConfigResult.errors
-                );
-              }
+
 
               if (toolConfigResult.gracefulDegradation) {
                 // Using graceful degradation - analysis will proceed without tools
               }
             }
           } catch (toolError) {
-            console.warn(
-              "Failed to load tool configuration, proceeding without tools:",
-              toolError.message
-            );
 
             // Create a fallback status for error display
             toolConfigurationStatus = {
@@ -1054,22 +1148,7 @@ function App() {
           let streamingMetrics = null;
           let workflowData = null;
 
-          // Debug logging for execution path
-          console.log("🔧 Execution Path Debug:", {
-            useToolsEnabled,
-            hasToolConfig: !!toolConfig,
-            toolCount: toolConfig?.tools?.length || 0,
-            streamingEnabled,
-            executionPath:
-              useToolsEnabled &&
-              toolConfig &&
-              toolConfig.tools &&
-              toolConfig.tools.length > 0
-                ? "tool_execution"
-                : streamingEnabled
-                ? "tool_detection_streaming"
-                : "tool_detection_standard",
-          });
+
 
           // Branch based on tool execution mode
           if (
@@ -1117,7 +1196,7 @@ function App() {
                 {
                   maxIterations: maxIterations,
                   executionId: executionId,
-                  datasetType: selectedDataset.type,
+                  datasetType: selectedDataset.id,
                   onStreamUpdate: (update) => {
                     // Update streaming content with workflow progress
                     setStreamingContent(prevContent => {
@@ -1241,10 +1320,6 @@ function App() {
                     shouldPreservePartialResults = true;
                   }
                 } catch (statusError) {
-                  console.warn(
-                    "Failed to get partial execution status:",
-                    statusError
-                  );
                 }
               }
 
@@ -1481,9 +1556,7 @@ function App() {
             },
           });
 
-          if (!finalUpdateSuccess) {
-            console.warn("Failed to update output manager with final response");
-          }
+
 
           return {
             id: testId,
@@ -1492,8 +1565,8 @@ function App() {
             userPrompt: userPrompt,
             prompt: userPrompt, // Legacy field for backward compatibility
             scenarioId: selectedScenario || null,
-            datasetType: selectedDataset.type,
-            datasetOption: selectedDataset.option,
+            datasetType: selectedDataset.id,
+            datasetName: selectedDataset.name,
             datasetContent: selectedDataset.content, // Include dataset content for determinism evaluation
             response: response.text,
             usage: response.usage,
@@ -1558,7 +1631,7 @@ function App() {
         component: "App",
         action: "runTest",
         model: selectedModel,
-        datasetType: selectedDataset.type,
+        datasetType: selectedDataset.id,
         systemPromptLength: systemPrompt.length,
         userPromptLength: userPrompt.length,
         toolExecutionEnabled: useToolsEnabled,
@@ -1570,7 +1643,7 @@ function App() {
         component: "App",
         action: "runTest",
         model: selectedModel,
-        datasetType: selectedDataset.type,
+        datasetType: selectedDataset.id,
         systemPromptLength: systemPrompt.length,
         userPromptLength: userPrompt.length,
         toolExecutionEnabled: useToolsEnabled,
@@ -1626,8 +1699,8 @@ function App() {
   const handleLoadFromHistory = (historyItem) => {
     setSelectedModel(historyItem.modelId);
     setSelectedDataset({
-      type: historyItem.datasetType,
-      option: historyItem.datasetOption,
+      id: historyItem.datasetType,
+      name: historyItem.datasetName || historyItem.datasetType,
       content: null, // Will be loaded when dataset selector processes this
     });
 
@@ -1724,7 +1797,42 @@ function App() {
 
     // Clear dataset selection when switching scenarios
     if (scenarioId) {
-      setSelectedDataset({ type: "", option: "", content: null });
+      setSelectedDataset({ id: "", name: "", content: null });
+    }
+  };
+
+  const handleRefreshSeedData = async (scenarioId) => {
+    try {
+      // Initialize scenario service if not already done
+      if (!scenarioService.isInitialized) {
+        await scenarioService.initialize();
+      }
+
+      // Refresh the specific scenario's seed data
+      const refreshResult = await scenarioService.refreshScenarioSeedData(scenarioId);
+
+      if (!refreshResult.success) {
+        throw new Error(refreshResult.message);
+      }
+
+      // If we have a selected dataset, reload its content
+      if (selectedDataset.id) {
+        try {
+          const refreshedContent = await scenarioService.getDatasetContent(scenarioId, selectedDataset.id);
+          setSelectedDataset(prev => ({
+            ...prev,
+            content: refreshedContent
+          }));
+        } catch (datasetError) {
+          console.warn('Could not refresh dataset content:', datasetError);
+          // Don't fail the entire refresh if dataset reload fails
+        }
+      }
+
+      // Reload scenario configuration to reflect any changes
+      await loadScenarioConfiguration();
+    } catch (error) {
+      setError(`Failed to refresh seed data: ${error.message}`);
     }
   };
 
@@ -1918,7 +2026,7 @@ function App() {
       // Reset form to default values
       setSelectedModel("");
       setSelectedScenario("");
-      setSelectedDataset({ type: "", option: "", content: null });
+      setSelectedDataset({ id: "", name: "", content: null });
       setSystemPrompt("");
       setUserPrompt("");
       setSelectedSystemPromptId("");
@@ -1982,46 +2090,7 @@ function App() {
               <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
                 {/* Header with Robot */}
                 <div className="text-center mb-3 relative">
-                  {/* Chad Reveal Button - positioned in top right */}
-                  {shouldShowRevealButton() && (
-                    <div className="absolute top-0 right-0 z-10">
-                      <ChadRevealButton
-                        onReveal={revealChad}
-                        isRevealed={isChadRevealed}
-                        isRevealing={isChadRevealing}
-                        className="text-xs sm:text-sm"
-                      />
-                    </div>
-                  )}
-
                   <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
-                    {!isChadRevealed && (
-                      <div className="flex-shrink-0 order-2 sm:order-1">
-                        <RobotGraphicContainer
-                          appState={{
-                            isLoading,
-                            error,
-                            progressStatus,
-                            progressValue,
-                            testResults,
-                            isStreaming,
-                            streamingContent,
-                            streamingProgress,
-                            isRequestPending,
-                            streamingError,
-                          }}
-                          size="md"
-                          className="mx-auto"
-                          enableDebug={isRobotDebugEnabled}
-                          chadState={chadRevealState}
-                          options={{
-                            talkingDuration: 2000,
-                            debounceDelay: 100,
-                            enableTransitions: true,
-                          }}
-                        />
-                      </div>
-                    )}
                     <div className="order-1 sm:order-2">
                       <h1 className="text-2xl md:text-3xl font-bold text-primary-700 mb-1">
                         Promptatron 3000
@@ -2126,14 +2195,17 @@ function App() {
                         onScenarioSelect={handleScenarioSelect}
                         validationError={validationErrors.scenario}
                         onCreateScenario={handleOpenScenarioBuilder}
+                        onRefreshSeedData={handleRefreshSeedData}
                       />
 
-                      <ConditionalDatasetSelector
-                        scenario={selectedScenario}
-                        selectedDataset={selectedDataset}
-                        onDatasetSelect={handleDatasetSelect}
-                        validationError={validationErrors.dataset}
-                      />
+                      {scenarioConfig.showDatasetSelector && (
+                        <ConditionalDatasetSelector
+                          scenario={selectedScenario}
+                          selectedDataset={selectedDataset}
+                          onDatasetSelect={handleDatasetSelect}
+                          validationError={validationErrors.dataset}
+                        />
+                      )}
 
                       <PromptEditor
                         systemPrompt={systemPrompt}
@@ -2148,7 +2220,10 @@ function App() {
 
                       {/* Execution Settings */}
                       <ConditionalExecutionSettings
+                        key={`${selectedScenario}-${scenarioConfigLoaded}`}
                         scenario={selectedScenario}
+                        showToolSettings={scenarioConfig.showToolSettings}
+                        scenarioConfigLoaded={scenarioConfigLoaded}
                         useToolsEnabled={useToolsEnabled}
                         onUseToolsToggle={handleUseToolsToggle}
                         maxIterations={maxIterations}
@@ -2419,10 +2494,6 @@ function App() {
                               );
                             }
                           } else {
-                            console.warn(
-                              "Cannot save determinism evaluation - missing testResults or grade:",
-                              { testResults: !!testResults, grade: !!grade }
-                            );
                           }
                         }}
                         isStreaming={isStreaming}
@@ -2534,7 +2605,7 @@ function App() {
 
           {/* Floating Chad Companion */}
           <FloatingChad
-            isVisible={isChadRevealed}
+            isVisible={true}
             currentState={
               error || streamingError
                 ? 'error'

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import HelpTooltip from './HelpTooltip';
 import { datasetToolIntegrationService } from '../services/datasetToolIntegrationService.js';
-import { getToolServiceForDatasetType } from '../utils/toolServiceMapping.js';
 import { retryWithBackoff } from '../utils/errorHandling.js';
 
 const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) => {
@@ -169,62 +168,7 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
     setOperationProgress(null);
   };
 
-  const initializeToolServiceWithRetry = async (type) => {
-    const toolService = getToolServiceForDatasetType(type);
-    if (!toolService || typeof toolService.initialize !== 'function') {
-      return { success: false, message: `No tool service available for ${type}`, service: null };
-    }
 
-    try {
-      const result = await retryWithBackoff(
-        async () => {
-          // Get the tool configuration for this dataset type
-          console.log(`Getting tool configuration for ${type}...`);
-          let toolConfig = null;
-          try {
-            const toolConfigResult = await datasetToolIntegrationService.getToolConfigurationForDataset({ type });
-            console.log(`Tool config result for ${type}:`, { hasToolConfig: toolConfigResult.hasToolConfig, fallbackMode: toolConfigResult.fallbackMode });
-            if (toolConfigResult.hasToolConfig) {
-              toolConfig = toolConfigResult.toolConfig;
-              console.log(`Tool config loaded for ${type}, tools count:`, toolConfig?.tools?.length || 0);
-            } else {
-              console.log(`No tool config available for ${type}:`, toolConfigResult.message);
-            }
-          } catch (configError) {
-            console.warn(`Failed to get tool configuration for ${type}:`, configError);
-            throw new Error(`Tool configuration loading failed: ${configError.message}`);
-          }
-
-          // Initialize the tool service with the configuration
-          if (toolConfig) {
-            console.log(`Initializing ${type} tool service with config...`);
-            await toolService.initialize(toolConfig);
-            console.log(`${type} tool service initialized successfully`);
-          } else {
-            throw new Error(`No tool configuration available for ${type}`);
-          }
-
-          return { success: true, message: `Tool service initialized for ${type}`, service: toolService };
-        },
-        {
-          maxRetries: 2,
-          baseDelay: 1000,
-          onRetry: (error, attempt, delay) => {
-            console.log(`Retrying tool service initialization for ${type} (attempt ${attempt}, delay: ${delay}ms):`, error.message);
-            // Don't show error messages during retry attempts - only log to console
-          }
-        }
-      );
-      return result;
-    } catch (error) {
-      return {
-        success: false,
-        message: `Tool service initialization failed after retries: ${error.message}`,
-        service: null,
-        originalError: error
-      };
-    }
-  };
 
   const handleTypeChange = async (type) => {
     // First, clear the current selection
@@ -492,135 +436,20 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
   };
 
   const handleResetData = async (retryCount = 0) => {
-    const maxRetries = 2;
-    const originalContent = selectedDataset.content; // Store current state for fallback
-
     try {
       setIsResettingData(true);
       setError(null);
       setSuccessMessage(null);
       clearOperationProgress();
 
-      if (retryCount === 0) {
-        showOperationProgress('Resetting...');
-      }
-
-      // Validate that we have the necessary information
-      if (!selectedDataset.type) {
-        throw new Error('No dataset type selected for reset operation');
-      }
-
-      if (!datasetManifest || !datasetManifest.seedDataConfig) {
-        throw new Error('Dataset manifest or seed data configuration is missing');
-      }
-
-      // Get tool service with enhanced validation
-      const toolService = getToolServiceForDatasetType(selectedDataset.type);
-      if (!toolService) {
-        throw new Error(`No tool service available for dataset type: ${selectedDataset.type}. Reset functionality requires a tool service.`);
-      }
-
-      if (typeof toolService.resetDemoData !== 'function') {
-        throw new Error(`Reset functionality is not implemented for dataset type: ${selectedDataset.type}. The tool service does not support data reset.`);
-      }
-
-      // Attempt to reset data with retry logic
-      try {
-        console.log(`Attempting to reset data for ${selectedDataset.type} (attempt ${retryCount + 1}/${maxRetries + 1})`);
-
-        if (retryCount === 0) {
-          showOperationProgress('Resetting...');
-        } else {
-          showOperationProgress(`Retrying...`);
-        }
-
-        await retryWithBackoff(
-          async () => {
-            await toolService.resetDemoData();
-          },
-          {
-            maxRetries: 1, // We handle outer retry logic ourselves
-            baseDelay: 1000,
-            onRetry: (error, attempt, delay) => {
-              console.log(`Retrying reset operation (attempt ${attempt}, delay: ${delay}ms)`);
-              showOperationProgress('Retrying...');
-            }
-          }
-        );
-
-        console.log(`Data reset successful for ${selectedDataset.type}`);
-        showOperationProgress('Reloading...');
-      } catch (resetError) {
-        // Check if this is a retryable error
-        const isRetryable = resetError.message.includes('network') ||
-          resetError.message.includes('timeout') ||
-          resetError.message.includes('connection') ||
-          resetError.message.includes('service unavailable');
-
-        if (isRetryable && retryCount < maxRetries) {
-          console.log(`Reset operation failed, retrying... (attempt ${retryCount + 1}/${maxRetries})`);
-          setError(`Reset operation failed, retrying... (attempt ${retryCount + 1}/${maxRetries})`);
-
-          // Wait before retry with exponential backoff
-          const delay = Math.pow(2, retryCount) * 1500;
-          await new Promise(resolve => setTimeout(resolve, delay));
-
-          return handleResetData(retryCount + 1);
-        }
-
-        // Not retryable or max retries reached
-        throw new Error(`Reset operation failed: ${resetError.message}`);
-      }
-
-      // Reload the seed data for display
-      try {
-        console.log(`Reloading seed data after reset for ${selectedDataset.type}`);
-        await loadSeedData(selectedDataset.type, datasetManifest);
-      } catch (reloadError) {
-        console.warn('Failed to reload seed data after reset:', reloadError);
-        // Don't fail the entire operation if reload fails
-        setError(`Data was reset successfully, but failed to reload display: ${reloadError.message}. Please refresh the page.`);
-        setTimeout(() => setError(null), 8000);
-        return;
-      }
-
-      // Clear progress and show success feedback
-      clearOperationProgress();
-      showSuccessMessage(`Data reset complete`, 2000);
+      // Since we've migrated to handler-based execution, the reset functionality
+      // is no longer available through legacy tool services
+      throw new Error('Reset functionality is temporarily unavailable during the migration to handler-based tool execution. Please refresh the page to reload the dataset.');
 
     } catch (err) {
       console.error('Error resetting data:', err);
       clearOperationProgress();
-
-      // Provide specific error messages based on error type
-      let userFriendlyMessage = `Failed to reset data: ${err.message}`;
-
-      if (err.message.includes('No tool service available')) {
-        userFriendlyMessage = `Reset functionality is not available for this dataset type. The ${selectedDataset.type} dataset does not have an associated tool service.`;
-      } else if (err.message.includes('not implemented')) {
-        userFriendlyMessage = `Reset functionality is not supported for this dataset type. Please contact support if you need this feature.`;
-      } else if (err.message.includes('network') || err.message.includes('connection')) {
-        userFriendlyMessage = `Network error during reset operation. Please check your connection and try again.`;
-      } else if (err.message.includes('timeout')) {
-        userFriendlyMessage = `Reset operation timed out. Please try again or contact support if the issue persists.`;
-      } else if (err.message.includes('service unavailable')) {
-        userFriendlyMessage = `The reset service is temporarily unavailable. Please try again in a few minutes.`;
-      }
-
-      setError(userFriendlyMessage);
-
-      // Maintain current state when reset fails - don't change the dataset content
-      console.log('Maintaining current dataset state due to reset failure');
-
-      // Offer retry option for certain error types
-      if (err.message.includes('network') || err.message.includes('timeout') || err.message.includes('service unavailable')) {
-        setTimeout(() => {
-          if (retryCount < maxRetries) {
-            setError(`${userFriendlyMessage} Click the reset button to try again.`);
-          }
-        }, 3000);
-      }
-
+      setError(err.message);
     } finally {
       setIsResettingData(false);
       clearOperationProgress();
@@ -646,7 +475,7 @@ const DatasetSelector = ({ selectedDataset, onDatasetSelect, validationError }) 
       <div className="flex items-center space-x-2 mb-4">
         <h3 className="text-lg font-semibold text-gray-900">Select Dataset</h3>
         <HelpTooltip
-          content="Choose a scenario and specific dataset file. Scenarios are organized in the public/scenarios/ folder with their own datasets. You can add your own scenarios and CSV files to test with custom data."
+          content="Choose a scenario and specific dataset file. Scenarios are organized in the src/scenarios/ folder with their own datasets. You can add your own scenarios and CSV files to test with custom data."
           position="right"
         />
       </div>

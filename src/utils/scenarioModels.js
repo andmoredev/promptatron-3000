@@ -170,23 +170,6 @@ export function validateScenario(scenarioData) {
       }
     }
 
-    // Generate warnings for empty optional sections
-    if (!scenarioData.datasets || scenarioData.datasets.length === 0) {
-      warnings.push('No datasets defined - users will not be able to select datasets for this scenario');
-    }
-
-    if (!scenarioData.systemPrompts || scenarioData.systemPrompts.length === 0) {
-      warnings.push('No system prompts defined - users will need to enter custom system prompts');
-    }
-
-    if (!scenarioData.userPrompts || scenarioData.userPrompts.length === 0) {
-      warnings.push('No user prompts defined - users will need to enter custom user prompts');
-    }
-
-    if (!scenarioData.tools || scenarioData.tools.length === 0) {
-      warnings.push('No tools defined - this scenario will not support tool usage');
-    }
-
     // Extract metadata
     const metadata = extractScenarioMetadata(scenarioData);
 
@@ -448,6 +431,7 @@ export function extractScenarioMetadata(scenarioData) {
     // Tool information
     hasTools: !!(scenarioData.tools && scenarioData.tools.length > 0),
     toolCount: scenarioData.tools ? scenarioData.tools.length : 0,
+    toolNames: scenarioData.tools ? scenarioData.tools.map(tool => tool.name) : [],
     hasExecutableTools: scenarioData.tools ? scenarioData.tools.some(tool => tool.handler) : false,
 
     // Configuration information
@@ -461,6 +445,14 @@ export function extractScenarioMetadata(scenarioData) {
     // Example information
     hasExamples: !!(scenarioData.examples && scenarioData.examples.length > 0),
     exampleCount: scenarioData.examples ? scenarioData.examples.length : 0,
+
+    // Seed data information (only scenarios with explicit seed data configuration can be refreshed)
+    hasSeedData: !!(
+      scenarioData.seedData ||
+      (scenarioData.datasets && scenarioData.datasets.some(dataset =>
+        dataset.seedData || dataset.allowReset || (dataset.file && dataset.file.includes('seed'))
+      ))
+    ),
 
     // Computed properties
     isComplete: !!(scenarioData.id && scenarioData.name && scenarioData.description),
@@ -632,7 +624,7 @@ export function createScenarioSchema() {
         }
       }
     }
-  }
+  };
 }
 
 /**
