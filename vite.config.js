@@ -9,6 +9,8 @@ export default defineConfig({
   },
   define: {
     global: 'globalThis',
+    // Expose MOMENTO_API_KEY to the client
+    'process.env.MOMENTO_API_KEY': JSON.stringify(process.env.MOMENTO_API_KEY),
   },
   resolve: {
     alias: {
@@ -16,7 +18,7 @@ export default defineConfig({
     }
   },
   optimizeDeps: {
-    include: ['@aws-sdk/client-bedrock-runtime', '@aws-sdk/client-bedrock']
+    include: ['@aws-sdk/client-bedrock-runtime', '@aws-sdk/client-bedrock', '@gomomento/sdk-web']
   },
   build: {
     chunkSizeWarningLimit: 1600,

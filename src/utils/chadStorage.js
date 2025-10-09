@@ -5,7 +5,9 @@
  * and version management for future migrations.
  */
 
-const CHAD_STORAGE_KEY = 'promptatron_chad_reveal'
+import { generateStorageKey } from './momentoConfig.js';
+
+const CHAD_STORAGE_KEY = generateStorageKey('chad_reveal')
 const CURRENT_VERSION = '1.0'
 
 /**

@@ -1,7 +1,27 @@
 {
   "id": "shipping-logistics",
   "name": "Shipping Logistics",
-  "description": "Data for acting on shipping logistic dilemmas",
+  "description": "Enterprise-grade shipping logistics triage system for handling delivery exceptions and optimizing customer service. Implements safety-first decision framework with proper escalation paths and audit trails.",
+  "workflow": {
+    "decision_framework": "Safety → Compliance → SLA → Cost optimization",
+    "tool_usage_order": [
+      "1. Overview (optional): listOrders to identify orders needing attention",
+      "2. Information Gathering: getCarrierStatus, getPackageContents, getCustomerTier, getSLA",
+      "3. Cost Analysis: getExpediteQuote (if considering expedited shipping)",
+      "4. Action Execution: expediteShipment, holdForPickup, escalateToManager, or noActionRequired"
+    ],
+    "safety_rules": [
+      "Never expedite hazardous materials - always use holdForPickup",
+      "Perishable goods with temperature control issues require immediate action",
+      "VIP customers receive priority handling but safety rules still apply"
+    ],
+    "best_practices": [
+      "Gather only the information needed for decision making",
+      "Always explain reasoning step-by-step",
+      "Use idempotency keys to prevent duplicate operations",
+      "Document decisions with clear justification"
+    ]
+  },
   "datasets": [],
   "toolConf": {
     "enabled": true,
@@ -15,7 +35,7 @@
     {
       "id": "triage-agent",
       "name": "Triage Agent",
-      "content": "You are a shipping exception triage agent for an e-commerce logistics platform.\n\nYour job is to analyze delivery exceptions and take the appropriate action based on strict priority directives.\n\nPRIORITY DIRECTIVES (in order):\n1. SAFETY: Never expedite hazardous materials. If hazmat is involved, always hold for pickup.\n2. COMPLIANCE: Perishable goods must maintain cold chain integrity. If refrigeration is compromised, escalate immediately.\n3. SLA: Honor delivery promises to maintain customer trust, especially for high-value customers.\n4. COST: Minimize costs, but only after safety, compliance, and SLA are satisfied.\n\nDECISION FRAMEWORK:\n- If package contains hazmat → hold for pickup (never expedite)\n- If package is perishable AND customer is VIP AND SLA is at risk → expedite overnight\n- If none of the above apply → take no action\n\nTOOL USAGE:\n- Use tools to gather ONLY the information needed to make a decision\n- Do not fetch data you don't need\n- Always explain your reasoning step-by-step\n\nOUTPUT FORMAT:\n1. State what you know from the initial context\n2. Identify what you need to learn\n3. Call tools to fill gaps\n4. Apply the decision framework\n5. Execute the appropriate action tool\n6. Explain your final decision and reasoning\n\nIMPORTANT: You must call one of the action tools to complete your task:\n- expediteShipment (for urgent delivery needs)\n- holdForPickup (for hazmat or delivery failures)\n- escalateToManager (when uncertain)\n- noActionRequired (when standard process is sufficient)"
+      "content": "You are a shipping exception triage agent for an e-commerce logistics platform.\n\nYour job is to analyze delivery exceptions and take the appropriate action based on strict priority directives.\n\nPRIORITY DIRECTIVES (in order):\n1. SAFETY: Never expedite hazardous materials. If hazmat is involved, always hold for pickup.\n2. COMPLIANCE: Perishable goods must maintain cold chain integrity. If refrigeration is compromised, escalate immediately.\n3. SLA: Honor delivery promises to maintain customer trust, especially for high-value customers.\n4. COST: Minimize costs, but only after safety, compliance, and SLA are satisfied.\n\nDECISION FRAMEWORK:\n- If package contains hazmat → hold for pickup (never expedite)\n- If package is perishable AND customer is VIP AND SLA is at risk → expedite overnight\n- If none of the above apply → take no action\n\nTOOL USAGE:\n- Use listOrders to get an overview of multiple orders needing attention (optional)\n- Use tools to gather ONLY the information needed to make a decision\n- Do not fetch data you don't need\n- Always explain your reasoning step-by-step\n\nOUTPUT FORMAT:\n1. State what you know from the initial context\n2. Identify what you need to learn\n3. Call tools to fill gaps\n4. Apply the decision framework\n5. Execute the appropriate action tool\n6. Explain your final decision and reasoning\n\nIMPORTANT: You must call one of the action tools to complete your task:\n- expediteShipment (for urgent delivery needs)\n- holdForPickup (for hazmat or delivery failures)\n- escalateToManager (when uncertain)\n- noActionRequired (when standard process is sufficient)"
     }
   ],
   "userPrompts": [
@@ -28,202 +48,520 @@
   "tools": [
     {
       "name": "getCarrierStatus",
-      "description": "Get the current carrier status and exception notes for an order",
+      "description": "Retrieve current carrier status and delivery exception details for an order. Use this tool to understand delivery problems, check tracking status, and determine if intervention is needed. Essential for diagnosing delivery failures and assessing carrier performance.",
       "handler": "tools/carrierStatus.getCarrierStatus",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "orderId": {
+          "order_id": {
             "type": "string",
-            "description": "Order ID to query"
+            "description": "Order ID to query - format: one letter followed by 3-6 digits",
+            "pattern": "^[A-Z][0-9]{3,6}$",
+            "examples": ["B456", "A1234", "Z123456"]
+          },
+          "meta": {
+            "type": "object",
+            "description": "Optional metadata for read operations",
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "description": "Unique request identifier for tracking and debugging",
+                "pattern": "^req_[a-zA-Z0-9]{6,12}$",
+                "examples": ["req_123456"]
+              },
+              "if_none_match": {
+                "type": "string",
+                "description": "ETag value for conditional requests - returns 304 if content unchanged",
+                "examples": ["\"1696089600-1234\""]
+              },
+              "cache_control": {
+                "type": "string",
+                "description": "Cache control directives",
+                "enum": ["no-cache", "max-age=300", "must-revalidate"],
+                "examples": ["max-age=300"]
+              }
+            },
+            "additionalProperties": false
           }
         },
-        "required": [
-          "orderId"
-        ]
+        "required": ["order_id"],
+        "additionalProperties": false
       }
     },
     {
       "name": "getPackageContents",
-      "description": "Get contents and hazard classification for a package",
+      "description": "Retrieve package contents and safety classifications including hazmat, perishable, and temperature control requirements. Critical for safety decisions - use this tool to identify hazardous materials that cannot be expedited and perishable goods that need special handling.",
       "handler": "tools/packageContents.getPackageContents",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "orderId": {
+          "order_id": {
             "type": "string",
-            "description": "Order ID to query"
+            "description": "Order ID to query - format: one letter followed by 3-6 digits",
+            "pattern": "^[A-Z][0-9]{3,6}$",
+            "examples": ["B456", "A1234", "Z123456"]
+          },
+          "meta": {
+            "type": "object",
+            "description": "Optional metadata for read operations",
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "description": "Unique request identifier for tracking and debugging",
+                "pattern": "^req_[a-zA-Z0-9]{6,12}$",
+                "examples": ["req_123456"]
+              },
+              "if_none_match": {
+                "type": "string",
+                "description": "ETag value for conditional requests - returns 304 if content unchanged",
+                "examples": ["\"1696089600-1234\""]
+              },
+              "cache_control": {
+                "type": "string",
+                "description": "Cache control directives",
+                "enum": ["no-cache", "max-age=300", "must-revalidate"],
+                "examples": ["max-age=300"]
+              }
+            },
+            "additionalProperties": false
           }
         },
-        "required": [
-          "orderId"
-        ]
+        "required": ["order_id"],
+        "additionalProperties": false
       }
     },
     {
       "name": "getCustomerTier",
-      "description": "Get customer tier and account standing",
+      "description": "Retrieve customer tier (VIP, premium, standard) and account value to prioritize service decisions. VIP customers receive expedited handling and enhanced service recovery. Use this tool to determine appropriate service level and escalation priority.",
       "handler": "tools/customerTier.getCustomerTier",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "orderId": {
+          "order_id": {
             "type": "string",
-            "description": "Order ID to query"
+            "description": "Order ID to query - format: one letter followed by 3-6 digits",
+            "pattern": "^[A-Z][0-9]{3,6}$",
+            "examples": ["B456", "A1234", "Z123456"]
+          },
+          "meta": {
+            "type": "object",
+            "description": "Optional metadata for read operations",
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "description": "Unique request identifier for tracking and debugging",
+                "pattern": "^req_[a-zA-Z0-9]{6,12}$",
+                "examples": ["req_123456"]
+              },
+              "if_none_match": {
+                "type": "string",
+                "description": "ETag value for conditional requests - returns 304 if content unchanged",
+                "examples": ["\"1696089600-1234\""]
+              },
+              "cache_control": {
+                "type": "string",
+                "description": "Cache control directives",
+                "enum": ["no-cache", "max-age=300", "must-revalidate"],
+                "examples": ["max-age=300"]
+              }
+            },
+            "additionalProperties": false
           }
         },
-        "required": [
-          "orderId"
-        ]
+        "required": ["order_id"],
+        "additionalProperties": false
       }
     },
     {
       "name": "getSLA",
-      "description": "Get SLA deadline and penalty information",
+      "description": "Retrieve service level agreement deadlines, delivery promises, and penalty costs for missed deliveries. Use this tool to assess time pressure and financial impact of delivery delays. Critical for deciding when expedited shipping is justified to avoid SLA violations.",
       "handler": "tools/slaInfo.getSLA",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "orderId": {
+          "order_id": {
             "type": "string",
-            "description": "Order ID to query"
+            "description": "Order ID to query - format: one letter followed by 3-6 digits",
+            "pattern": "^[A-Z][0-9]{3,6}$",
+            "examples": ["B456", "A1234", "Z123456"]
+          },
+          "meta": {
+            "type": "object",
+            "description": "Optional metadata for read operations",
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "description": "Unique request identifier for tracking and debugging",
+                "pattern": "^req_[a-zA-Z0-9]{6,12}$",
+                "examples": ["req_123456"]
+              },
+              "if_none_match": {
+                "type": "string",
+                "description": "ETag value for conditional requests - returns 304 if content unchanged",
+                "examples": ["\"1696089600-1234\""]
+              },
+              "cache_control": {
+                "type": "string",
+                "description": "Cache control directives",
+                "enum": ["no-cache", "max-age=300", "must-revalidate"],
+                "examples": ["max-age=300"]
+              }
+            },
+            "additionalProperties": false
           }
         },
-        "required": [
-          "orderId"
-        ]
+        "required": ["order_id"],
+        "additionalProperties": false
       }
     },
     {
       "name": "getExpediteQuote",
-      "description": "Get cost and ETA for expedited shipping options",
+      "description": "Get pricing and delivery estimates for overnight or same-day expedited shipping options. Use this tool before executing expediteShipment to understand costs and delivery timeframes. Helps evaluate if expedited shipping cost is justified by SLA penalties or customer value.",
       "handler": "tools/expediteQuote.getExpediteQuote",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "orderId": {
+          "order_id": {
             "type": "string",
-            "description": "Order ID to query"
+            "description": "Order ID to query - format: one letter followed by 3-6 digits",
+            "pattern": "^[A-Z][0-9]{3,6}$",
+            "examples": ["B456", "A1234", "Z123456"]
           },
           "speed": {
             "type": "string",
-            "enum": [
-              "overnight",
-              "same-day"
-            ],
-            "description": "Expedite speed: overnight (next business day) or same-day (within hours)"
+            "enum": ["overnight", "same_day"],
+            "description": "Expedite speed option",
+            "examples": ["overnight"]
+          },
+          "meta": {
+            "type": "object",
+            "description": "Optional metadata for read operations",
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "description": "Unique request identifier for tracking and debugging",
+                "pattern": "^req_[a-zA-Z0-9]{6,12}$",
+                "examples": ["req_123456"]
+              },
+              "if_none_match": {
+                "type": "string",
+                "description": "ETag value for conditional requests - returns 304 if content unchanged",
+                "examples": ["\"1696089600-1234\""]
+              },
+              "cache_control": {
+                "type": "string",
+                "description": "Cache control directives",
+                "enum": ["no-cache", "max-age=300", "must-revalidate"],
+                "examples": ["max-age=300"]
+              }
+            },
+            "additionalProperties": false
           }
         },
-        "required": [
-          "orderId",
-          "speed"
-        ]
+        "required": ["order_id", "speed"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "listOrders",
+      "description": "List orders with delivery exceptions or specific status filters. Use this tool to get an overview of multiple orders that need attention, identify patterns in delivery issues, or find orders matching specific criteria. Supports pagination for large result sets.",
+      "handler": "tools/listOrders.listOrders",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Optional filters to narrow the order list",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["delivery_exception", "in_transit", "delivered", "held", "expedited"],
+                "description": "Filter by order status",
+                "examples": ["delivery_exception"]
+              },
+              "customer_tier": {
+                "type": "string",
+                "enum": ["vip", "premium", "standard"],
+                "description": "Filter by customer tier",
+                "examples": ["vip"]
+              },
+              "has_hazmat": {
+                "type": "boolean",
+                "description": "Filter orders containing hazardous materials",
+                "examples": [true]
+              },
+              "is_perishable": {
+                "type": "boolean",
+                "description": "Filter orders containing perishable goods",
+                "examples": [true]
+              },
+              "sla_at_risk": {
+                "type": "boolean",
+                "description": "Filter orders with SLA violations risk",
+                "examples": [true]
+              },
+              "date_range": {
+                "type": "object",
+                "description": "Filter by date range",
+                "properties": {
+                  "start": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Start date (YYYY-MM-DD)",
+                    "examples": ["2025-09-30"]
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "End date (YYYY-MM-DD)",
+                    "examples": ["2025-10-01"]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "meta": {
+            "type": "object",
+            "description": "Optional metadata for list operations",
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "description": "Unique request identifier for tracking and debugging",
+                "pattern": "^req_[a-zA-Z0-9]{6,12}$",
+                "examples": ["req_123456"]
+              },
+              "if_none_match": {
+                "type": "string",
+                "description": "ETag value for conditional requests - returns 304 if content unchanged",
+                "examples": ["\"1696089600-1234\""]
+              },
+              "cache_control": {
+                "type": "string",
+                "description": "Cache control directives",
+                "enum": ["no-cache", "max-age=300", "must-revalidate"],
+                "examples": ["max-age=300"]
+              },
+              "paging": {
+                "type": "object",
+                "description": "Pagination parameters for large result sets",
+                "properties": {
+                  "cursor": {
+                    "type": "string",
+                    "description": "Pagination cursor for next page",
+                    "examples": ["eyJpZCI6MTIzfQ=="]
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "default": 20,
+                    "examples": [20]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [],
+        "additionalProperties": false
       }
     },
     {
       "name": "expediteShipment",
-      "description": "Execute expedited shipping for an order. Use when perishable goods need faster delivery or SLA is at risk.",
+      "description": "Execute expedited overnight or same-day shipping to meet SLA commitments or preserve perishable goods. Use when standard delivery would result in SLA violations, customer dissatisfaction, or product spoilage. Never use for hazardous materials - use holdForPickup instead.",
       "handler": "tools/expediteShipment.expediteShipment",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "orderId": {
+          "order_id": {
             "type": "string",
-            "description": "Order ID to expedite"
+            "description": "Order ID to expedite - format: one letter followed by 3-6 digits",
+            "pattern": "^[A-Z][0-9]{3,6}$",
+            "examples": ["B456", "A1234", "Z123456"]
           },
           "speed": {
             "type": "string",
-            "enum": [
-              "overnight",
-              "same-day"
-            ],
-            "description": "Expedite speed"
+            "enum": ["overnight", "same_day"],
+            "description": "Expedite speed option - overnight for next business day, same_day for within hours",
+            "examples": ["overnight"]
           },
           "reason": {
             "type": "string",
-            "description": "Brief justification for expediting"
+            "description": "Brief justification for expediting (10-500 characters)",
+            "minLength": 10,
+            "maxLength": 500,
+            "examples": ["Perishable goods at risk due to temperature control failure"]
+          },
+          "meta": {
+            "type": "object",
+            "description": "Required metadata for write operations",
+            "properties": {
+              "idempotency_key": {
+                "type": "string",
+                "description": "Unique key to prevent duplicate operations - format: action_orderid_timestamp",
+                "pattern": "^[a-z_]+_[A-Z][0-9]{3,6}_[0-9]+$",
+                "examples": ["exp_b456_001"]
+              },
+              "request_id": {
+                "type": "string",
+                "description": "Unique request identifier for tracking and debugging",
+                "pattern": "^req_[a-zA-Z0-9]{6,12}$",
+                "examples": ["req_123456"]
+              }
+            },
+            "required": ["idempotency_key", "request_id"],
+            "additionalProperties": false
           }
         },
-        "required": [
-          "orderId",
-          "speed",
-          "reason"
-        ]
+        "required": ["order_id", "speed", "reason", "meta"],
+        "additionalProperties": false
       }
     },
     {
       "name": "holdForPickup",
-      "description": "Hold order at carrier facility for customer pickup. Use for hazmat or when delivery attempts are exhausted.",
+      "description": "Place order on hold at carrier facility for customer pickup. Required for hazardous materials that cannot be delivered to residences. Also use when multiple delivery attempts have failed or delivery address is inaccessible. Provides secure alternative to continued delivery attempts.",
       "handler": "tools/holdForPickup.holdForPickup",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "orderId": {
+          "order_id": {
             "type": "string",
-            "description": "Order ID to hold"
+            "description": "Order ID to hold - format: one letter followed by 3-6 digits",
+            "pattern": "^[A-Z][0-9]{3,6}$",
+            "examples": ["B456", "A1234", "Z123456"]
           },
           "reason": {
             "type": "string",
-            "description": "Brief justification for holding"
+            "description": "Brief justification for holding (10-500 characters)",
+            "minLength": 10,
+            "maxLength": 500,
+            "examples": ["Package contains hazardous materials - cannot be delivered to residence"]
+          },
+          "meta": {
+            "type": "object",
+            "description": "Required metadata for write operations",
+            "properties": {
+              "idempotency_key": {
+                "type": "string",
+                "description": "Unique key to prevent duplicate operations - format: action_orderid_timestamp",
+                "pattern": "^[a-z_]+_[A-Z][0-9]{3,6}_[0-9]+$",
+                "examples": ["hold_b456_001"]
+              },
+              "request_id": {
+                "type": "string",
+                "description": "Unique request identifier for tracking and debugging",
+                "pattern": "^req_[a-zA-Z0-9]{6,12}$",
+                "examples": ["req_789012"]
+              }
+            },
+            "required": ["idempotency_key", "request_id"],
+            "additionalProperties": false
           }
         },
-        "required": [
-          "orderId",
-          "reason"
-        ]
+        "required": ["order_id", "reason", "meta"],
+        "additionalProperties": false
       }
     },
     {
       "name": "escalateToManager",
-      "description": "Escalate decision to human manager when situation is ambiguous or high-risk.",
+      "description": "Escalate complex or high-risk decisions to human manager for review. Use when safety regulations conflict, when multiple factors create ambiguous situations, or when potential liability exceeds automated decision authority. Ensures human oversight for edge cases and complex scenarios.",
       "handler": "tools/escalateToManager.escalateToManager",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "orderId": {
+          "order_id": {
             "type": "string",
-            "description": "Order ID to escalate"
+            "description": "Order ID to escalate - format: one letter followed by 3-6 digits",
+            "pattern": "^[A-Z][0-9]{3,6}$",
+            "examples": ["B456", "A1234", "Z123456"]
           },
           "reason": {
             "type": "string",
-            "description": "Why this requires human judgment"
+            "description": "Why this requires human judgment (10-500 characters)",
+            "minLength": 10,
+            "maxLength": 500,
+            "examples": ["Complex situation involving both hazmat and perishable goods with conflicting safety requirements"]
           },
           "urgency": {
             "type": "string",
-            "enum": [
-              "low",
-              "medium",
-              "high"
-            ],
-            "description": "Urgency level for manager review"
+            "enum": ["low", "medium", "high"],
+            "description": "Urgency level for manager review - low: routine, medium: time-sensitive, high: critical",
+            "default": "medium",
+            "examples": ["high"]
+          },
+          "meta": {
+            "type": "object",
+            "description": "Required metadata for write operations",
+            "properties": {
+              "idempotency_key": {
+                "type": "string",
+                "description": "Unique key to prevent duplicate operations - format: action_orderid_timestamp",
+                "pattern": "^[a-z_]+_[A-Z][0-9]{3,6}_[0-9]+$",
+                "examples": ["esc_b456_001"]
+              },
+              "request_id": {
+                "type": "string",
+                "description": "Unique request identifier for tracking and debugging",
+                "pattern": "^req_[a-zA-Z0-9]{6,12}$",
+                "examples": ["req_345678"]
+              }
+            },
+            "required": ["idempotency_key", "request_id"],
+            "additionalProperties": false
           }
         },
-        "required": [
-          "orderId",
-          "reason"
-        ]
+        "required": ["order_id", "reason", "meta"],
+        "additionalProperties": false
       }
     },
     {
       "name": "noActionRequired",
-      "description": "Document that no intervention is needed. Use when standard delivery process should continue.",
+      "description": "Document decision that standard delivery process should continue without intervention. Use when analysis shows no safety concerns, SLA is not at risk, and normal carrier operations will resolve the situation. Creates audit trail for non-action decisions.",
       "handler": "tools/noActionRequired.noActionRequired",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "orderId": {
+          "order_id": {
             "type": "string",
-            "description": "Order ID"
+            "description": "Order ID - format: one letter followed by 3-6 digits",
+            "pattern": "^[A-Z][0-9]{3,6}$",
+            "examples": ["B456", "A1234", "Z123456"]
           },
           "reason": {
             "type": "string",
-            "description": "Why no action is appropriate"
+            "description": "Why no action is appropriate (10-500 characters)",
+            "minLength": 10,
+            "maxLength": 500,
+            "examples": ["Standard delivery process is sufficient - no safety, compliance, or SLA concerns identified"]
+          },
+          "meta": {
+            "type": "object",
+            "description": "Required metadata for write operations",
+            "properties": {
+              "idempotency_key": {
+                "type": "string",
+                "description": "Unique key to prevent duplicate operations - format: action_orderid_timestamp",
+                "pattern": "^[a-z_]+_[A-Z][0-9]{3,6}_[0-9]+$",
+                "examples": ["no_action_b456_001"]
+              },
+              "request_id": {
+                "type": "string",
+                "description": "Unique request identifier for tracking and debugging",
+                "pattern": "^req_[a-zA-Z0-9]{6,12}$",
+                "examples": ["req_901234"]
+              }
+            },
+            "required": ["idempotency_key", "request_id"],
+            "additionalProperties": false
           }
         },
-        "required": [
-          "orderId",
-          "reason"
-        ]
+        "required": ["order_id", "reason", "meta"],
+        "additionalProperties": false
       }
     }
   ]

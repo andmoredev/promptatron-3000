@@ -1,35 +1,105 @@
 /**
  * Get package contents and hazard classification
  * @param {Object} parameters - Tool parameters
- * @param {string} parameters.orderId - Order ID to query
+ * @param {string} parameters.order_id - Order ID to query
+ * @param {Object} parameters.meta - Optional metadata for read operations
  * @param {Object} context - Execution context
- * @returns {Promise<Object>} Package contents and classification
+ * @returns {Promise<Object>} Package contents and classification with enterprise meta fields
  */
 export async function getPackageContents(parameters, context) {
-  const { orderId } = parameters;
+  const { order_id, meta } = parameters;
 
-  // Import handler utilities
+  // Import utilities
   const { HandlerUtils } = await import('./handlerUtils.js');
+  const {
+    validateOrderId,
+    checkRateLimit,
+    createRateLimitError,
+    checkCache,
+    cacheResponse,
+    generateEtag,
+    createErrorResponse
+  } = await import('./sharedUtils.js');
 
-  // Initialize storage
-  const db = await HandlerUtils.initializeStorage();
+  // 1. Basic parameter validation
+  const validation = validateOrderId(order_id);
+  if (!validation.valid) {
+    return validation.error;
+  }
 
+  // 2. Rate limiting check
+  const rateLimitResult = await checkRateLimit();
+  if (rateLimitResult.exceeded) {
+    return createRateLimitError(rateLimitResult, 'getPackageContents');
+  }
+
+  // 3. Cache check
+  const cacheKey = `shipping:package_contents:${order_id}`;
+  const cached = await checkCache(cacheKey, meta?.if_none_match);
+  if (cached) {
+    return cached; // 304 or cached response
+  }
+
+  // 4. Business logic (existing logic preserved)
   try {
-    const packageData = await HandlerUtils.getFromStorage(db, 'packages', orderId);
+    const db = await HandlerUtils.initializeStorage();
+    const packageData = await HandlerUtils.getFromStorage(db, 'packages', order_id);
+
     if (!packageData) {
-      throw new Error(`No package data found for order ${orderId}`);
+      return createErrorResponse(
+        '/errors/not_found',
+        'Package Not Found',
+        404,
+        `Package data for order ${order_id} does not exist in the system`,
+        'Verify the order ID and ensure the package exists in the system',
+        'getPackageContents'
+      );
     }
 
-    return {
-      orderId,
-      isPerishable: packageData.isPerishable,
-      isHazmat: packageData.isHazmat,
-      requiresRefrigeration: packageData.requiresRefrigeration,
+    // 5. Build response with standardized meta fields and proper validation
+    const businessResult = {
+      order_id: order_id,
       contents: packageData.contents,
-      weight: packageData.weight,
-      declaredValue: packageData.declaredValue
+      classification: {
+        is_perishable: packageData.isPerishable,
+        is_hazmat: packageData.isHazmat,
+        requires_refrigeration: packageData.requiresRefrigeration
+      },
+      physical_properties: {
+        weight: {
+          value: packageData.weight,
+          unit: "kg"
+        },
+        declared_value: {
+          amount: packageData.declaredValue,
+          currency: "USD"
+        }
+      }
     };
+
+    const response = {
+      ...businessResult,
+      meta: HandlerUtils.createResponseMeta({
+        etag: generateEtag(businessResult),
+        rateLimitInfo: rateLimitResult.info,
+        includePaging: HandlerUtils.shouldIncludePaging('packageContents', 'get'),
+        nextSteps: "Package contents retrieved successfully"
+      })
+    };
+
+    // 6. Cache the response
+    await cacheResponse(cacheKey, response);
+
+    return response;
+
   } catch (error) {
-    throw new Error(`Failed to get package contents: ${error.message}`);
+    return createErrorResponse(
+      '/errors/internal',
+      'Internal Server Error',
+      500,
+      `Failed to retrieve package contents: ${error.message}`,
+      'Please try again or contact support if the issue persists',
+      'getPackageContents'
+    );
   }
 }

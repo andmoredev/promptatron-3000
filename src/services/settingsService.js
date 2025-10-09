@@ -5,11 +5,12 @@
  */
 
 import { handleError } from '../utils/errorHandling.js';
+import { generateStorageKey } from '../utils/momentoConfig.js';
 
 /**
  * Storage key for application settings
  */
-const SETTINGS_STORAGE_KEY = 'promptatron_app_settings';
+const SETTINGS_STORAGE_KEY = generateStorageKey('app_settings');
 
 /**
  * Default settings structure with all sections

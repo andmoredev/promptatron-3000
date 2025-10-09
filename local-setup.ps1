@@ -73,6 +73,19 @@ $env:VITE_AWS_SECRET_ACCESS_KEY = $env:AWS_SECRET_ACCESS_KEY
 $env:VITE_AWS_SESSION_TOKEN     = $env:AWS_SESSION_TOKEN
 $env:VITE_AWS_REGION            = $region
 
+# --- Preserve existing Momento configuration ---
+$existingMomentoKey = ""
+$existingCacheName = ""
+if (Test-Path ".env.local") {
+  $existingContent = Get-Content ".env.local" -Raw -ErrorAction SilentlyContinue
+  if ($existingContent -match "VITE_MOMENTO_API_KEY=(.*)") {
+    $existingMomentoKey = $matches[1].Trim()
+  }
+  if ($existingContent -match "VITE_CACHE_NAME=(.*)") {
+    $existingCacheName = $matches[1].Trim()
+  }
+}
+
 # --- Write .env.local (UTF-8) ---
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 $envFile = @"
@@ -84,12 +97,28 @@ VITE_AWS_REGION=$region
 VITE_AWS_ACCESS_KEY_ID=$($env:AWS_ACCESS_KEY_ID)
 VITE_AWS_SECRET_ACCESS_KEY=$($env:AWS_SECRET_ACCESS_KEY)
 VITE_AWS_SESSION_TOKEN=$($env:AWS_SESSION_TOKEN)
-
-# Note: These are temporary SSO credentials that will expire
 "@
+
+# Add preserved Momento configuration if it exists
+if ($existingMomentoKey) {
+  $envFile += "`n`n# Momento Cache Configuration (preserved from previous setup)"
+  $envFile += "`nVITE_MOMENTO_API_KEY=$existingMomentoKey"
+}
+
+if ($existingCacheName) {
+  $envFile += "`nVITE_CACHE_NAME=$existingCacheName"
+}
+
+$envFile += "`n`n# Note: These are temporary SSO credentials that will expire"
 
 $envFile | Out-File -FilePath ".env.local" -Encoding utf8 -NoNewline
 
 Write-Host "`nEnvironment variables set for this PowerShell session."
 Write-Host "Created .env.local file for React app."
+if ($existingMomentoKey) {
+  Write-Host "✅ Preserved existing Momento API key configuration"
+}
+if ($existingCacheName) {
+  Write-Host "✅ Preserved existing cache name configuration"
+}
 Write-Host "You can now run: npm run dev"

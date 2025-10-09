@@ -266,7 +266,10 @@ const ConditionalExecutionSettings = ({
                 />
               </svg>
               <div>
-                <h4 className="text-sm font-medium text-gray-900">Tools Mode</h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-gray-900">Tools Mode</h4>
+
+                </div>
                 <p className="text-xs text-gray-500">
                   {showExecutionToggle
                     ? "Enable tool execution for interactive AI capabilities"

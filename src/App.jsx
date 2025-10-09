@@ -20,6 +20,7 @@ import { useChadReveal } from "./components/RobotGraphic/useChadReveal";
 import StreamingPerformanceMonitor from "./components/StreamingPerformanceMonitor";
 import SettingsDialog from "./components/SettingsDialog";
 import ScenarioBuilder from "./components/ScenarioBuilder";
+import CacheManager from "./components/CacheManager";
 
 import ToolExecutionSettings from "./components/ToolExecutionSettings";
 import ToolExecutionMonitor from "./components/ToolExecutionMonitor";
@@ -2097,35 +2098,39 @@ function App() {
                         Building enterprise-grade AI agents before it was cool
                       </p>
 
-                      {/* State Persistence Status */}
-                      {statePersistenceInitialized &&
-                        (uiStateRestored ||
-                          navigationStateRestored ||
-                          testResultsStateRestored) && (
-                          <div className="flex items-center justify-center space-x-2 text-xs mt-2">
-                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full flex items-center space-x-1">
-                              <svg
-                                className="w-3 h-3"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                                />
-                              </svg>
-                              <span>Session Restored</span>
-                            </span>
-                            {stateInfo && stateInfo.session && (
-                              <span className="text-gray-500">
-                                {stateInfo.session.testCount} tests this session
+                      {/* State Persistence Status and Cache Manager */}
+                      <div className="flex items-center justify-center space-x-4 text-xs mt-2">
+                        {statePersistenceInitialized &&
+                          (uiStateRestored ||
+                            navigationStateRestored ||
+                            testResultsStateRestored) && (
+                            <div className="flex items-center space-x-2">
+                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full flex items-center space-x-1">
+                                <svg
+                                  className="w-3 h-3"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                  />
+                                </svg>
+                                <span>Session Restored</span>
                               </span>
-                            )}
-                          </div>
-                        )}
+                              {stateInfo && stateInfo.session && (
+                                <span className="text-gray-500">
+                                  {stateInfo.session.testCount} tests this session
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+
+                      </div>
                     </div>
                   </div>
                 </div>

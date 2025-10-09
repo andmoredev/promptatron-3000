@@ -128,6 +128,14 @@ export VITE_AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 export VITE_AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN"
 export VITE_AWS_REGION="$AWS_REGION"
 
+# Preserve existing Momento configuration
+EXISTING_MOMENTO_KEY=""
+EXISTING_CACHE_NAME=""
+if [ -f ".env.local" ]; then
+  EXISTING_MOMENTO_KEY=$(grep "^VITE_MOMENTO_API_KEY=" .env.local 2>/dev/null | cut -d'=' -f2- | tr -d '"')
+  EXISTING_CACHE_NAME=$(grep "^VITE_CACHE_NAME=" .env.local 2>/dev/null | cut -d'=' -f2- | tr -d '"')
+fi
+
 # Create .env.local file for the React app
 echo "📝 Creating .env.local file..."
 
@@ -145,10 +153,26 @@ EOF
 # Only add session token if it exists (for temporary credentials)
 if [ -n "$AWS_SESSION_TOKEN" ]; then
   echo "VITE_AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> .env.local
-  echo "" >> .env.local
-  echo "# Note: These are temporary SSO credentials that will expire" >> .env.local
 else
   echo "" >> .env.local
+fi
+
+# Add preserved Momento configuration if it exists
+if [ -n "$EXISTING_MOMENTO_KEY" ]; then
+  echo "" >> .env.local
+  echo "# Momento Cache Configuration (preserved from previous setup)" >> .env.local
+  echo "VITE_MOMENTO_API_KEY=$EXISTING_MOMENTO_KEY" >> .env.local
+fi
+
+if [ -n "$EXISTING_CACHE_NAME" ]; then
+  echo "VITE_CACHE_NAME=$EXISTING_CACHE_NAME" >> .env.local
+fi
+
+# Add final note about credential expiration
+echo "" >> .env.local
+if [ -n "$AWS_SESSION_TOKEN" ]; then
+  echo "# Note: These are temporary SSO credentials that will expire" >> .env.local
+else
   echo "# Note: These are long-term AWS credentials" >> .env.local
 fi
 
@@ -169,6 +193,12 @@ echo "✅ Environment variables set for terminal session"
 echo "✅ Created .env.local file for React app"
 echo "✅ AWS Profile: $AWS_PROFILE"
 echo "✅ Region: $AWS_REGION"
+if [ -n "$EXISTING_MOMENTO_KEY" ]; then
+  echo "✅ Preserved existing Momento API key configuration"
+fi
+if [ -n "$EXISTING_CACHE_NAME" ]; then
+  echo "✅ Preserved existing cache name configuration"
+fi
 echo ""
 echo "🚀 You can now run: npm run dev"
 echo ""
