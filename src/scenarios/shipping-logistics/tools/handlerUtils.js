@@ -255,4 +255,126 @@ export class HandlerUtils {
       await this.saveToStorage(db, 'orders', orderData);
     }
   }
+
+  /**
+   * Create metadata object for responses
+   * @param {Object} options - Metadata options
+   * @returns {Object} Standardized metadata object
+   */
+  static createResponseMeta(options = {}) {
+    const {
+      etag,
+      timestamp = new Date().toISOString(),
+      fromCache = false,
+      rateLimitInfo = null,
+      includePaging = false,
+      nextCursor = null,
+      hasMore = false,
+      nextSteps = null
+    } = options;
+
+
+
+    const meta = {
+      etag: etag || this.generateEtag({ timestamp }),
+      last_modified: timestamp,
+      from_cache: fromCache,
+      rate_limit: rateLimitInfo,
+      next_steps: nextSteps
+    };
+
+    // Only include paging for list operations
+    if (includePaging) {
+      meta.paging = {
+        next_cursor: nextCursor,
+        has_more: hasMore
+      };
+    }
+
+    return meta;
+  }
+
+  /**
+   * Determine if an operation should include paging metadata
+   * @param {string} toolName - Name of the tool
+   * @param {string} operation - Type of operation (get, list, create, update, delete)
+   * @returns {boolean} Whether to include paging metadata
+   */
+  static shouldIncludePaging(toolName, operation = 'get') {
+    // Only list operations should include paging
+    const listOperations = ['list', 'search', 'query'];
+    const listTools = ['listOrders'];
+
+    return listOperations.includes(operation) || listTools.includes(toolName);
+  }
+
+  /**
+   * Generate ETag for response data
+   * @param {Object} data - Response data to generate ETag for
+   * @returns {string} ETag value
+   */
+  static generateEtag(data) {
+    const content = JSON.stringify(data);
+    return `"${Date.now()}-${content.length}"`;
+  }
+
+  /**
+   * Flush cache and clear rate limiting data
+   * @returns {Promise<Object>} Result of flush operation
+   */
+  static async flushCache() {
+    // Import the flush function from shared utils
+    const { flushCache } = await import('./sharedUtils.js');
+    return await flushCache();
+  }
+
+  /**
+   * Check if caching is enabled
+   * @returns {boolean} Whether caching is enabled
+   */
+  static isCacheEnabled() {
+    // This will be determined by the shared utils
+    return true; // Placeholder - actual implementation in sharedUtils
+  }
+
+  /**
+   * Handle idempotency key conflict by returning existing result
+   * @param {Object} existingAction - The existing action record
+   * @param {string} toolName - Current tool name
+   * @returns {Object} The existing action result
+   */
+  static handleIdempotencyConflict(existingAction, toolName = 'unknown') {
+    // Check if the existing action has a stored result
+    if (existingAction.result && existingAction.result.meta) {
+      // Return the existing result with updated meta to indicate it's from cache
+      const result = {
+        ...existingAction.result,
+        meta: {
+          ...existingAction.result.meta,
+          from_cache: true,
+          idempotent_response: true,
+          original_timestamp: existingAction.timestamp
+        }
+      };
+      return result;
+    }
+
+    // Fallback: create a basic response for legacy action records without stored results
+    return {
+      success: true,
+      action_id: existingAction.actionId || existingAction.id,
+      order_id: existingAction.orderId,
+      status: existingAction.status || 'completed',
+      message: `Action already completed with idempotency key ${existingAction.idempotencyKey}`,
+      meta: {
+        etag: this.generateEtag({ actionId: existingAction.actionId, timestamp: existingAction.timestamp }),
+        last_modified: existingAction.timestamp,
+        from_cache: true,
+        idempotent_response: true,
+        original_timestamp: existingAction.timestamp,
+        rate_limit: null,
+        next_steps: "Previous action result returned due to idempotency key match"
+      }
+    };
+  }
 }

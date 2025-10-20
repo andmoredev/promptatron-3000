@@ -20,6 +20,7 @@ import { useChadReveal } from "./components/RobotGraphic/useChadReveal";
 import StreamingPerformanceMonitor from "./components/StreamingPerformanceMonitor";
 import SettingsDialog from "./components/SettingsDialog";
 import ScenarioBuilder from "./components/ScenarioBuilder";
+import CacheManager from "./components/CacheManager";
 
 import ToolExecutionSettings from "./components/ToolExecutionSettings";
 import ToolExecutionMonitor from "./components/ToolExecutionMonitor";

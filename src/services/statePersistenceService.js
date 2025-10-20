@@ -5,16 +5,17 @@
  */
 
 import { handleError, ErrorTypes } from '../utils/errorHandling.js';
+import { generateStorageKey } from '../utils/momentoConfig.js';
 
 /**
  * Storage keys for different types of state
  */
 const STORAGE_KEYS = {
-  UI_STATE: 'promptatron_ui_state',
-  NAVIGATION_STATE: 'promptatron_navigation_state',
-  TEST_RESULTS_STATE: 'promptatron_test_results_state',
-  MODEL_OUTPUT_STATE: 'promptatron_model_output_state',
-  SESSION_STATE: 'promptatron_session_state'
+  UI_STATE: generateStorageKey('ui_state'),
+  NAVIGATION_STATE: generateStorageKey('navigation_state'),
+  TEST_RESULTS_STATE: generateStorageKey('test_results_state'),
+  MODEL_OUTPUT_STATE: generateStorageKey('model_output_state'),
+  SESSION_STATE: generateStorageKey('session_state')
 };
 
 /**

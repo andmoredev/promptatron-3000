@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import HelpTooltip from './HelpTooltip';
 import ScenarioErrorDisplay from './ScenarioErrorDisplay';
 import ScenarioValidationDisplay from './ScenarioValidationDisplay';
+import CacheManager from './CacheManager'
 import { scenarioService } from '../services/scenarioService.js';
 import { analyzeError } from '../utils/errorHandling.js';
 
@@ -438,22 +439,25 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
               <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
                 <h4 className="text-sm font-medium text-gray-900 mb-2">Scenario Information</h4>
 
-                {/* Only show tools if available */}
-                {scenarioMetadata.hasTools && scenarioMetadata.toolNames && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-gray-600 font-medium">Available Tools:</p>
-                    <ul className="text-xs text-gray-700 space-y-1">
-                      {scenarioMetadata.toolNames.map(toolName => (
-                        <li key={toolName} className="flex items-center space-x-2">
-                          <span className="inline-block w-1.5 h-1.5 bg-green-400 rounded-full"></span>
-                          <span>{toolName}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+            {/* Only show tools if available */}
+            {scenarioMetadata.hasTools && scenarioMetadata.toolNames && (
+              <div className="space-y-2">
+                <p className="flex items-center gap-2 text-xs text-gray-600 font-medium">
+                  Available Tools:
+                  <CacheManager compact />
+                </p>
+                <ul className="text-xs text-gray-700 space-y-1">
+                  {scenarioMetadata.toolNames.map(toolName => (
+                    <li key={toolName} className="flex items-center space-x-2">
+                      <span className="inline-block w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+                      <span>{toolName}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
+          </div>
+        )}
 
             {/* Scenario Metadata Error */}
             {scenarioMetadata?.hasError && (

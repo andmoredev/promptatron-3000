@@ -3,7 +3,9 @@
  * Saves and restores form values to/from localStorage
  */
 
-const FORM_STATE_KEY = 'promptatron_form_state';
+import { generateStorageKey } from './momentoConfig.js';
+
+const FORM_STATE_KEY = generateStorageKey('form_state');
 
 /**
  * Default form state structure
