@@ -10,11 +10,23 @@ import { useSettings, useDeterminismSettings, useUISettings, useAWSSettings } fr
 import LoadingSpinner from './LoadingSpinner.jsx';
 import HelpTooltip from './HelpTooltip.jsx';
 import AboutTab from './AboutTab.jsx';
+import GuardrailsSection from './GuardrailsSection.jsx';
 
 /**
  * Main SettingsDialog component
  */
-function SettingsDialog({ isOpen, onClose, onSave }) {
+function SettingsDialog({
+  isOpen,
+  onClose,
+  onSave,
+  // Guardrail props
+  guardrailsEnabled = false,
+  onToggleGuardrails = () => {},
+  onTestGuardrails = () => {},
+  guardrailsInitialized = false,
+  guardrailsError = null,
+  scenarioGuardrailMap = new Map()
+}) {
   const [activeTab, setActiveTab] = useState('determinism');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null); // 'saving', 'success', 'error'
@@ -191,6 +203,7 @@ function SettingsDialog({ isOpen, onClose, onSave }) {
     { id: 'determinism', label: 'Determinism' },
     { id: 'ui', label: 'Interface' },
     { id: 'aws', label: 'AWS' },
+    { id: 'guardrails', label: 'Guardrails' },
     { id: 'about', label: 'About' }
   ];
 
@@ -345,6 +358,149 @@ function SettingsDialog({ isOpen, onClose, onSave }) {
                   className="animate-fade-in"
                 >
                   <AWSSettingsTab onSettingsChange={() => setHasUnsavedChanges(true)} />
+                </div>
+              )}
+              {activeTab === 'guardrails' && (
+                <div
+                  id="guardrails-panel"
+                  role="tabpanel"
+                  aria-labelledby="guardrails-tab"
+                  className="animate-fade-in"
+                >
+                  <div className="space-y-6">
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex">
+                        <div className="flex-shrink-0">
+                          <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div className="ml-3">
+                          <h3 className="text-sm font-medium text-blue-800">
+                            Guardrails Configuration
+                          </h3>
+                          <div className="mt-2 text-sm text-blue-700">
+                            <p>
+                              Guardrails provide content filtering and safety controls for AI model interactions.
+                              They can detect harmful content, PII, and enforce topic restrictions.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Guardrails Status */}
+                    <div className="bg-white border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-lg font-medium text-gray-900">Guardrails Status</h4>
+                        <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          guardrailsInitialized
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {guardrailsInitialized ? 'Initialized' : 'Not Initialized'}
+                        </div>
+                      </div>
+
+                      {guardrailsError && (
+                        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+                          <div className="flex">
+                            <div className="flex-shrink-0">
+                              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                            <div className="ml-3">
+                              <h3 className="text-sm font-medium text-red-800">
+                                Guardrails Error
+                              </h3>
+                              <div className="mt-2 text-sm text-red-700">
+                                <p>{guardrailsError}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-4">
+                        {/* Enable/Disable Toggle */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label htmlFor="guardrails-enabled" className="text-sm font-medium text-gray-700">
+                              Enable Guardrails
+                            </label>
+                            <p className="text-sm text-gray-500">
+                              Automatically apply content filtering to model interactions
+                            </p>
+                          </div>
+                          <button
+                            id="guardrails-enabled"
+                            type="button"
+                            onClick={onToggleGuardrails}
+                            disabled={!guardrailsInitialized}
+                            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+                              guardrailsEnabled ? 'bg-primary-600' : 'bg-gray-200'
+                            } ${!guardrailsInitialized ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            role="switch"
+                            aria-checked={guardrailsEnabled}
+                          >
+                            <span
+                              aria-hidden="true"
+                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                guardrailsEnabled ? 'translate-x-5' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Scenario Guardrails Summary */}
+                        {scenarioGuardrailMap.size > 0 && (
+                          <div>
+                            <h5 className="text-sm font-medium text-gray-700 mb-2">
+                              Scenario Guardrails ({scenarioGuardrailMap.size})
+                            </h5>
+                            <div className="space-y-2">
+                              {Array.from(scenarioGuardrailMap.entries()).map(([scenarioName, guardrail]) => (
+                                <div key={scenarioName} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                                  <span className="text-sm text-gray-700">{scenarioName}</span>
+                                  <div className="flex items-center space-x-2">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                      guardrail.status === 'READY'
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-yellow-100 text-yellow-800'
+                                    }`}>
+                                      {guardrail.status || 'Unknown'}
+                                    </span>
+                                    <span className="text-xs text-gray-500 font-mono">
+                                      {guardrail.id?.slice(-8)}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Test Guardrails Button */}
+                        <div className="pt-4 border-t border-gray-200">
+                          <button
+                            onClick={onTestGuardrails}
+                            disabled={!guardrailsEnabled || !guardrailsInitialized}
+                            className={`w-full px-4 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
+                              guardrailsEnabled && guardrailsInitialized
+                                ? 'text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2'
+                                : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                            }`}
+                          >
+                            Test Guardrails
+                          </button>
+                          <p className="mt-2 text-xs text-gray-500">
+                            Test guardrail functionality without running a full model interaction
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
               {activeTab === 'about' && (
@@ -920,7 +1076,14 @@ function AWSSettingsTab({ onSettingsChange }) {
 SettingsDialog.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
-  onSave: PropTypes.func
+  onSave: PropTypes.func,
+  // Guardrail props
+  guardrailsEnabled: PropTypes.bool,
+  onToggleGuardrails: PropTypes.func,
+  onTestGuardrails: PropTypes.func,
+  guardrailsInitialized: PropTypes.bool,
+  guardrailsError: PropTypes.string,
+  scenarioGuardrailMap: PropTypes.instanceOf(Map)
 };
 
 DeterminismSettingsTab.propTypes = {

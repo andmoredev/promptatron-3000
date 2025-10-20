@@ -9,6 +9,7 @@ import StreamingOutput from './StreamingOutput';
 import ToolUsageDisplay from './ToolUsageDisplay';
 import ToolConfigurationStatus from './ToolConfigurationStatus';
 import WorkflowTimeline from './WorkflowTimeline';
+import GuardrailResults from './GuardrailResults';
 import { uiErrorRecovery } from '../utils/uiErrorRecovery';
 import { useModelOutput } from '../hooks/useModelOutput';
 import { useDeterminismSettings } from '../hooks/useSettings';
@@ -848,6 +849,18 @@ const TestResults = ({
         )}
       </div>
 
+      {/* Guardrail Results Section */}
+      {displayResults.guardrailResults && (
+        <div className="mt-4 pt-3 border-t border-gray-200">
+          <h4 className="font-medium text-gray-700 mb-3">Guardrail Evaluation:</h4>
+          <GuardrailResults
+            results={Array.isArray(displayResults.guardrailResults) ? displayResults.guardrailResults : [displayResults.guardrailResults]}
+            standaloneTest={true}
+            title="Content Safety Evaluation"
+          />
+        </div>
+      )}
+
       {/* Response Stats */}
       <div className="mt-4 pt-3 border-t border-gray-200">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -994,7 +1007,13 @@ TestResults.propTypes = {
       gracefulDegradation: PropTypes.bool,
       validationResult: PropTypes.object,
       toolsAvailable: PropTypes.arrayOf(PropTypes.string)
-    })
+    }),
+    guardrailResults: PropTypes.oneOfType([
+      PropTypes.object,
+      PropTypes.arrayOf(PropTypes.object)
+    ]),
+    guardrailConfig: PropTypes.object,
+    guardrailsEnabled: PropTypes.bool
   }),
   isLoading: PropTypes.bool,
   determinismEnabled: PropTypes.bool,

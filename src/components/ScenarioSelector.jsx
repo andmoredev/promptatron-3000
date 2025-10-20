@@ -3,11 +3,12 @@ import PropTypes from 'prop-types';
 import HelpTooltip from './HelpTooltip';
 import ScenarioErrorDisplay from './ScenarioErrorDisplay';
 import ScenarioValidationDisplay from './ScenarioValidationDisplay';
+
 import CacheManager from './CacheManager'
 import { scenarioService } from '../services/scenarioService.js';
 import { analyzeError } from '../utils/errorHandling.js';
 
-const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError, onCreateScenario, onRefreshSeedData, isCollapsed, onToggleCollapse }) => {
+const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError, onCreateScenario, onRefreshSeedData, isCollapsed, onToggleCollapse, onGuardrailToggle, onTestGuardrails, isTestingGuardrails }) => {
   const [scenarios, setScenarios] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -15,6 +16,8 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
   const [validationResult, setValidationResult] = useState(null);
   const [recoveryAttempts, setRecoveryAttempts] = useState(new Map());
   const [isRefreshingSeedData, setIsRefreshingSeedData] = useState(false);
+  const [guardrailsCollapsed, setGuardrailsCollapsed] = useState(false);
+  const [currentScenario, setCurrentScenario] = useState(null);
 
   useEffect(() => {
     loadAvailableScenarios();
@@ -94,11 +97,13 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
       // Also validate the scenario if it's loaded
       const scenario = await scenarioService.getScenario(scenarioId);
       if (scenario) {
+        setCurrentScenario(scenario);
         const validation = await scenarioService.validateScenarioWithEnhancedErrors(scenario, {
           validateFiles: false // Skip file validation for UI performance
         });
         setValidationResult(validation);
       } else {
+        setCurrentScenario(null);
         setValidationResult(null);
       }
     } catch (err) {
@@ -118,6 +123,7 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
         hasError: true,
         errorInfo
       });
+      setCurrentScenario(null);
       setValidationResult(null);
     }
   };
@@ -127,6 +133,7 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
       onScenarioSelect('');
       setScenarioMetadata(null);
       setValidationResult(null);
+      setCurrentScenario(null);
       return;
     }
 
@@ -175,6 +182,7 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
           onScenarioSelect('');
           setScenarioMetadata(null);
           setValidationResult(null);
+          setCurrentScenario(null);
         }
 
 
@@ -482,6 +490,9 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
                 />
               </div>
             )}
+
+            {/* Guardrails Section */}
+
           </div>
 
           {/* Validation Error */}
@@ -501,7 +512,10 @@ ScenarioSelector.propTypes = {
   onCreateScenario: PropTypes.func,
   onRefreshSeedData: PropTypes.func,
   isCollapsed: PropTypes.bool,
-  onToggleCollapse: PropTypes.func
+  onToggleCollapse: PropTypes.func,
+  onGuardrailToggle: PropTypes.func,
+  onTestGuardrails: PropTypes.func,
+  isTestingGuardrails: PropTypes.bool
 };
 
 ScenarioSelector.defaultProps = {
@@ -510,7 +524,10 @@ ScenarioSelector.defaultProps = {
   onCreateScenario: null,
   onRefreshSeedData: null,
   isCollapsed: false,
-  onToggleCollapse: null
+  onToggleCollapse: null,
+  onGuardrailToggle: null,
+  onTestGuardrails: null,
+  isTestingGuardrails: false
 };
 
 export default ScenarioSelector;

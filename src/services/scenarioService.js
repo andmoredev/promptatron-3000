@@ -2,10 +2,10 @@
  * Simple service for managing scenario operations
  */
 
-import { validateScenario, extractScenarioMetadata } from '../utils/scenarioModels.js';
+import { validateScenario, extractScenarioMetadata, migrateScenarioSchema, needsGuardrailsMigration } from '../utils/scenarioModels.js';
 
 // Import manifest and scenario configurations directly
-import manifestData from '../scenarios/manifest.json';
+import manifestData from '../scenarios/manifest.json' with { type: 'json' };
 
 const scenarioJsonModules = import.meta.glob('../scenarios/*/scenario.json', { eager: true, import: 'default' });
 const jsonDatasetModules = import.meta.glob('../scenarios/*/datasets/*.json', { eager: true, import: 'default' });
@@ -196,10 +196,15 @@ export class ScenarioService {
       }
 
       const scenarioModuleKey = `../scenarios/${scenarioInfo.folder}/scenario.json`;
-      const scenarioData = scenarioJsonModules[scenarioModuleKey];
+      let scenarioData = scenarioJsonModules[scenarioModuleKey];
 
       if (!scenarioData) {
         throw new Error(`Scenario data not found: ${filename}`);
+      }
+
+      // Migrate scenario schema if needed for backward compatibility
+      if (needsGuardrailsMigration(scenarioData)) {
+        scenarioData = migrateScenarioSchema(scenarioData);
       }
 
       // Validate scenario
@@ -215,6 +220,15 @@ export class ScenarioService {
           error: new Error(`Invalid scenario structure: ${errorSummary}`),
           filename: filename
         };
+      }
+
+      // Validate guardrails configuration if present
+      if (scenarioData.guardrails) {
+        const guardrailValidation = await this.validateScenarioGuardrails(scenarioData.id, scenarioData);
+        if (!guardrailValidation.isValid) {
+          console.warn(`[ScenarioService] Guardrail validation warnings for ${scenarioData.id}:`, guardrailValidation.errors);
+          // Don't fail loading for guardrail validation issues, just log warnings
+        }
       }
 
       // Extract metadata
@@ -680,7 +694,9 @@ export class ScenarioService {
         showDatasetSelector,
         showSystemPromptSelector: scenario.systemPrompts && scenario.systemPrompts.length > 0,
         showUserPromptSelector: scenario.userPrompts && scenario.userPrompts.length > 0,
-        showToolSettings: scenario.tools && scenario.tools.length > 0
+        showToolSettings: scenario.tools && scenario.tools.length > 0,
+        showGuardrailsSection: this.shouldShowGuardrailsSection(scenarioId),
+        guardrailsEnabled: this.areGuardrailsEnabled(scenarioId)
       };
     } catch (error) {
       console.error(`[ScenarioService] Error getting UI configuration for ${scenarioId}:`, error);
@@ -694,7 +710,9 @@ export class ScenarioService {
         showDatasetSelector: false,
         showSystemPromptSelector: false,
         showUserPromptSelector: false,
-        showToolSettings: false
+        showToolSettings: false,
+        showGuardrailsSection: false,
+        guardrailsEnabled: false
       };
     }
   }
@@ -766,6 +784,709 @@ export class ScenarioService {
     } catch (error) {
       console.error(`[ScenarioService] Error getting tool execution mode for ${scenarioId}:`, error);
       return 'none';
+    }
+  }
+
+  /**
+   * Get guardrails configuration for a scenario
+   * @param {string} scenarioId - The scenario ID
+   * @returns {Object|null} Guardrails configuration or null if not found
+   */
+  getGuardrailsConfiguration(scenarioId) {
+    try {
+      if (!this.isInitialized) {
+        return null;
+      }
+
+      const scenario = this.scenarios.get(scenarioId);
+      if (!scenario || !scenario.guardrails) {
+        return null;
+      }
+
+      return scenario.guardrails;
+    } catch (error) {
+      console.error(`[ScenarioService] Error getting guardrails configuration for ${scenarioId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if a scenario has guardrails configured
+   * @param {string} scenarioId - The scenario ID
+   * @returns {boolean} True if scenario has guardrails configured
+   */
+  hasGuardrails(scenarioId) {
+    try {
+      const guardrailsConfig = this.getGuardrailsConfiguration(scenarioId);
+      return !!(guardrailsConfig && guardrailsConfig.configs && guardrailsConfig.configs.length > 0);
+    } catch (error) {
+      console.error(`[ScenarioService] Error checking guardrails for ${scenarioId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if guardrails are enabled for a scenario
+   * @param {string} scenarioId - The scenario ID
+   * @returns {boolean} True if guardrails are enabled (default true if configured)
+   */
+  areGuardrailsEnabled(scenarioId) {
+    try {
+      const guardrailsConfig = this.getGuardrailsConfiguration(scenarioId);
+      if (!guardrailsConfig) {
+        return false;
+      }
+
+      // Default to enabled if not explicitly disabled
+      return guardrailsConfig.enabled !== false;
+    } catch (error) {
+      console.error(`[ScenarioService] Error checking if guardrails are enabled for ${scenarioId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Get guardrail configurations for a scenario
+   * @param {string} scenarioId - The scenario ID
+   * @returns {Array} Array of guardrail configurations
+   */
+  getGuardrailConfigs(scenarioId) {
+    try {
+      const guardrailsConfig = this.getGuardrailsConfiguration(scenarioId);
+      if (!guardrailsConfig || !guardrailsConfig.configs) {
+        return [];
+      }
+
+      return guardrailsConfig.configs;
+    } catch (error) {
+      console.error(`[ScenarioService] Error getting guardrail configs for ${scenarioId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Extract guardrail configurations for AWS resource management
+   * @param {string} scenarioId - The scenario ID
+   * @returns {Array} Array of guardrail configurations formatted for AWS
+   */
+  extractGuardrailResourceConfigs(scenarioId) {
+    try {
+      const guardrailConfigs = this.getGuardrailConfigs(scenarioId);
+
+      return guardrailConfigs.map(config => ({
+        name: config.name,
+        description: config.description || `Guardrail for scenario ${scenarioId}`,
+        blockedInputMessaging: config.blockedInputMessaging || 'This input violates our content policy.',
+        blockedOutputsMessaging: config.blockedOutputsMessaging || 'This response was blocked by our content policy.',
+        contentPolicyConfig: config.contentPolicyConfig,
+        wordPolicyConfig: config.wordPolicyConfig,
+        sensitiveInformationPolicyConfig: config.sensitiveInformationPolicyConfig,
+        topicPolicyConfig: config.topicPolicyConfig,
+        // Add metadata for resource tracking
+        scenarioId: scenarioId,
+        sourceType: 'scenario'
+      }));
+    } catch (error) {
+      console.error(`[ScenarioService] Error extracting guardrail resource configs for ${scenarioId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Validate guardrails configuration for a scenario
+   * @param {string} scenarioId - The scenario ID
+   * @param {Object} scenarioData - Optional scenario data (for validation during loading)
+   * @returns {Object} Validation result with isValid, errors, and warnings
+   */
+  async validateScenarioGuardrails(scenarioId, scenarioData = null) {
+    try {
+      const scenario = scenarioData || this.scenarios.get(scenarioId);
+      if (!scenario) {
+        return {
+          isValid: false,
+          errors: { scenario: 'Scenario not found' },
+          warnings: []
+        };
+      }
+
+      if (!scenario.guardrails) {
+        return {
+          isValid: true,
+          errors: {},
+          warnings: [],
+          hasGuardrails: false
+        };
+      }
+
+      // Use the existing validation function from scenarioModels
+      const validation = validateScenario(scenario);
+
+      // Extract only guardrail-related errors
+      const guardrailErrors = {};
+      if (validation.errors && validation.errors.guardrails) {
+        guardrailErrors.guardrails = validation.errors.guardrails;
+      }
+
+      return {
+        isValid: Object.keys(guardrailErrors).length === 0,
+        errors: guardrailErrors,
+        warnings: validation.warnings || [],
+        hasGuardrails: true
+      };
+    } catch (error) {
+      console.error(`[ScenarioService] Error validating guardrails for ${scenarioId}:`, error);
+      return {
+        isValid: false,
+        errors: { validation: `Validation failed: ${error.message}` },
+        warnings: []
+      };
+    }
+  }
+
+  /**
+   * Get guardrail summary information for a scenario
+   * @param {string} scenarioId - The scenario ID
+   * @returns {Object} Guardrail summary with counts and types
+   */
+  getGuardrailSummary(scenarioId) {
+    try {
+      const guardrailConfigs = this.getGuardrailConfigs(scenarioId);
+
+      if (guardrailConfigs.length === 0) {
+        return {
+          hasGuardrails: false,
+          enabled: false,
+          totalCount: 0,
+          policyTypes: []
+        };
+      }
+
+      const policyTypes = [];
+      let hasContentPolicy = false;
+      let hasWordPolicy = false;
+      let hasPiiPolicy = false;
+      let hasTopicPolicy = false;
+
+      guardrailConfigs.forEach(config => {
+        if (config.contentPolicyConfig) {
+          hasContentPolicy = true;
+        }
+        if (config.wordPolicyConfig) {
+          hasWordPolicy = true;
+        }
+        if (config.sensitiveInformationPolicyConfig) {
+          hasPiiPolicy = true;
+        }
+        if (config.topicPolicyConfig) {
+          hasTopicPolicy = true;
+        }
+      });
+
+      if (hasContentPolicy) policyTypes.push('content');
+      if (hasWordPolicy) policyTypes.push('word');
+      if (hasPiiPolicy) policyTypes.push('pii');
+      if (hasTopicPolicy) policyTypes.push('topic');
+
+      return {
+        hasGuardrails: true,
+        enabled: this.areGuardrailsEnabled(scenarioId),
+        totalCount: guardrailConfigs.length,
+        policyTypes: policyTypes,
+        guardrailNames: guardrailConfigs.map(config => config.name)
+      };
+    } catch (error) {
+      console.error(`[ScenarioService] Error getting guardrail summary for ${scenarioId}:`, error);
+      return {
+        hasGuardrails: false,
+        enabled: false,
+        totalCount: 0,
+        policyTypes: []
+      };
+    }
+  }
+
+  /**
+   * Check if scenario should show guardrails section in UI
+   * @param {string} scenarioId - The scenario ID
+   * @returns {boolean} True if guardrails section should be shown
+   */
+  shouldShowGuardrailsSection(scenarioId) {
+    return this.hasGuardrails(scenarioId);
+  }
+
+  /**
+   * Prepare guardrail configurations for AWS resource creation
+   * @param {string} scenarioId - The scenario ID
+   * @returns {Promise<Array>} Array of guardrail configurations ready for AWS creation
+   */
+  async prepareGuardrailResourceConfigs(scenarioId) {
+    try {
+      const scenario = this.scenarios.get(scenarioId);
+      if (!scenario || !scenario.guardrails || !scenario.guardrails.configs) {
+        return [];
+      }
+
+      return scenario.guardrails.configs.map(config => ({
+        name: config.name,
+        description: config.description || `Guardrail for scenario ${scenarioId}`,
+        blockedInputMessaging: config.blockedInputMessaging || 'This input violates our content policy.',
+        blockedOutputsMessaging: config.blockedOutputsMessaging || 'This response was blocked by our content policy.',
+        contentPolicyConfig: config.contentPolicyConfig,
+        wordPolicyConfig: config.wordPolicyConfig,
+        sensitiveInformationPolicyConfig: config.sensitiveInformationPolicyConfig,
+        topicPolicyConfig: config.topicPolicyConfig,
+        // Add metadata for resource tracking
+        scenarioId: scenarioId,
+        sourceType: 'scenario'
+      }));
+    } catch (error) {
+      console.error(`[ScenarioService] Error preparing guardrail resource configs for ${scenarioId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Manage guardrail resources for a scenario lifecycle event
+   * @param {string} scenarioId - The scenario ID
+   * @param {string} event - The lifecycle event ('load', 'unload', 'update')
+   * @param {Object} options - Options for resource management
+   * @returns {Promise<Object>} Resource management result
+   */
+  async manageGuardrailResources(scenarioId, event, options = {}) {
+    const { autoCreate = true, guardrailService = null } = options;
+
+    try {
+      if (!guardrailService) {
+        return {
+          success: false,
+          message: 'GuardrailService not provided',
+          event: event,
+          scenarioId: scenarioId
+        };
+      }
+
+      const scenario = this.scenarios.get(scenarioId);
+      if (!scenario) {
+        return {
+          success: false,
+          message: `Scenario ${scenarioId} not found`,
+          event: event,
+          scenarioId: scenarioId
+        };
+      }
+
+      switch (event) {
+        case 'load':
+          return await this.handleScenarioLoadGuardrails(scenarioId, scenario, guardrailService, autoCreate);
+
+        case 'unload':
+          return await this.handleScenarioUnloadGuardrails(scenarioId, scenario, guardrailService);
+
+        case 'update':
+          return await this.handleScenarioUpdateGuardrails(scenarioId, scenario, guardrailService);
+
+        default:
+          return {
+            success: false,
+            message: `Unknown lifecycle event: ${event}`,
+            event: event,
+            scenarioId: scenarioId
+          };
+      }
+    } catch (error) {
+      console.error(`[ScenarioService] Error managing guardrail resources for ${scenarioId} (${event}):`, error);
+      return {
+        success: false,
+        message: error.message,
+        event: event,
+        scenarioId: scenarioId,
+        error: error
+      };
+    }
+  }
+
+  /**
+   * Handle guardrail resources when a scenario is loaded
+   * @param {string} scenarioId - The scenario ID
+   * @param {Object} scenario - The scenario data
+   * @param {Object} guardrailService - The GuardrailService instance
+   * @param {boolean} autoCreate - Whether to automatically create missing guardrails
+   * @returns {Promise<Object>} Load result
+   */
+  async handleScenarioLoadGuardrails(scenarioId, scenario, guardrailService, autoCreate) {
+    try {
+      if (!scenario.guardrails || !scenario.guardrails.configs || scenario.guardrails.configs.length === 0) {
+        return {
+          success: true,
+          message: `No guardrails configured for scenario ${scenarioId}`,
+          event: 'load',
+          scenarioId: scenarioId,
+          hasGuardrails: false
+        };
+      }
+
+      if (!autoCreate) {
+        return {
+          success: true,
+          message: `Auto-create disabled, skipping guardrail resource management for ${scenarioId}`,
+          event: 'load',
+          scenarioId: scenarioId,
+          hasGuardrails: true,
+          autoCreateDisabled: true
+        };
+      }
+
+      // Prepare guardrail configurations for AWS
+      const guardrailConfigs = await this.prepareGuardrailResourceConfigs(scenarioId);
+
+      if (guardrailConfigs.length === 0) {
+        return {
+          success: true,
+          message: `No valid guardrail configurations found for scenario ${scenarioId}`,
+          event: 'load',
+          scenarioId: scenarioId,
+          hasGuardrails: false
+        };
+      }
+
+      // Ensure guardrails exist in AWS
+      const ensureResult = await guardrailService.ensureGuardrailsExist(guardrailConfigs);
+
+      return {
+        success: ensureResult.success,
+        message: `Guardrail resources managed for scenario ${scenarioId}: ${ensureResult.created.length} created, ${ensureResult.existing.length} existing`,
+        event: 'load',
+        scenarioId: scenarioId,
+        hasGuardrails: true,
+        guardrailsCreated: ensureResult.created,
+        guardrailsExisting: ensureResult.existing,
+        guardrailsErrors: ensureResult.errors,
+        totalGuardrails: ensureResult.guardrails.length
+      };
+    } catch (error) {
+      console.error(`[ScenarioService] Error handling scenario load guardrails for ${scenarioId}:`, error);
+      return {
+        success: false,
+        message: `Failed to manage guardrail resources for scenario ${scenarioId}: ${error.message}`,
+        event: 'load',
+        scenarioId: scenarioId,
+        error: error
+      };
+    }
+  }
+
+  /**
+   * Handle guardrail resources when a scenario is unloaded
+   * @param {string} scenarioId - The scenario ID
+   * @param {Object} scenario - The scenario data
+   * @param {Object} guardrailService - The GuardrailService instance
+   * @returns {Promise<Object>} Unload result
+   */
+  async handleScenarioUnloadGuardrails(scenarioId, scenario, guardrailService) {
+    try {
+      // For now, we don't automatically delete guardrails when scenarios are unloaded
+      // This prevents accidental deletion of shared resources
+      // Users can manually manage guardrails through the settings interface
+
+      return {
+        success: true,
+        message: `Scenario ${scenarioId} unloaded, guardrail resources preserved`,
+        event: 'unload',
+        scenarioId: scenarioId,
+        action: 'preserve'
+      };
+    } catch (error) {
+      console.error(`[ScenarioService] Error handling scenario unload guardrails for ${scenarioId}:`, error);
+      return {
+        success: false,
+        message: `Failed to handle guardrail resources for scenario unload ${scenarioId}: ${error.message}`,
+        event: 'unload',
+        scenarioId: scenarioId,
+        error: error
+      };
+    }
+  }
+
+  /**
+   * Handle guardrail resources when a scenario is updated
+   * @param {string} scenarioId - The scenario ID
+   * @param {Object} scenario - The scenario data
+   * @param {Object} guardrailService - The GuardrailService instance
+   * @returns {Promise<Object>} Update result
+   */
+  async handleScenarioUpdateGuardrails(scenarioId, scenario, guardrailService) {
+    try {
+      if (!scenario.guardrails || !scenario.guardrails.configs || scenario.guardrails.configs.length === 0) {
+        return {
+          success: true,
+          message: `No guardrails configured for updated scenario ${scenarioId}`,
+          event: 'update',
+          scenarioId: scenarioId,
+          hasGuardrails: false
+        };
+      }
+
+      // For scenario updates, we'll re-ensure guardrails exist
+      // This handles cases where guardrail configurations have changed
+      const guardrailConfigs = await this.prepareGuardrailResourceConfigs(scenarioId);
+
+      if (guardrailConfigs.length === 0) {
+        return {
+          success: true,
+          message: `No valid guardrail configurations found for updated scenario ${scenarioId}`,
+          event: 'update',
+          scenarioId: scenarioId,
+          hasGuardrails: false
+        };
+      }
+
+      const ensureResult = await guardrailService.ensureGuardrailsExist(guardrailConfigs);
+
+      return {
+        success: ensureResult.success,
+        message: `Guardrail resources updated for scenario ${scenarioId}: ${ensureResult.created.length} created, ${ensureResult.existing.length} existing`,
+        event: 'update',
+        scenarioId: scenarioId,
+        hasGuardrails: true,
+        guardrailsCreated: ensureResult.created,
+        guardrailsExisting: ensureResult.existing,
+        guardrailsErrors: ensureResult.errors,
+        totalGuardrails: ensureResult.guardrails.length
+      };
+    } catch (error) {
+      console.error(`[ScenarioService] Error handling scenario update guardrails for ${scenarioId}:`, error);
+      return {
+        success: false,
+        message: `Failed to update guardrail resources for scenario ${scenarioId}: ${error.message}`,
+        event: 'update',
+        scenarioId: scenarioId,
+        error: error
+      };
+    }
+  }
+
+  /**
+   * Get all scenarios that have guardrails configured
+   * @returns {Array} Array of scenario IDs with guardrails
+   */
+  getScenariosWithGuardrails() {
+    try {
+      const scenariosWithGuardrails = [];
+
+      for (const [scenarioId, scenario] of this.scenarios.entries()) {
+        if (scenario.guardrails && scenario.guardrails.configs && scenario.guardrails.configs.length > 0) {
+          scenariosWithGuardrails.push({
+            scenarioId: scenarioId,
+            scenarioName: scenario.name || scenarioId,
+            guardrailCount: scenario.guardrails.configs.length,
+            guardrailsEnabled: scenario.guardrails.enabled !== false
+          });
+        }
+      }
+
+      return scenariosWithGuardrails;
+    } catch (error) {
+      console.error('[ScenarioService] Error getting scenarios with guardrails:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get aggregated guardrail resource requirements across all scenarios
+   * @returns {Object} Aggregated guardrail requirements
+   */
+  getAggregatedGuardrailRequirements() {
+    try {
+      const requirements = {
+        totalScenarios: 0,
+        totalGuardrails: 0,
+        uniqueGuardrailNames: new Set(),
+        policyTypes: new Set(),
+        scenarios: []
+      };
+
+      for (const [scenarioId, scenario] of this.scenarios.entries()) {
+        if (scenario.guardrails && scenario.guardrails.configs && scenario.guardrails.configs.length > 0) {
+          requirements.totalScenarios++;
+          requirements.totalGuardrails += scenario.guardrails.configs.length;
+
+          const scenarioInfo = {
+            scenarioId: scenarioId,
+            scenarioName: scenario.name || scenarioId,
+            guardrails: []
+          };
+
+          scenario.guardrails.configs.forEach(config => {
+            requirements.uniqueGuardrailNames.add(config.name);
+            scenarioInfo.guardrails.push(config.name);
+
+            // Track policy types
+            if (config.contentPolicyConfig) requirements.policyTypes.add('content');
+            if (config.wordPolicyConfig) requirements.policyTypes.add('word');
+            if (config.sensitiveInformationPolicyConfig) requirements.policyTypes.add('pii');
+            if (config.topicPolicyConfig) requirements.policyTypes.add('topic');
+          });
+
+          requirements.scenarios.push(scenarioInfo);
+        }
+      }
+
+      return {
+        totalScenarios: requirements.totalScenarios,
+        totalGuardrails: requirements.totalGuardrails,
+        uniqueGuardrailCount: requirements.uniqueGuardrailNames.size,
+        uniqueGuardrailNames: Array.from(requirements.uniqueGuardrailNames),
+        policyTypes: Array.from(requirements.policyTypes),
+        scenarios: requirements.scenarios
+      };
+    } catch (error) {
+      console.error('[ScenarioService] Error getting aggregated guardrail requirements:', error);
+      return {
+        totalScenarios: 0,
+        totalGuardrails: 0,
+        uniqueGuardrailCount: 0,
+        uniqueGuardrailNames: [],
+        policyTypes: [],
+        scenarios: []
+      };
+    }
+  }
+
+  /**
+   * Initialize guardrails for all scenarios with guardrail configurations
+   * This method integrates with GuardrailService to ensure AWS resources exist
+   * @param {Object} guardrailService - Instance of GuardrailService
+   * @returns {Promise<Object>} Initialization results
+   */
+  async initializeGuardrailsForAllScenarios(guardrailService) {
+    try {
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
+
+      // Get all scenarios with guardrail configurations
+      const scenariosWithGuardrails = [];
+
+      for (const [scenarioId, scenario] of this.scenarios.entries()) {
+        if (scenario.guardrails && scenario.guardrails.enabled !== false) {
+          scenariosWithGuardrails.push({
+            name: scenarioId,
+            guardrails: scenario.guardrails
+          });
+        }
+      }
+
+      if (scenariosWithGuardrails.length === 0) {
+        return {
+          success: true,
+          message: 'No scenarios with guardrails found',
+          processed: 0,
+          created: [],
+          existing: [],
+          errors: []
+        };
+      }
+
+      // Use GuardrailService to initialize guardrails
+      const results = await guardrailService.initializeGuardrailsForScenarios(scenariosWithGuardrails);
+
+      return {
+        success: results.success,
+        message: `Processed ${results.processed} scenarios with guardrails`,
+        processed: results.processed,
+        created: results.created,
+        existing: results.existing,
+        errors: results.errors,
+        skipped: results.skipped
+      };
+    } catch (error) {
+      console.error('[ScenarioService] Error initializing guardrails for scenarios:', error);
+      return {
+        success: false,
+        message: error.message,
+        processed: 0,
+        created: [],
+        existing: [],
+        errors: [{ scenarioName: 'initialization', error: error.message }]
+      };
+    }
+  }
+
+  /**
+   * Get guardrail ARN for a scenario from GuardrailService
+   * @param {string} scenarioId - The scenario ID
+   * @param {Object} guardrailService - Instance of GuardrailService
+   * @returns {Promise<string|null>} Guardrail ARN or null if not found
+   */
+  async getGuardrailArnForScenario(scenarioId, guardrailService) {
+    try {
+      // First check if scenario has guardrails configured
+      if (!this.hasGuardrails(scenarioId)) {
+        return null;
+      }
+
+      // Check stored guardrail information
+      const storedGuardrail = guardrailService.getStoredGuardrailForScenario(scenarioId);
+      if (storedGuardrail) {
+        return storedGuardrail.arn;
+      }
+
+      // If not stored, try to discover existing guardrail
+      const status = await guardrailService.getGuardrailStatus(scenarioId);
+      if (status.exists) {
+        // Store for future use
+        guardrailService.storeGuardrailForScenario(
+          scenarioId,
+          status.guardrail.arn,
+          status.guardrail.id
+        );
+        return status.guardrail.arn;
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`[ScenarioService] Error getting guardrail ARN for scenario ${scenarioId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Ensure guardrail exists for a specific scenario
+   * @param {string} scenarioId - The scenario ID
+   * @param {Object} guardrailService - Instance of GuardrailService
+   * @returns {Promise<Object>} Result of guardrail creation/discovery
+   */
+  async ensureGuardrailForScenario(scenarioId, guardrailService) {
+    try {
+      const scenario = this.scenarios.get(scenarioId);
+      if (!scenario) {
+        throw new Error(`Scenario ${scenarioId} not found`);
+      }
+
+      if (!scenario.guardrails || scenario.guardrails.enabled === false) {
+        return {
+          success: true,
+          action: 'skipped',
+          reason: 'No guardrails configured or disabled',
+          scenarioId: scenarioId
+        };
+      }
+
+      // Use GuardrailService to ensure guardrail exists
+      const result = await guardrailService.ensureGuardrailExists(scenarioId, scenario.guardrails);
+
+      return {
+        ...result,
+        scenarioId: scenarioId
+      };
+    } catch (error) {
+      console.error(`[ScenarioService] Error ensuring guardrail for scenario ${scenarioId}:`, error);
+      return {
+        success: false,
+        action: 'error',
+        error: error.message,
+        scenarioId: scenarioId
+      };
     }
   }
 }

@@ -24,12 +24,14 @@ import CacheManager from "./components/CacheManager";
 
 import ToolExecutionSettings from "./components/ToolExecutionSettings";
 import ToolExecutionMonitor from "./components/ToolExecutionMonitor";
+import GuardrailsSection from "./components/GuardrailsSection";
 import { bedrockService } from "./services/bedrockService";
 import { datasetToolIntegrationService } from "./services/datasetToolIntegrationService";
 import { scenarioToolIntegrationService } from "./services/scenarioToolIntegrationService";
 import { scenarioService } from "./services/scenarioService";
 import { toolExecutionService } from "./services/toolExecutionService";
 import { workflowTrackingService } from "./services/workflowTrackingService";
+import { guardrailService } from "./services/guardrailService";
 import { useHistory } from "./hooks/useHistory";
 import { useModelOutput } from "./hooks/useModelOutput";
 import {
@@ -183,6 +185,13 @@ function App() {
   const [selectedSystemPromptId, setSelectedSystemPromptId] = useState('');
   const [selectedUserPromptId, setSelectedUserPromptId] = useState('');
 
+  // Guardrail state
+  const [guardrailsEnabled, setGuardrailsEnabled] = useState(false);
+  const [guardrailsInitialized, setGuardrailsInitialized] = useState(false);
+  const [guardrailsError, setGuardrailsError] = useState(null);
+  const [scenarioGuardrailMap, setScenarioGuardrailMap] = useState(new Map());
+  const [guardrailDiscoveryComplete, setGuardrailDiscoveryComplete] = useState(false);
+
   // Track if this is the initial load
   const isInitialLoad = useRef(true);
 
@@ -195,7 +204,8 @@ function App() {
         scenarioSelector: false,
         datasetSelector: false,
         promptEditor: false,
-        executionSettings: false
+        executionSettings: false,
+        guardrails: false
       };
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -210,7 +220,8 @@ function App() {
         scenarioSelector: false,
         datasetSelector: false,
         promptEditor: false,
-        executionSettings: false
+        executionSettings: false,
+        guardrails: false
       };
     }
   });
@@ -280,6 +291,96 @@ function App() {
       console.error("UI recovery failed for App:", result);
     },
   });
+
+  // Discover existing guardrails and map them to scenarios
+  const discoverExistingGuardrails = async () => {
+    if (!guardrailService.isReady()) {
+      console.warn('[App] Guardrail service not ready, skipping discovery');
+      return;
+    }
+
+    try {
+      console.log('[App] Discovering existing guardrails...');
+      const existingGuardrails = await guardrailService.discoverExistingGuardrails();
+
+      if (existingGuardrails.length > 0) {
+        console.log(`[App] Found ${existingGuardrails.length} existing guardrails`);
+
+        // Create a map of scenario names to guardrail information
+        const guardrailMap = new Map();
+        existingGuardrails.forEach(guardrail => {
+          if (guardrail.scenarioName) {
+            guardrailMap.set(guardrail.scenarioName, {
+              id: guardrail.id,
+              arn: guardrail.arn,
+              version: guardrail.version,
+              name: guardrail.name,
+              status: guardrail.status,
+              createdAt: guardrail.createdAt
+            });
+          }
+        });
+
+        setScenarioGuardrailMap(guardrailMap);
+        console.log(`[App] Mapped guardrails to ${guardrailMap.size} scenarios`);
+      } else {
+        console.log('[App] No existing guardrails found');
+      }
+
+      setGuardrailDiscoveryComplete(true);
+    } catch (error) {
+      console.error('[App] Failed to discover existing guardrails:', error);
+      setGuardrailsError(`Failed to discover guardrails: ${error.message}`);
+      setGuardrailDiscoveryComplete(true); // Mark as complete even on error
+    }
+  };
+
+  // Get guardrail configuration for the current scenario
+  const getGuardrailConfigForTest = async () => {
+    if (!selectedScenario || !guardrailsEnabled || !guardrailService.isReady()) {
+      return null;
+    }
+
+    try {
+      // Check if scenario has guardrail configuration
+      const scenario = scenarioService.getScenario(selectedScenario);
+      if (!scenario || !scenario.guardrails || !scenario.guardrails.enabled) {
+        return null;
+      }
+
+      // Check if we have an existing guardrail for this scenario
+      const existingGuardrail = scenarioGuardrailMap.get(selectedScenario);
+      if (existingGuardrail) {
+        return {
+          guardrailIdentifier: existingGuardrail.arn,
+          guardrailVersion: existingGuardrail.version || 'DRAFT'
+        };
+      }
+
+      // Try to ensure guardrail exists (create if needed)
+      const ensureResult = await guardrailService.ensureGuardrailExists(selectedScenario, scenario.guardrails);
+      if (ensureResult.success) {
+        // Update our local map
+        setScenarioGuardrailMap(prev => new Map(prev.set(selectedScenario, {
+          id: ensureResult.guardrail.id,
+          arn: ensureResult.guardrail.arn,
+          version: ensureResult.guardrail.version,
+          name: ensureResult.guardrail.name,
+          status: ensureResult.guardrail.status
+        })));
+
+        return {
+          guardrailIdentifier: ensureResult.guardrail.arn,
+          guardrailVersion: ensureResult.guardrail.version || 'DRAFT'
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.warn('[App] Failed to get guardrail config for test:', error);
+      return null;
+    }
+  };
 
   // Helper function to generate user-friendly validation messages
   const getValidationGuidance = (errors) => {
@@ -507,6 +608,39 @@ function App() {
     };
 
     initializeScenarioService();
+  }, []);
+
+  // Initialize guardrail service on app startup
+  useEffect(() => {
+    const initializeGuardrailService = async () => {
+      try {
+        if (!guardrailService.isInitialized) {
+          console.log('[App] Initializing guardrail service...');
+          const initResult = await guardrailService.initialize();
+
+          if (initResult.success) {
+            setGuardrailsInitialized(true);
+            setGuardrailsError(null);
+            console.log('[App] Guardrail service initialized successfully');
+
+            // Discover existing guardrails after successful initialization
+            await discoverExistingGuardrails();
+          } else {
+            // Service failed to initialize but we continue in degraded mode
+            setGuardrailsInitialized(false);
+            setGuardrailsError(initResult.message);
+            console.warn('[App] Guardrail service initialization failed, continuing without guardrails:', initResult.message);
+          }
+        }
+      } catch (error) {
+        console.error('[App] Failed to initialize guardrail service:', error);
+        setGuardrailsInitialized(false);
+        setGuardrailsError(error.message);
+        // Don't set main app error - guardrails are optional
+      }
+    };
+
+    initializeGuardrailService();
   }, []);
 
   // Load scenario configuration when scenario changes (only after initial load)
@@ -1246,6 +1380,20 @@ function App() {
           setProgressStatus("Sending request to model...");
           setProgressValue(50);
 
+          // Get guardrail configuration for this test
+          let guardrailConfig = null;
+          if (guardrailsEnabled && selectedScenario) {
+            try {
+              setProgressStatus("Configuring guardrails...");
+              guardrailConfig = await getGuardrailConfigForTest();
+              if (guardrailConfig) {
+                console.log('[App] Using guardrail configuration:', guardrailConfig);
+              }
+            } catch (error) {
+              console.warn('[App] Failed to configure guardrails, proceeding without:', error);
+            }
+          }
+
           let response;
           let streamingMetrics = null;
           let workflowData = null;
@@ -1299,6 +1447,7 @@ function App() {
                   maxIterations: maxIterations,
                   executionId: executionId,
                   datasetType: selectedDataset.id,
+                  guardrailConfig: guardrailConfig, // Pass guardrail configuration to tool execution
                   onStreamUpdate: (update) => {
                     // Update streaming content with workflow progress
                     setStreamingContent(prevContent => {
@@ -1624,7 +1773,8 @@ function App() {
 
                 setIsStreaming(false);
               },
-              toolConfig // Pass tool configuration to streaming method
+              toolConfig, // Pass tool configuration to streaming method
+              guardrailConfig // Pass guardrail configuration to streaming method
             );
           } else {
             // Tool detection mode without streaming
@@ -1634,7 +1784,8 @@ function App() {
               systemPrompt,
               userPrompt,
               selectedDataset.content,
-              toolConfig // Pass tool configuration to standard method
+              toolConfig, // Pass tool configuration to standard method
+              guardrailConfig // Pass guardrail configuration to standard method
             );
 
             // Update output manager with complete response
@@ -1679,6 +1830,9 @@ function App() {
             toolConfigurationStatus: toolConfigurationStatus, // Include tool configuration status
             toolExecutionEnabled: useToolsEnabled, // Flag to indicate if tools were actually executed
             workflowData: workflowData, // Include workflow data for tool execution
+            guardrailResults: response.guardrailResults || null, // Include guardrail evaluation results
+            guardrailConfig: guardrailConfig, // Include guardrail configuration used
+            guardrailsEnabled: guardrailsEnabled, // Flag to indicate if guardrails were enabled
             timestamp: new Date().toISOString(),
           };
         },
@@ -2274,6 +2428,37 @@ function App() {
                         onToggleCollapse={() => toggleSectionCollapse('scenarioSelector')}
                       />
 
+                      {/* Guardrails Section - Only show if scenario has guardrails configured */}
+                      {selectedScenario && scenarioService.isInitialized && (() => {
+                        try {
+                          const scenario = scenarioService.getScenario(selectedScenario);
+                          return scenario && scenario.guardrails && scenario.guardrails.enabled;
+                        } catch (error) {
+                          return false;
+                        }
+                      })() && (
+                        <GuardrailsSection
+                          guardrails={(() => {
+                            try {
+                              const scenario = scenarioService.getScenario(selectedScenario);
+                              return scenario?.guardrails;
+                            } catch (error) {
+                              return null;
+                            }
+                          })()}
+                          isEnabled={guardrailsEnabled}
+                          onToggleEnabled={() => setGuardrailsEnabled(!guardrailsEnabled)}
+                          onTestGuardrails={() => {
+                            // TODO: Implement guardrail testing functionality
+                            console.log('Testing guardrails for scenario:', selectedScenario);
+                          }}
+                          isCollapsed={collapsedSections.guardrails || false}
+                          onToggleCollapse={() => toggleSectionCollapse('guardrails')}
+                          validationErrors={validationErrors.guardrails ? [validationErrors.guardrails] : []}
+                          isTestingGuardrails={false}
+                        />
+                      )}
+
                       {scenarioConfig.showDatasetSelector && (
                         <ConditionalDatasetSelector
                           scenario={selectedScenario}
@@ -2712,6 +2897,16 @@ function App() {
               // Settings are automatically saved by the SettingsService
               // This callback is for any additional actions needed
             }}
+            // Guardrail props
+            guardrailsEnabled={guardrailsEnabled}
+            onToggleGuardrails={() => setGuardrailsEnabled(!guardrailsEnabled)}
+            onTestGuardrails={() => {
+              // TODO: Implement guardrail testing functionality
+              console.log('Testing guardrails...');
+            }}
+            guardrailsInitialized={guardrailsInitialized}
+            guardrailsError={guardrailsError}
+            scenarioGuardrailMap={scenarioGuardrailMap}
           />
 
           {/* Scenario Builder Dialog */}

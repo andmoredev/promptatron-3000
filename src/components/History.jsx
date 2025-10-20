@@ -739,6 +739,16 @@ const History = ({
                       )}
                     </>
                   )}
+                  {/* Guardrail indicator */}
+                  {item.guardrailResults && (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      (item.guardrailResults.hasViolations || item.guardrailResults.action === 'GUARDRAIL_INTERVENED')
+                        ? 'bg-red-100 text-red-800'
+                        : 'bg-green-100 text-green-800'
+                    }`}>
+                      🛡️ {(item.guardrailResults.hasViolations || item.guardrailResults.action === 'GUARDRAIL_INTERVENED') ? 'Blocked' : 'Passed'}
+                    </span>
+                  )}
                   <span className="text-sm text-gray-500">
                     {formatTimestamp(item.timestamp)}
                   </span>

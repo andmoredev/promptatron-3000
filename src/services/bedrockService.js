@@ -161,9 +161,10 @@ export class BedrockService {
    * @param {string} userPrompt - The user prompt to send to the model
    * @param {string} content - Additional content/context for the model
    * @param {Object} toolConfig - Optional tool configuration for tool use
+   * @param {Object} guardrailConfig - Optional guardrail configuration
    * @returns {Promise<Object>} The model response
    */
-  async invokeModel(modelId, systemPrompt, userPrompt, content = '', toolConfig = null) {
+  async invokeModel(modelId, systemPrompt, userPrompt, content = '', toolConfig = null, guardrailConfig = null) {
     if (!this.isInitialized || !this.credentialsValid) {
       const initResult = await this.initialize();
       if (!initResult.success) {
@@ -185,7 +186,7 @@ export class BedrockService {
           onToolExecution: toolConfig.onToolExecution
         } : {};
 
-        const result = await this.invokeModelWithTools(modelId, systemPrompt, userPrompt, content, toolConfig, executionOptions);
+        const result = await this.invokeModelWithTools(modelId, systemPrompt, userPrompt, content, toolConfig, executionOptions, guardrailConfig);
         const endTime = performance.now();
         result.responseTime = endTime - startTime;
         return result;
@@ -223,6 +224,11 @@ export class BedrockService {
             text: systemPrompt
           }
         ];
+      }
+
+      // Add guardrail configuration if provided
+      if (guardrailConfig) {
+        converseParams.guardrailConfig = this.formatGuardrailConfigForAPI(guardrailConfig);
       }
 
       const command = new ConverseCommand(converseParams);
@@ -263,7 +269,8 @@ export class BedrockService {
       maxIterations = 10,
       onProgress = null,
       onToolExecution = null,
-      executionId = this.generateExecutionId()
+      executionId = this.generateExecutionId(),
+      guardrailConfig = null
     } = options;
 
     // Track workflow execution state
@@ -274,6 +281,7 @@ export class BedrockService {
       userPrompt,
       content,
       toolConfig,
+      guardrailConfig,
       currentIteration: 0,
       maxIterations,
       startTime: Date.now(),
@@ -284,7 +292,8 @@ export class BedrockService {
       toolExecutions: [],
       totalToolCalls: 0,
       finalResponse: null,
-      errors: []
+      errors: [],
+      guardrailResults: [] // Track guardrail results throughout workflow
     };
 
     try {
@@ -346,9 +355,24 @@ export class BedrockService {
           converseParams.system = [{ text: systemPrompt }];
         }
 
+        // Add guardrail configuration if provided
+        if (guardrailConfig) {
+          converseParams.guardrailConfig = this.formatGuardrailConfigForAPI(guardrailConfig);
+        }
+
         // Make request to Bedrock
         const command = new ConverseCommand(converseParams);
         const response = await this.runtimeClient.send(command);
+
+        // Parse guardrail results from response
+        const guardrailResults = this.parseGuardrailResults(response);
+        if (guardrailResults.hasViolations) {
+          workflowState.guardrailResults.push({
+            iteration: workflowState.currentIteration,
+            results: guardrailResults,
+            timestamp: new Date().toISOString()
+          });
+        }
 
         // Add LLM response to workflow
         this.addWorkflowStep(workflowState, {
@@ -356,11 +380,13 @@ export class BedrockService {
           content: {
             response: response.output?.message?.content,
             stopReason: response.stopReason,
-            usage: response.usage
+            usage: response.usage,
+            guardrailResults: guardrailResults
           },
           metadata: {
             iteration: workflowState.currentIteration,
-            modelId
+            modelId,
+            hasGuardrailViolations: guardrailResults.hasViolations
           }
         });
 
@@ -379,7 +405,8 @@ export class BedrockService {
               total_tokens: response.usage.totalTokens
             } : null,
             stopReason: response.stopReason,
-            iterationCount: workflowState.currentIteration
+            iterationCount: workflowState.currentIteration,
+            guardrailResults: guardrailResults
           };
 
           // Add completion step to workflow
@@ -617,7 +644,9 @@ export class BedrockService {
         totalDuration: workflowState.totalDuration,
         status: workflowState.status,
         errors: workflowState.errors,
-        stopReason: workflowState.finalResponse?.stopReason || 'unknown'
+        stopReason: workflowState.finalResponse?.stopReason || 'unknown',
+        guardrailResults: workflowState.finalResponse?.guardrailResults,
+        allGuardrailResults: workflowState.guardrailResults
       };
 
     } catch (error) {
@@ -728,9 +757,10 @@ export class BedrockService {
    * @param {string} content - Additional content/context for the model
    * @param {Object} toolConfig - Tool configuration object
    * @param {Object} options - Execution options including mode
+   * @param {Object} guardrailConfig - Optional guardrail configuration
    * @returns {Promise<Object>} The model response with tool usage data
    */
-  async invokeModelWithTools(modelId, systemPrompt, userPrompt, content = '', toolConfig, options = {}) {
+  async invokeModelWithTools(modelId, systemPrompt, userPrompt, content = '', toolConfig, options = {}, guardrailConfig = null) {
     const {
       executionMode = 'detection', // 'detection' or 'execution'
       maxIterations = 10,
@@ -749,7 +779,8 @@ export class BedrockService {
         {
           maxIterations,
           onProgress,
-          onToolExecution
+          onToolExecution,
+          guardrailConfig
         }
       );
     }
@@ -1460,9 +1491,10 @@ export class BedrockService {
    * @param {Function} onComplete - Callback function called when streaming completes
    * @param {Function} onError - Callback function called if streaming fails
    * @param {Object} toolConfig - Optional tool configuration for tool use
+   * @param {Object} guardrailConfig - Optional guardrail configuration
    * @returns {Promise<Object>} The complete model response
    */
-  async invokeModelStream(modelId, systemPrompt, userPrompt, content = '', onToken, onComplete, onError, toolConfig = null) {
+  async invokeModelStream(modelId, systemPrompt, userPrompt, content = '', onToken, onComplete, onError, toolConfig = null, guardrailConfig = null) {
     if (!this.isInitialized || !this.credentialsValid) {
       const initResult = await this.initialize();
       if (!initResult.success) {
@@ -1649,6 +1681,11 @@ export class BedrockService {
           text: systemPrompt
         }
       ];
+    }
+
+    // Add guardrail configuration if provided (passed through toolConfig)
+    if (toolConfig.guardrailConfig) {
+      converseParams.guardrailConfig = this.formatGuardrailConfigForAPI(toolConfig.guardrailConfig);
     }
 
     const command = new ConverseStreamCommand(converseParams);
@@ -1875,6 +1912,11 @@ export class BedrockService {
         ];
       }
 
+      // Add guardrail configuration if provided
+      if (guardrailConfig) {
+        converseParams.guardrailConfig = this.formatGuardrailConfigForAPI(guardrailConfig);
+      }
+
       const command = new ConverseStreamCommand(converseParams);
       const response = await this.runtimeClient.send(command);
 
@@ -1893,6 +1935,10 @@ export class BedrockService {
           onToken?.(parsedEvent.text, fullText);
         } else if (parsedEvent.type === 'metadata' && parsedEvent.usage) {
           usage = parsedEvent.usage;
+        } else if (parsedEvent.type === 'guardrail' && parsedEvent.guardrailResults) {
+          // Store guardrail results to include in final response
+          if (!usage) usage = {};
+          usage.guardrailResults = parsedEvent.guardrailResults;
         } else if (parsedEvent.type === 'error') {
           throw new Error(parsedEvent.error);
         }
@@ -1905,7 +1951,8 @@ export class BedrockService {
 
       const result = {
         text: fullText,
-        usage: usage
+        usage: usage,
+        guardrailResults: usage?.guardrailResults || null
       };
 
       onComplete?.(result);
@@ -2271,6 +2318,14 @@ export class BedrockService {
         };
       }
 
+      // Handle guardrail trace event
+      if (event.metadata?.trace?.guardrail) {
+        return {
+          type: 'guardrail',
+          guardrailResults: this.parseGuardrailResults({ trace: event.metadata.trace })
+        };
+      }
+
       // Handle any other event types
       return {
         type: 'unknown',
@@ -2301,9 +2356,13 @@ export class BedrockService {
         total_tokens: response.usage.totalTokens
       } : null;
 
+      // Extract guardrail results if available
+      const guardrailResults = this.parseGuardrailResults(response);
+
       return {
         text: text,
-        usage: usage
+        usage: usage,
+        guardrailResults: guardrailResults
       };
     } catch (error) {
       throw new Error(`Failed to parse Converse API response: ${error.message}`);
@@ -3389,6 +3448,431 @@ export class BedrockService {
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
+  }
+  /**
+   * Format guardrail configuration for AWS Bedrock API
+   * @param {Object} guardrailConfig - Guardrail configuration object
+   * @returns {Object} Formatted guardrail config for API
+   * @private
+   */
+  formatGuardrailConfigForAPI(guardrailConfig) {
+    try {
+      // Handle single guardrail configuration with identifier
+      if (guardrailConfig.guardrailIdentifier) {
+        return {
+          guardrailIdentifier: guardrailConfig.guardrailIdentifier,
+          guardrailVersion: guardrailConfig.guardrailVersion || 'DRAFT'
+        };
+      }
+
+      // Handle single guardrail with ARN
+      if (guardrailConfig.arn) {
+        return {
+          guardrailIdentifier: guardrailConfig.arn,
+          guardrailVersion: guardrailConfig.version || 'DRAFT'
+        };
+      }
+
+      // Handle multiple guardrails - use the first one for single API call
+      // AWS Bedrock Converse API currently supports one guardrail per request
+      if (guardrailConfig.guardrails && Array.isArray(guardrailConfig.guardrails) && guardrailConfig.guardrails.length > 0) {
+        const firstGuardrail = guardrailConfig.guardrails[0];
+        return {
+          guardrailIdentifier: firstGuardrail.arn || firstGuardrail.guardrailIdentifier,
+          guardrailVersion: firstGuardrail.version || 'DRAFT'
+        };
+      }
+
+      // Handle direct ARN format
+      if (typeof guardrailConfig === 'string') {
+        return {
+          guardrailIdentifier: guardrailConfig,
+          guardrailVersion: 'DRAFT'
+        };
+      }
+
+      throw new Error('Invalid guardrail configuration format');
+    } catch (error) {
+      console.warn('Failed to format guardrail config:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Parse guardrail results from Bedrock response
+   * @param {Object} response - Bedrock API response
+   * @returns {Object} Parsed guardrail results
+   * @private
+   */
+  parseGuardrailResults(response) {
+    try {
+      // Check if response has guardrail trace
+      if (!response.trace || !response.trace.guardrail) {
+        return {
+          hasViolations: false,
+          action: 'NONE',
+          assessments: [],
+          outputText: null
+        };
+      }
+
+      const guardrailTrace = response.trace.guardrail;
+
+      return {
+        hasViolations: guardrailTrace.action === 'GUARDRAIL_INTERVENED',
+        action: guardrailTrace.action || 'NONE',
+        assessments: guardrailTrace.assessments || [],
+        outputText: guardrailTrace.outputText || null,
+        inputAssessments: guardrailTrace.inputAssessments || [],
+        outputAssessments: guardrailTrace.outputAssessments || []
+      };
+    } catch (error) {
+      console.warn('Failed to parse guardrail results:', error.message);
+      return {
+        hasViolations: false,
+        action: 'NONE',
+        assessments: [],
+        outputText: null,
+        parseError: error.message
+      };
+    }
+  }
+
+  /**
+   * Evaluate content against multiple guardrails concurrently
+   * @param {string} modelId - The model ID to invoke
+   * @param {string} systemPrompt - The system prompt
+   * @param {string} userPrompt - The user prompt
+   * @param {string} content - Additional content
+   * @param {Array} guardrailConfigs - Array of guardrail configurations
+   * @param {Object} toolConfig - Optional tool configuration
+   * @returns {Promise<Object>} Combined results from all guardrails
+   */
+  async evaluateMultipleGuardrails(modelId, systemPrompt, userPrompt, content = '', guardrailConfigs = [], toolConfig = null) {
+    if (!guardrailConfigs || guardrailConfigs.length === 0) {
+      // No guardrails to evaluate, proceed with normal invocation
+      return await this.invokeModel(modelId, systemPrompt, userPrompt, content, toolConfig);
+    }
+
+    if (guardrailConfigs.length === 1) {
+      // Single guardrail, use normal invocation
+      return await this.invokeModel(modelId, systemPrompt, userPrompt, content, toolConfig, guardrailConfigs[0]);
+    }
+
+    // Multiple guardrails - evaluate concurrently
+    const evaluationPromises = guardrailConfigs.map(async (guardrailConfig, index) => {
+      try {
+        const result = await this.invokeModel(modelId, systemPrompt, userPrompt, content, toolConfig, guardrailConfig);
+        return {
+          success: true,
+          guardrailIndex: index,
+          guardrailConfig: guardrailConfig,
+          result: result,
+          error: null
+        };
+      } catch (error) {
+        return {
+          success: false,
+          guardrailIndex: index,
+          guardrailConfig: guardrailConfig,
+          result: null,
+          error: error.message
+        };
+      }
+    });
+
+    const evaluationResults = await Promise.allSettled(evaluationPromises);
+
+    return this.combineGuardrailResults(evaluationResults, guardrailConfigs);
+  }
+
+  /**
+   * Combine results from multiple guardrail evaluations
+   * @param {Array} evaluationResults - Results from Promise.allSettled
+   * @param {Array} guardrailConfigs - Original guardrail configurations
+   * @returns {Object} Combined guardrail evaluation results
+   * @private
+   */
+  combineGuardrailResults(evaluationResults, guardrailConfigs) {
+    const combinedResult = {
+      text: '',
+      usage: null,
+      guardrailResults: {
+        hasViolations: false,
+        action: 'NONE',
+        assessments: [],
+        outputText: null,
+        multipleGuardrails: true,
+        individualResults: [],
+        errors: [],
+        successfulEvaluations: 0,
+        totalEvaluations: guardrailConfigs.length
+      },
+      responseTime: 0,
+      multipleGuardrailsEvaluation: true
+    };
+
+    let maxResponseTime = 0;
+    let hasAnyViolations = false;
+    let primaryResult = null;
+
+    for (let i = 0; i < evaluationResults.length; i++) {
+      const evaluation = evaluationResults[i];
+      const guardrailConfig = guardrailConfigs[i];
+
+      if (evaluation.status === 'fulfilled' && evaluation.value.success) {
+        const result = evaluation.value.result;
+        combinedResult.guardrailResults.successfulEvaluations++;
+
+        // Use the first successful result as the primary result for text and usage
+        if (!primaryResult) {
+          primaryResult = result;
+          combinedResult.text = result.text;
+          combinedResult.usage = result.usage;
+        }
+
+        // Track maximum response time
+        if (result.responseTime > maxResponseTime) {
+          maxResponseTime = result.responseTime;
+        }
+
+        // Check for violations
+        if (result.guardrailResults && result.guardrailResults.hasViolations) {
+          hasAnyViolations = true;
+        }
+
+        // Add individual result
+        combinedResult.guardrailResults.individualResults.push({
+          guardrailIndex: i,
+          guardrailConfig: guardrailConfig,
+          success: true,
+          guardrailResults: result.guardrailResults,
+          responseTime: result.responseTime
+        });
+
+        // Combine assessments
+        if (result.guardrailResults && result.guardrailResults.assessments) {
+          combinedResult.guardrailResults.assessments.push(...result.guardrailResults.assessments);
+        }
+
+      } else {
+        // Handle failed evaluation
+        const error = evaluation.status === 'rejected' ? evaluation.reason : evaluation.value.error;
+
+        combinedResult.guardrailResults.errors.push({
+          guardrailIndex: i,
+          guardrailConfig: guardrailConfig,
+          error: error,
+          message: `Guardrail ${i + 1} evaluation failed: ${error}`
+        });
+
+        combinedResult.guardrailResults.individualResults.push({
+          guardrailIndex: i,
+          guardrailConfig: guardrailConfig,
+          success: false,
+          error: error,
+          responseTime: 0
+        });
+      }
+    }
+
+    // Set overall violation status
+    combinedResult.guardrailResults.hasViolations = hasAnyViolations;
+    combinedResult.guardrailResults.action = hasAnyViolations ? 'GUARDRAIL_INTERVENED' : 'NONE';
+    combinedResult.responseTime = maxResponseTime;
+
+    // If no successful evaluations, throw an error
+    if (combinedResult.guardrailResults.successfulEvaluations === 0) {
+      throw new Error(`All guardrail evaluations failed. Errors: ${combinedResult.guardrailResults.errors.map(e => e.message).join('; ')}`);
+    }
+
+    return combinedResult;
+  }
+
+  /**
+   * Handle partial guardrail failures gracefully
+   * @param {Object} combinedResult - Combined results from multiple guardrails
+   * @returns {Object} Result with graceful degradation handling
+   * @private
+   */
+  handlePartialGuardrailFailures(combinedResult) {
+    const { guardrailResults } = combinedResult;
+
+    if (guardrailResults.errors.length === 0) {
+      return combinedResult; // No failures to handle
+    }
+
+    // Add warning about partial failures
+    guardrailResults.partialFailureWarning = {
+      message: `${guardrailResults.errors.length} out of ${guardrailResults.totalEvaluations} guardrail evaluations failed`,
+      failedGuardrails: guardrailResults.errors.length,
+      successfulGuardrails: guardrailResults.successfulEvaluations,
+      totalGuardrails: guardrailResults.totalEvaluations,
+      degradedMode: true
+    };
+
+    // Log warnings for monitoring
+    console.warn('Partial guardrail evaluation failures:', {
+      failed: guardrailResults.errors.length,
+      successful: guardrailResults.successfulEvaluations,
+      total: guardrailResults.totalEvaluations,
+      errors: guardrailResults.errors.map(e => e.message)
+    });
+
+    return combinedResult;
+  }
+
+  /**
+   * Format guardrail results for display
+   * @param {Object} guardrailResults - Raw guardrail results
+   * @returns {Object} Formatted results for UI display
+   */
+  formatGuardrailResultsForDisplay(guardrailResults) {
+    if (!guardrailResults || !guardrailResults.hasViolations) {
+      const summary = guardrailResults?.multipleGuardrails
+        ? `No violations detected across ${guardrailResults.totalEvaluations || 1} guardrail${(guardrailResults.totalEvaluations || 1) !== 1 ? 's' : ''}`
+        : 'No guardrail violations detected';
+
+      return {
+        hasViolations: false,
+        summary: summary,
+        violations: [],
+        multipleGuardrails: guardrailResults?.multipleGuardrails || false,
+        individualResults: guardrailResults?.individualResults || []
+      };
+    }
+
+    const violations = [];
+
+    // Handle multiple guardrails results
+    if (guardrailResults.multipleGuardrails && guardrailResults.individualResults) {
+      for (const individualResult of guardrailResults.individualResults) {
+        if (individualResult.success && individualResult.guardrailResults?.hasViolations) {
+          const individualViolations = this.extractViolationsFromAssessments(
+            individualResult.guardrailResults.assessments || [],
+            individualResult.guardrailIndex
+          );
+          violations.push(...individualViolations);
+        }
+      }
+
+      const summary = `${violations.length} violation${violations.length !== 1 ? 's' : ''} detected across ${guardrailResults.successfulEvaluations} guardrail${guardrailResults.successfulEvaluations !== 1 ? 's' : ''}`;
+
+      return {
+        hasViolations: true,
+        summary: summary,
+        violations: violations,
+        action: guardrailResults.action,
+        outputText: guardrailResults.outputText,
+        multipleGuardrails: true,
+        individualResults: guardrailResults.individualResults,
+        errors: guardrailResults.errors || [],
+        partialFailureWarning: guardrailResults.partialFailureWarning
+      };
+    }
+
+    // Handle single guardrail results
+    const singleViolations = this.extractViolationsFromAssessments(guardrailResults.assessments || []);
+
+    return {
+      hasViolations: true,
+      summary: `${singleViolations.length} guardrail violation${singleViolations.length !== 1 ? 's' : ''} detected`,
+      violations: singleViolations,
+      action: guardrailResults.action,
+      outputText: guardrailResults.outputText,
+      multipleGuardrails: false
+    };
+  }
+
+  /**
+   * Extract violations from guardrail assessments
+   * @param {Array} assessments - Guardrail assessments
+   * @param {number} guardrailIndex - Index of the guardrail (for multiple guardrails)
+   * @returns {Array} Array of violation objects
+   * @private
+   */
+  extractViolationsFromAssessments(assessments, guardrailIndex = null) {
+    const violations = [];
+    const guardrailPrefix = guardrailIndex !== null ? `Guardrail ${guardrailIndex + 1}: ` : '';
+
+    for (const assessment of assessments) {
+      if (assessment.contentPolicy) {
+        for (const filter of assessment.contentPolicy.filters || []) {
+          if (filter.action === 'BLOCKED') {
+            violations.push({
+              type: 'content_policy',
+              category: filter.type,
+              confidence: filter.confidence,
+              action: filter.action,
+              message: `${guardrailPrefix}Content blocked due to ${filter.type.toLowerCase()} policy violation`,
+              guardrailIndex: guardrailIndex
+            });
+          }
+        }
+      }
+
+      if (assessment.wordPolicy) {
+        for (const match of assessment.wordPolicy.customWords || []) {
+          violations.push({
+            type: 'word_policy',
+            category: 'custom_words',
+            match: match.match,
+            action: 'BLOCKED',
+            message: `${guardrailPrefix}Blocked word detected: ${match.match}`,
+            guardrailIndex: guardrailIndex
+          });
+        }
+
+        for (const match of assessment.wordPolicy.managedWordLists || []) {
+          violations.push({
+            type: 'word_policy',
+            category: 'managed_list',
+            match: match.match,
+            action: 'BLOCKED',
+            message: `${guardrailPrefix}Profanity detected: ${match.match}`,
+            guardrailIndex: guardrailIndex
+          });
+        }
+      }
+
+      if (assessment.sensitiveInformationPolicy) {
+        for (const pii of assessment.sensitiveInformationPolicy.piiEntities || []) {
+          violations.push({
+            type: 'pii_policy',
+            category: pii.type,
+            match: pii.match,
+            action: pii.action,
+            message: `${guardrailPrefix}${pii.type} detected and ${pii.action.toLowerCase()}`,
+            guardrailIndex: guardrailIndex
+          });
+        }
+
+        for (const regex of assessment.sensitiveInformationPolicy.regexes || []) {
+          violations.push({
+            type: 'regex_policy',
+            category: regex.name,
+            match: regex.match,
+            action: regex.action,
+            message: `${guardrailPrefix}Pattern "${regex.name}" matched and ${regex.action.toLowerCase()}`,
+            guardrailIndex: guardrailIndex
+          });
+        }
+      }
+
+      if (assessment.topicPolicy) {
+        for (const topic of assessment.topicPolicy.topics || []) {
+          violations.push({
+            type: 'topic_policy',
+            category: topic.name,
+            action: topic.action,
+            message: `${guardrailPrefix}Topic "${topic.name}" violation detected`,
+            guardrailIndex: guardrailIndex
+          });
+        }
+      }
+    }
+
+    return violations;
   }
 }
 
