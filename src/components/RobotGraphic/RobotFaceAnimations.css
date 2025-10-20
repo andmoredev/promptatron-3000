@@ -699,6 +699,32 @@
   will-change: transform, opacity;
 }
 
+/* Draggable Chad styles */
+.floating-chad-draggable {
+  cursor: grab;
+}
+
+.floating-chad-draggable:hover {
+  filter: brightness(1.05);
+}
+
+.floating-chad-draggable:focus {
+  outline: 2px solid var(--color-primary-500, #3b82f6);
+  outline-offset: 2px;
+}
+
+.floating-chad-dragging {
+  cursor: grabbing !important;
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.3)) brightness(1.1);
+  z-index: 9999 !important;
+  transition: none !important; /* Disable transitions during drag */
+}
+
+.floating-chad-dragging .floating-chad-glow {
+  opacity: 0.8 !important;
+  animation: none !important;
+}
+
 .floating-chad-entered {
   animation: floating-chad-entrance 0.6s ease-out;
 }
@@ -733,15 +759,11 @@
 /* Responsive positioning and scaling for floating Chad */
 @media (max-width: 1024px) {
   .floating-chad {
-    bottom: 18px !important;
-    left: 18px !important;
   }
 }
 
 @media (max-width: 768px) {
   .floating-chad {
-    bottom: 16px !important;
-    left: 16px !important;
     transform: scale(0.9) !important;
   }
 
@@ -762,8 +784,6 @@
 /* Extra small screens */
 @media (max-width: 480px) {
   .floating-chad {
-    bottom: 12px !important;
-    left: 12px !important;
     transform: scale(0.8) !important;
   }
 
@@ -789,8 +809,7 @@
 /* Large screens - more prominent positioning */
 @media (min-width: 1200px) {
   .floating-chad {
-    bottom: 24px !important;
-    left: 24px !important;
+    /* Removed fixed positioning so draggable X/Y can update */
   }
 
   .floating-chad-md {

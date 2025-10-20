@@ -185,6 +185,35 @@ function App() {
   // Track if this is the initial load
   const isInitialLoad = useRef(true);
 
+  // Collapse state management for sections
+  const [collapsedSections, setCollapsedSections] = useState(() => {
+    try {
+      const saved = localStorage.getItem('promptatron_collapsed_sections');
+      const defaults = {
+        modelSelector: false,
+        scenarioSelector: false,
+        datasetSelector: false,
+        promptEditor: false,
+        executionSettings: false
+      };
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Merge to ensure new keys exist
+        return { ...defaults, ...parsed };
+      }
+      return defaults;
+    } catch (error) {
+      console.warn('Failed to load collapsed sections from localStorage:', error);
+      return {
+        modelSelector: false,
+        scenarioSelector: false,
+        datasetSelector: false,
+        promptEditor: false,
+        executionSettings: false
+      };
+    }
+  });
+
   // Initialize settings system
   const {
     allSettings,
@@ -306,6 +335,25 @@ function App() {
 
     // Return false if scenario config not loaded yet or no scenario selected
     return false;
+  };
+
+  // Helper function to toggle section collapse state
+  const toggleSectionCollapse = (sectionKey) => {
+    setCollapsedSections(prev => {
+      const newState = {
+        ...prev,
+        [sectionKey]: !prev[sectionKey]
+      };
+
+      // Save to localStorage
+      try {
+        localStorage.setItem('promptatron_collapsed_sections', JSON.stringify(newState));
+      } catch (error) {
+        console.warn('Failed to save collapsed sections to localStorage:', error);
+      }
+
+      return newState;
+    });
   };
 
   // Helper function to provide recovery suggestions for tool execution errors
@@ -441,6 +489,13 @@ function App() {
         if (!scenarioService.isInitialized) {
           setIsLoading(true);
           await scenarioService.initialize();
+          try {
+            if (!scenarioToolIntegrationService.isInitialized) {
+              await scenarioToolIntegrationService.initialize();
+            }
+          } catch (_) {
+            // Ignore tool service init errors at startup
+          }
           setIsLoading(false);
         }
       } catch (error) {
@@ -465,6 +520,13 @@ function App() {
   // Handle initial scenario loading after service initialization (for page refresh)
   useEffect(() => {
     if (scenarioService.isInitialized && selectedScenario && !scenarioConfigLoaded) {
+      // Ensure the scenario service tracks the current scenario on initial load
+      try {
+        scenarioService.setCurrentScenario(selectedScenario);
+      } catch (e) {
+        // Non-blocking: proceed to load configuration even if this fails
+      }
+
       loadScenarioConfiguration().then(() => {
         // Mark that initial load is complete
         isInitialLoad.current = false;
@@ -477,11 +539,33 @@ function App() {
     // If we have a selected scenario but service wasn't initialized when it was set,
     // and now the service is initialized, load the configuration
     if (scenarioService.isInitialized && selectedScenario && !scenarioConfigLoaded && isInitialLoad.current) {
+      // Ensure the scenario service tracks the current scenario once available
+      try {
+        scenarioService.setCurrentScenario(selectedScenario);
+      } catch (e) {
+        // Swallow errors; we'll still load configuration
+      }
+
       loadScenarioConfiguration().then(() => {
         isInitialLoad.current = false;
       });
     }
   }, [scenarioService.isInitialized]);
+
+  // Ensure tool settings visibility reflects actual scenario tools even before full config resolves
+  useEffect(() => {
+    if (selectedScenario && scenarioService.isInitialized && !scenarioConfigLoaded) {
+      try {
+        const scenarioObj = scenarioService.getScenario(selectedScenario);
+        const hasTools = !!(scenarioObj && Array.isArray(scenarioObj.tools) && scenarioObj.tools.length > 0);
+        if (hasTools && !scenarioConfig.showToolSettings) {
+          setScenarioConfig(prev => ({ ...prev, showToolSettings: true }));
+        }
+      } catch (_) {
+        // ignore
+      }
+    }
+  }, [selectedScenario, scenarioService.isInitialized, scenarioConfigLoaded]);
 
   const loadScenarioConfiguration = async () => {
     if (!selectedScenario) {
@@ -525,9 +609,28 @@ function App() {
       }
 
       // Load scenario configuration
-      const config = await scenarioService.getUIConfiguration(selectedScenario);
+      let config = await scenarioService.getUIConfiguration(selectedScenario);
+
+      // Harden: ensure tool settings visibility reflects actual scenario tools
+      try {
+        const scenarioObj = scenarioService.getScenario(selectedScenario);
+        const hasTools = !!(scenarioObj && Array.isArray(scenarioObj.tools) && scenarioObj.tools.length > 0);
+        if (hasTools && !config.showToolSettings) {
+          config = { ...config, showToolSettings: true };
+        }
+      } catch (_) {
+        // Ignore; fallback to config as returned
+      }
+
       setScenarioConfig(config);
       setScenarioConfigLoaded(true);
+
+      // Prime tool configuration for this scenario to avoid requiring manual re-selection
+      try {
+        await scenarioToolIntegrationService.getToolConfigurationForScenario(selectedScenario);
+      } catch (e) {
+        // Best-effort priming; ignore failures here and let UI handle gracefully
+      }
 
       // Load available prompts
       const systemPrompts = await scenarioService.getSystemPrompts(selectedScenario);
@@ -2096,36 +2199,6 @@ function App() {
                       <p className="text-sm md:text-base text-secondary-700 px-2">
                         Building enterprise-grade AI agents before it was cool
                       </p>
-
-                      {/* State Persistence Status */}
-                      {statePersistenceInitialized &&
-                        (uiStateRestored ||
-                          navigationStateRestored ||
-                          testResultsStateRestored) && (
-                          <div className="flex items-center justify-center space-x-2 text-xs mt-2">
-                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full flex items-center space-x-1">
-                              <svg
-                                className="w-3 h-3"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                                />
-                              </svg>
-                              <span>Session Restored</span>
-                            </span>
-                            {stateInfo && stateInfo.session && (
-                              <span className="text-gray-500">
-                                {stateInfo.session.testCount} tests this session
-                              </span>
-                            )}
-                          </div>
-                        )}
                     </div>
                   </div>
                 </div>
@@ -2186,6 +2259,8 @@ function App() {
                         onModelSelect={handleModelSelect}
                         validationError={validationErrors.model}
                         externalError={error}
+                        isCollapsed={collapsedSections.modelSelector}
+                        onToggleCollapse={() => toggleSectionCollapse('modelSelector')}
                       />
 
                       <ScenarioSelector
@@ -2194,6 +2269,8 @@ function App() {
                         validationError={validationErrors.scenario}
                         onCreateScenario={handleOpenScenarioBuilder}
                         onRefreshSeedData={handleRefreshSeedData}
+                        isCollapsed={collapsedSections.scenarioSelector}
+                        onToggleCollapse={() => toggleSectionCollapse('scenarioSelector')}
                       />
 
                       {scenarioConfig.showDatasetSelector && (
@@ -2202,6 +2279,8 @@ function App() {
                           selectedDataset={selectedDataset}
                           onDatasetSelect={handleDatasetSelect}
                           validationError={validationErrors.dataset}
+                          isCollapsed={collapsedSections.datasetSelector}
+                          onToggleCollapse={() => toggleSectionCollapse('datasetSelector')}
                         />
                       )}
 
@@ -2217,6 +2296,8 @@ function App() {
                         systemPromptWarning={validationWarnings.systemPrompt}
                         userPromptWarning={validationWarnings.userPrompt}
                         selectedDataset={selectedDataset}
+                        isCollapsed={collapsedSections.promptEditor}
+                        onToggleCollapse={() => toggleSectionCollapse('promptEditor')}
                       />
 
                       {/* Execution Settings */}
@@ -2238,6 +2319,8 @@ function App() {
                         hasFormState={hasFormState()}
                         onClearSavedSettings={handleClearSavedSettings}
                         areToolsAvailable={areToolsAvailable()}
+                        isCollapsed={collapsedSections.executionSettings}
+                        onToggleCollapse={() => toggleSectionCollapse('executionSettings')}
                       />
 
                       {/* Enhanced Validation Summary with Dual Prompt Guidance */}
@@ -2617,7 +2700,7 @@ function App() {
                 : 'idle'
             }
             size="lg"
-            position={{ top: '50%', left: '20px', transform: 'translateY(-50%)' }}
+            draggable={true}
           />
 
           {/* Settings Dialog */}

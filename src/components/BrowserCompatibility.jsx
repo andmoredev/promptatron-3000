@@ -1,16 +1,16 @@
-import { useState, useEffect } from 'react'
-import PropTypes from 'prop-types'
+import { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 
 const BrowserCompatibility = ({ children }) => {
-  const [compatibilityIssues, setCompatibilityIssues] = useState([])
-  const [showWarning, setShowWarning] = useState(false)
+  const [compatibilityIssues, setCompatibilityIssues] = useState([]);
+  const [showWarning, setShowWarning] = useState(false);
 
   useEffect(() => {
-    checkBrowserCompatibility()
-  }, [])
+    checkBrowserCompatibility();
+  }, []);
 
   const checkBrowserCompatibility = () => {
-    const issues = []
+    const issues = [];
 
     // Check for ES6+ support using safer feature detection
     try {
@@ -32,7 +32,7 @@ const BrowserCompatibility = ({ children }) => {
         feature: 'ES6 Support',
         message: 'Your browser does not support modern JavaScript features required by this application.',
         solution: 'Please update to a modern browser (Chrome 60+, Firefox 55+, Safari 12+, Edge 79+)'
-      })
+      });
     }
 
     // Check for Fetch API
@@ -42,20 +42,20 @@ const BrowserCompatibility = ({ children }) => {
         feature: 'Fetch API',
         message: 'Your browser does not support the Fetch API required for network requests.',
         solution: 'Please update your browser or use a fetch polyfill'
-      })
+      });
     }
 
     // Check for localStorage
     try {
-      localStorage.setItem('test', 'test')
-      localStorage.removeItem('test')
+      localStorage.setItem('test', 'test');
+      localStorage.removeItem('test');
     } catch (e) {
       issues.push({
         type: 'warning',
         feature: 'Local Storage',
         message: 'Local storage is not available. Test history will not be saved.',
         solution: 'Enable local storage in your browser settings or use a different browser'
-      })
+      });
     }
 
     // Check for File System Access API (optional)
@@ -65,7 +65,7 @@ const BrowserCompatibility = ({ children }) => {
         feature: 'File System Access API',
         message: 'Advanced file operations are not supported in this browser.',
         solution: 'For full functionality, use Chrome 86+ or Edge 86+'
-      })
+      });
     }
 
     // Check for WebCrypto API (used by AWS SDK)
@@ -75,7 +75,7 @@ const BrowserCompatibility = ({ children }) => {
         feature: 'Web Crypto API',
         message: 'Your browser does not support cryptographic operations required by AWS SDK.',
         solution: 'Please use a modern browser with HTTPS support'
-      })
+      });
     }
 
     // Check if running on HTTPS (required for some features)
@@ -85,7 +85,7 @@ const BrowserCompatibility = ({ children }) => {
         feature: 'HTTPS',
         message: 'Some features may not work properly without HTTPS.',
         solution: 'Access the application via HTTPS for full functionality'
-      })
+      });
     }
 
     // Check for minimum viewport size
@@ -95,23 +95,23 @@ const BrowserCompatibility = ({ children }) => {
         feature: 'Screen Size',
         message: 'Your screen size is very small. Some features may not display properly.',
         solution: 'Use a larger screen or rotate your device to landscape mode'
-      })
+      });
     }
 
-    setCompatibilityIssues(issues)
+    setCompatibilityIssues(issues);
 
     // Show warning if there are critical issues
-    const hasCriticalIssues = issues.some(issue => issue.type === 'critical')
-    setShowWarning(hasCriticalIssues || issues.length > 2)
-  }
+    const hasCriticalIssues = issues.some(issue => issue.type === 'critical');
+    setShowWarning(hasCriticalIssues || issues.length > 2);
+  };
 
   const dismissWarning = () => {
-    setShowWarning(false)
-  }
+    setShowWarning(false);
+  };
 
-  const criticalIssues = compatibilityIssues.filter(issue => issue.type === 'critical')
-  const warningIssues = compatibilityIssues.filter(issue => issue.type === 'warning')
-  const infoIssues = compatibilityIssues.filter(issue => issue.type === 'info')
+  const criticalIssues = compatibilityIssues.filter(issue => issue.type === 'critical');
+  const warningIssues = compatibilityIssues.filter(issue => issue.type === 'warning');
+  const infoIssues = compatibilityIssues.filter(issue => issue.type === 'info');
 
   // If there are critical issues, show blocking screen
   if (criticalIssues.length > 0) {
@@ -163,7 +163,7 @@ const BrowserCompatibility = ({ children }) => {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -208,11 +208,11 @@ const BrowserCompatibility = ({ children }) => {
       )}
       {children}
     </>
-  )
-}
+  );
+};
 
 BrowserCompatibility.propTypes = {
   children: PropTypes.node.isRequired
-}
+};
 
-export default BrowserCompatibility
+export default BrowserCompatibility;
