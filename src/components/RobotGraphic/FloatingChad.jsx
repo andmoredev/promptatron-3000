@@ -2,29 +2,34 @@
  * @fileoverview FloatingChad component that displays Chad as a floating companion
  */
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import ChadFace from "./ChadFace.jsx";
 import { getRobotState } from "./robotStates.js";
 import { shouldDisableAnimations } from "./accessibility.js";
+import { useDraggable } from "../../hooks/useDraggable.js";
 import "./RobotFaceAnimations.css";
 
 /**
- * FloatingChad component that displays Chad as a floating companion in the bottom-left corner
+ * FloatingChad component that displays Chad as a floating companion that can be dragged around
  * @param {Object} props - Component props
  * @param {boolean} props.isVisible - Whether the floating Chad should be visible
  * @param {string} props.currentState - Current application state for expression synchronization
  * @param {string} [props.size='sm'] - Size variant for the floating Chad
- * @param {Object} [props.position] - Custom positioning properties
+ * @param {Object} [props.position] - Custom positioning properties (legacy support)
  * @param {string} [props.className=''] - Additional CSS classes
+ * @param {boolean} [props.draggable=true] - Whether Chad can be dragged
+ * @param {function} [props.onPositionChange] - Callback when position changes
  * @returns {JSX.Element|null} The FloatingChad component or null if not visible
  */
 const FloatingChad = ({
   isVisible,
   currentState,
   size = "sm",
-  position = { bottom: "20px", left: "20px" },
+  position = null, // Legacy position prop, now handled by draggable hook
   className = "",
+  draggable = true,
+  onPositionChange,
 }) => {
   const [hasEntered, setHasEntered] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -34,6 +39,41 @@ const FloatingChad = ({
 
   // Check for accessibility preferences
   const animationsDisabled = shouldDisableAnimations();
+
+  const getDefaultPosition = () => {
+    if (position) {
+      // Convert CSS position values to pixel coordinates
+      const defaultX = position.left ? parseInt(position.left) || 20 : 20;
+      const defaultY = position.top ? parseInt(position.top) || 20 :
+        position.bottom ? window.innerHeight - parseInt(position.bottom) - 100 : 20;
+      return { x: defaultX, y: defaultY };
+    }
+    return { x: 20, y: 20 }; // Default bottom-left position
+  };
+
+  // Initialize draggable functionality
+  const {
+    isDragging,
+    position: dragPosition,
+    dragRef,
+    onPointerDown,
+    onMouseDown,
+    onTouchStart,
+    onKeyDown,
+  } = useDraggable({
+    constrainToViewport: true,
+    persistPosition: true,
+    persistKey: 'floating_chad_position',
+    defaultPosition: getDefaultPosition(),
+    disabled: !draggable
+  });
+
+  // Notify parent of position changes
+  useEffect(() => {
+    if (onPositionChange && dragPosition) {
+      onPositionChange(dragPosition);
+    }
+  }, [dragPosition, onPositionChange]);
 
   // Handle entrance animation
   useEffect(() => {
@@ -64,12 +104,42 @@ const FloatingChad = ({
 
   // Size configurations for floating Chad - responsive to screen size
   const sizeConfigs = {
-    sm: { width: 80, height: 80, scale: 1.2 },
-    md: { width: 100, height: 100, scale: 1.5 },
-    lg: { width: 120, height: 120, scale: 1.8 },
+    sm: { width: 80, height: 80, baseScale: 1.2 },
+    md: { width: 100, height: 100, baseScale: 1.5 },
+    lg: { width: 120, height: 120, baseScale: 1.8 },
   };
 
   const sizeConfig = sizeConfigs[size] || sizeConfigs.sm;
+
+  // Calculate responsive scale based on screen size
+  const getResponsiveScale = () => {
+    const screenWidth = window.innerWidth;
+    let responsiveMultiplier = 1;
+
+    if (screenWidth >= 1536) {
+      responsiveMultiplier = 1.6;
+    } else if (screenWidth >= 1280) {
+      responsiveMultiplier = 1.4;
+    } else if (screenWidth >= 1024) {
+      responsiveMultiplier = 1.2;
+    } else if (screenWidth <= 768) {
+      responsiveMultiplier = 0.9;
+    }
+
+    return sizeConfig.baseScale * responsiveMultiplier;
+  };
+
+  const [responsiveScale, setResponsiveScale] = useState(() => getResponsiveScale());
+
+  // Update responsive scale on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setResponsiveScale(getResponsiveScale());
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [size]);
 
   // Build CSS classes
   const cssClasses = [
@@ -79,38 +149,45 @@ const FloatingChad = ({
     hasEntered && "floating-chad-entered",
     isAnimating && "floating-chad-animating",
     animationsDisabled && "floating-chad-no-animations",
+    isDragging && "floating-chad-dragging",
+    draggable && "floating-chad-draggable",
     className,
   ]
     .filter(Boolean)
     .join(" ");
 
-  // Note: Responsive positioning is handled via CSS media queries in the style object
-
   return (
     <div
+      ref={dragRef}
       className={`${cssClasses} responsive-chad`}
       style={{
         position: "fixed",
-        top: position.top || "auto",
-        bottom: position.bottom || "20px",
-        left: position.left || "20px",
-        right: position.right || "auto",
+        left: `${dragPosition.x}px`,
+        right: "auto",
+        top: `${dragPosition.y}px`,
+        bottom: "auto",
         width: `${sizeConfig.width}px`,
         height: `${sizeConfig.height}px`,
-        zIndex: 1000,
-        pointerEvents: "none", // Don't block clicks
-        transition: animationsDisabled ? "none" : "all 0.3s ease-in-out",
-        transform: position.transform
-          ? `${position.transform} scale(${sizeConfig.scale})`
-          : `scale(${sizeConfig.scale})`,
-        transformOrigin: "bottom left",
+        zIndex: isDragging ? 10000 : 9999, // Higher z-index when dragging
+        pointerEvents: draggable ? "auto" : "none", // Allow interaction when draggable
+        transition: isDragging || animationsDisabled ? "none" : "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+        transform: `scale(${responsiveScale})`,
+        transformOrigin: "center",
+        userSelect: "none", // Prevent text selection during drag
+        touchAction: "none", // Ensure touch dragging works in all directions
       }}
+      draggable={false}
       role="img"
-      aria-label={`Chad companion - ${robotState.ariaLabel}`}
-      aria-hidden="true" // Decorative element
+      aria-label={`Chad companion - ${robotState.ariaLabel}${draggable ? '. Click and drag to reposition, or use arrow keys.' : ''}`}
+      aria-hidden="false" // Make interactive when draggable
       data-testid="floating-chad"
       data-state={robotState.key}
       data-expression={robotState.expression}
+      tabIndex={draggable ? 0 : -1} // Make focusable when draggable
+      onPointerDown={draggable ? onPointerDown : undefined}
+      onMouseDown={draggable ? onMouseDown : undefined}
+      onTouchStart={draggable ? onTouchStart : undefined}
+      onKeyDown={draggable ? onKeyDown : undefined}
     >
       {/* Hidden text for screen readers */}
       <span className="sr-only">
@@ -156,14 +233,18 @@ FloatingChad.propTypes = {
     left: PropTypes.string,
     right: PropTypes.string,
     top: PropTypes.string,
-  }),
+  }), // Legacy support
   className: PropTypes.string,
+  draggable: PropTypes.bool,
+  onPositionChange: PropTypes.func,
 };
 
 FloatingChad.defaultProps = {
   size: "sm",
-  position: { bottom: "20px", left: "20px" },
+  position: null,
   className: "",
+  draggable: true,
+  onPositionChange: null,
 };
 
 export default FloatingChad;

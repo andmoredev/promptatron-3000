@@ -4,7 +4,7 @@ import { bedrockService } from '../services/bedrockService'
 import LoadingSpinner from './LoadingSpinner'
 import Tooltip from './Tooltip'
 
-const ModelSelector = ({ selectedModel, onModelSelect, validationError, externalError }) => {
+const ModelSelector = ({ selectedModel, onModelSelect, validationError, externalError, isCollapsed, onToggleCollapse }) => {
   const [models, setModels] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -62,9 +62,38 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError, external
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-4">
+      <div className={`flex items-center justify-between ${isCollapsed ? 'mb-0' : 'mb-4'}`}>
         <div className="flex items-center space-x-2">
-          <h3 className="text-lg font-semibold text-gray-900">Select Model</h3>
+          <button
+            onClick={onToggleCollapse}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onToggleCollapse();
+              }
+            }}
+            className="collapsible-toggle-button group"
+            aria-expanded={!isCollapsed}
+            aria-controls="model-selector-content"
+            aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} model selection section`}
+          >
+            <svg
+              className={`collapsible-chevron ${
+                isCollapsed ? 'collapsed' : 'expanded'
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+            <span id="model-selector-header">Select Model</span>
+          </button>
           {/* AWS Credential Status Icon */}
           {credentialStatus === 'valid' && !externalError ? (
             <Tooltip
@@ -115,70 +144,93 @@ Credential validation will occur when loading models."
             </Tooltip>
           )}
         </div>
-        <button
-          onClick={loadModels}
-          disabled={isLoading}
-          className="text-sm text-primary-600 hover:text-primary-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isLoading ? 'Loading...' : 'Refresh'}
-        </button>
-      </div>
-
-
-
-      {/* Loading State */}
-      {isLoading && (
-        <div className="mb-4 py-4">
-          <LoadingSpinner size="md" text="Discovering models..." />
-        </div>
-      )}
-
-      <div className="space-y-2">
-        <label htmlFor="model-select" className="block text-sm font-medium text-gray-700">
-          Foundation Model
-        </label>
-        <select
-          id="model-select"
-          value={selectedModel}
-          onChange={(e) => onModelSelect(e.target.value)}
-          className={`select-field ${
-            validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
-          }`}
-          disabled={isLoading}
-        >
-          <option value="">Choose a model...</option>
-          {models.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.name} {model.provider && `(${model.provider})`}
-              {bedrockService.isStreamingSupported(model.id) ? ' ⚡' : ''}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Validation Error */}
-      {validationError && (
-        <p className="mt-1 text-sm text-red-600">{validationError}</p>
-      )}
-
-      {/* Model Count Info */}
-      {!isLoading && models.length > 0 && (
-        <div className="mt-2 space-y-1">
-          <div className="text-xs text-gray-500">
-            {models.length} model{models.length !== 1 ? 's' : ''} available
-          </div>
-          <div className="text-xs text-gray-500 flex items-center space-x-4">
-            <span className="flex items-center space-x-1">
-              <span>⚡</span>
-              <span>Streaming supported</span>
+        <div className="flex items-center space-x-2 min-w-0">
+          {isCollapsed && selectedModel && (
+            <span className="text-sm text-gray-500 truncate max-w-[220px] sm:max-w-[280px]" title={(() => {
+              const m = models.find(m => m.id === selectedModel);
+              return m ? `${m.name}${m.provider ? ` (${m.provider})` : ''}` : selectedModel;
+            })()}>
+              {(() => {
+                const m = models.find(m => m.id === selectedModel);
+                return m ? `${m.name}${m.provider ? ` (${m.provider})` : ''}` : selectedModel;
+              })()}
             </span>
-            <span className="text-gray-400">•</span>
-            <span>{models.filter(m => bedrockService.isStreamingSupported(m.id)).length} of {models.length} models support streaming</span>
-          </div>
+          )}
+          {!isCollapsed && (
+            <button
+              onClick={loadModels}
+              disabled={isLoading}
+              className="text-sm text-primary-600 hover:text-primary-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoading ? 'Loading...' : 'Refresh'}
+            </button>
+          )}
         </div>
-      )}
+      </div>
 
+      <div
+        id="model-selector-content"
+        className={`collapsible-content ${
+          isCollapsed ? 'collapsed' : 'expanded'
+        }`}
+        role="region"
+        aria-labelledby="model-selector-header"
+        aria-hidden={isCollapsed}
+      >
+        <div className="space-y-4">
+          {/* Loading State */}
+          {isLoading && (
+            <div className="py-4">
+              <LoadingSpinner size="md" text="Discovering models..." />
+            </div>
+          )}
 
+          <div className="space-y-2">
+            <label htmlFor="model-select" className="block text-sm font-medium text-gray-700">
+              Foundation Model
+            </label>
+            <select
+              id="model-select"
+              value={selectedModel}
+              onChange={(e) => onModelSelect(e.target.value)}
+              className={`select-field ${
+                validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+              }`}
+              disabled={isLoading}
+            >
+              <option value="">Choose a model...</option>
+              {models.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name} {model.provider && `(${model.provider})`}
+                  {bedrockService.isStreamingSupported(model.id) ? ' ⚡' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Validation Error */}
+          {validationError && (
+            <p className="mt-1 text-sm text-red-600">{validationError}</p>
+          )}
+
+          {/* Model Count Info */}
+          {!isLoading && models.length > 0 && (
+            <div className="mt-2 space-y-1">
+              <div className="text-xs text-gray-500">
+                {models.length} model{models.length !== 1 ? 's' : ''} available
+              </div>
+              <div className="text-xs text-gray-500 flex items-center space-x-4">
+                <span className="flex items-center space-x-1">
+                  <span>⚡</span>
+                  <span>Streaming supported</span>
+                </span>
+                <span className="text-gray-400">•</span>
+                <span>{models.filter(m => bedrockService.isStreamingSupported(m.id)).length} of {models.length} models support streaming</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -187,7 +239,9 @@ ModelSelector.propTypes = {
   selectedModel: PropTypes.string.isRequired,
   onModelSelect: PropTypes.func.isRequired,
   validationError: PropTypes.string,
-  externalError: PropTypes.string
+  externalError: PropTypes.string,
+  isCollapsed: PropTypes.bool,
+  onToggleCollapse: PropTypes.func
 }
 
 export default ModelSelector

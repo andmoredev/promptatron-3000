@@ -20,7 +20,9 @@ const ConditionalExecutionSettings = ({
   conflictMessage,
   hasFormState,
   onClearSavedSettings,
-  areToolsAvailable
+  areToolsAvailable,
+  isCollapsed,
+  onToggleCollapse
 }) => {
   const [shouldShowTools, setShouldShowTools] = useState(false)
   const [toolExecutionMode, setToolExecutionMode] = useState('none')
@@ -225,82 +227,121 @@ const ConditionalExecutionSettings = ({
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Execution Settings</h3>
-        {isExecuting && (
-          <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-            <span className="text-sm text-green-600 font-medium">Executing</span>
-          </div>
-        )}
-        {isLoading && scenario && !scenarioConfigLoaded && (
-          <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-            <span className="text-sm text-blue-600 font-medium">Loading configuration...</span>
-          </div>
-        )}
+      <div className={`flex items-center justify-between ${isCollapsed ? 'mb-0' : 'mb-4'}`}>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={onToggleCollapse}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onToggleCollapse();
+              }
+            }}
+            className="collapsible-toggle-button group"
+            aria-expanded={!isCollapsed}
+            aria-controls="execution-settings-content"
+            aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} execution settings section`}
+          >
+            <svg
+              className={`collapsible-chevron ${
+                isCollapsed ? 'collapsed' : 'expanded'
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+            <span id="execution-settings-header">Execution Settings</span>
+          </button>
+        </div>
+        <div className="flex items-center space-x-2">
+          {!isCollapsed && isExecuting && (
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <span className="text-sm text-green-600 font-medium">Executing</span>
+            </div>
+          )}
+          {!isCollapsed && isLoading && scenario && !scenarioConfigLoaded && (
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+              <span className="text-sm text-blue-600 font-medium">Loading configuration...</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="space-y-4">
-        {/* Tools Mode Toggle - only show if tools are available */}
-        {(isToolsAvailable || (scenario && showToolSettings)) && (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <svg
-                className="w-5 h-5 text-green-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-              </svg>
-              <div>
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-medium text-gray-900">Tools Mode</h4>
-
-                </div>
-                <p className="text-xs text-gray-500">
-                  {showExecutionToggle
-                    ? "Enable tool execution for interactive AI capabilities"
-                    : "Tools are available for detection only"
-                  }
-                </p>
-              </div>
-            </div>
-            {showExecutionToggle ? (
+      <div
+        id="execution-settings-content"
+        className={`collapsible-content ${
+          isCollapsed ? 'collapsed' : 'expanded'
+        }`}
+        role="region"
+        aria-labelledby="execution-settings-header"
+        aria-hidden={isCollapsed}
+      >
+        <div className="space-y-4">
+          {/* Tools Mode Toggle - only show if tools are available */}
+          {(isToolsAvailable || (scenario && showToolSettings)) && (
+            <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <span className={`text-sm ${useToolsEnabled ? 'text-gray-500' : 'text-gray-900 font-medium'}`}>
-                  Detection
-                </span>
-                <button
-                  type="button"
-                  onClick={handleUseToolsToggle}
-                  disabled={isExecuting}
-                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
-                    useToolsEnabled
-                      ? 'bg-primary-600'
-                      : 'bg-gray-200'
-                  } ${
-                    isExecuting ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                  role="switch"
-                  aria-checked={useToolsEnabled}
+                <svg
+                  className="w-5 h-5 text-green-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      useToolsEnabled ? 'translate-x-5' : 'translate-x-0'
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900">Tools Mode</h4>
+                  <p className="text-xs text-gray-500">
+                    {showExecutionToggle
+                      ? "Enable tool execution for interactive AI capabilities"
+                      : "Tools are available for detection only"
+                    }
+                  </p>
+                </div>
+              </div>
+              {showExecutionToggle ? (
+                <div className="flex items-center space-x-3">
+                  <span className={`text-sm ${useToolsEnabled ? 'text-gray-500' : 'text-gray-900 font-medium'}`}>
+                    Detection
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleUseToolsToggle}
+                    disabled={isExecuting}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+                      useToolsEnabled
+                        ? 'bg-primary-600'
+                        : 'bg-gray-200'
+                    } ${
+                      isExecuting ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
+                    role="switch"
+                    aria-checked={useToolsEnabled}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        useToolsEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`}
                   />
                 </button>
                 <span className={`text-sm ${useToolsEnabled ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
@@ -491,6 +532,7 @@ const ConditionalExecutionSettings = ({
             </button>
           </div>
         )}
+        </div>
       </div>
     </div>
   )
@@ -512,12 +554,16 @@ ConditionalExecutionSettings.propTypes = {
   conflictMessage: PropTypes.string,
   hasFormState: PropTypes.bool.isRequired,
   onClearSavedSettings: PropTypes.func.isRequired,
-  areToolsAvailable: PropTypes.bool.isRequired
+  areToolsAvailable: PropTypes.bool.isRequired,
+  isCollapsed: PropTypes.bool,
+  onToggleCollapse: PropTypes.func
 }
 
 ConditionalExecutionSettings.defaultProps = {
   scenario: null,
-  conflictMessage: null
+  conflictMessage: null,
+  isCollapsed: false,
+  onToggleCollapse: null
 }
 
 export default ConditionalExecutionSettings
