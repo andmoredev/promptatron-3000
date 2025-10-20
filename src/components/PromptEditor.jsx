@@ -20,7 +20,10 @@ const PromptEditor = ({
   // Legacy props for backward compatibility
   prompt,
   onPromptChange,
-  validationError
+  validationError,
+  // Collapsible functionality
+  isCollapsed,
+  onToggleCollapse
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState('system');
@@ -266,16 +269,18 @@ const PromptEditor = ({
           <label htmlFor="prompt-input" className="block text-sm font-medium text-gray-700">
             Your Prompt
           </label>
-          <textarea
-            id="prompt-input"
-            value={prompt || ''}
-            onChange={(e) => onPromptChange && typeof onPromptChange === 'function' && onPromptChange(e.target.value)}
-            placeholder="Enter your prompt here. The selected dataset will be automatically appended to your prompt when the test runs."
-            className={`input-field resize-none prompt-editor-textarea ${isExpanded ? 'h-64' : 'h-32'
-              } transition-all duration-200 ${validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
-              }`}
-            style={{ whiteSpace: 'pre-wrap' }}
-          />
+          <div className="resizable-textarea">
+            <textarea
+              id="prompt-input"
+              value={prompt || ''}
+              onChange={(e) => onPromptChange && typeof onPromptChange === 'function' && onPromptChange(e.target.value)}
+              placeholder="Enter your prompt here. The selected dataset will be automatically appended to your prompt when the test runs."
+              className={`input-field resize-both prompt-editor-textarea ${isExpanded ? 'h-64' : 'h-32'
+                } ${validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+                }`}
+              style={{ whiteSpace: 'pre-wrap' }}
+            />
+          </div>
           {validationError && (
             <p className="mt-1 text-sm text-red-600">{validationError}</p>
           )}
@@ -304,58 +309,148 @@ const PromptEditor = ({
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-4">
+      <div className={`flex items-center justify-between ${isCollapsed ? 'mb-0' : 'mb-4'}`}>
         <div className="flex items-center space-x-2">
-          <h3 className="text-lg font-semibold text-gray-900">Prompt Configuration</h3>
-          <HelpTooltip
-            content="Configure your prompts. The system prompt (optional) defines the AI's role and behavior, while the user prompt contains your specific request. Dataset content will be automatically appended to the user prompt."
-            position="right"
-          />
-        </div>
-        <div className="flex space-x-2">
           <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+            onClick={onToggleCollapse}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onToggleCollapse();
+              }
+            }}
+            className="collapsible-toggle-button group"
+            aria-expanded={!isCollapsed}
+            aria-controls="prompt-editor-content"
+            aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} prompt configuration section`}
           >
-            {isExpanded ? 'Collapse' : 'Expand'}
+            <svg
+              className={`collapsible-chevron ${
+                isCollapsed ? 'collapsed' : 'expanded'
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+            <span id="prompt-editor-header">Prompt Configuration</span>
           </button>
+          {!isCollapsed && (
+            <HelpTooltip
+              content="Configure your prompts. The system prompt (optional) defines the AI's role and behavior, while the user prompt contains your specific request. Dataset content will be automatically appended to the user prompt."
+              position="right"
+            />
+          )}
+        </div>
+        <div className="flex space-x-2 min-w-0">
+          {isCollapsed && (
+            <span className="text-sm text-gray-500 truncate max-w-[240px]" title={`${systemPrompt ? 'System' : ''}${systemPrompt && userPrompt ? ' + ' : ''}${userPrompt ? 'User' : ''}${!systemPrompt && !userPrompt ? 'No prompts set' : ''}`}>
+              {systemPrompt && userPrompt ? 'System + User configured'
+                : systemPrompt ? 'System prompt configured'
+                : userPrompt ? 'User prompt configured'
+                : 'No prompts set'}
+            </span>
+          )}
+          {!isCollapsed && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+            >
+              {isExpanded ? 'Collapse' : 'Expand'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="flex border-b border-gray-200 mb-4">
-        <button
-          onClick={() => setActiveTab('system')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${activeTab === 'system'
-              ? 'border-primary-500 text-primary-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-        >
-          System Prompt
-        </button>
-        <button
-          onClick={() => setActiveTab('user')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${activeTab === 'user'
-              ? 'border-primary-500 text-primary-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-        >
-          User Prompt
-        </button>
-        <button
-          onClick={() => setActiveTab('preview')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${activeTab === 'preview'
-              ? 'border-primary-500 text-primary-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-        >
-          Combined Preview
-        </button>
-      </div>
+      <div
+        id="prompt-editor-content"
+        className={`collapsible-content ${
+          isCollapsed ? 'collapsed' : 'expanded'
+        }`}
+        role="region"
+        aria-labelledby="prompt-editor-header"
+        aria-hidden={isCollapsed}
+      >
+        <div className="space-y-4">
+          {/* Tab Navigation */}
+          <div className="flex border-b border-gray-200" role="tablist" aria-label="Prompt configuration tabs">
+            <button
+              onClick={() => setActiveTab('system')}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowRight') {
+                  e.preventDefault();
+                  setActiveTab('user');
+                } else if (e.key === 'ArrowLeft') {
+                  e.preventDefault();
+                  setActiveTab('preview');
+                }
+              }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200 ${activeTab === 'system'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              role="tab"
+              aria-selected={activeTab === 'system'}
+              aria-controls="system-prompt-panel"
+              id="system-prompt-tab"
+            >
+              System Prompt
+            </button>
+            <button
+              onClick={() => setActiveTab('user')}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowRight') {
+                  e.preventDefault();
+                  setActiveTab('preview');
+                } else if (e.key === 'ArrowLeft') {
+                  e.preventDefault();
+                  setActiveTab('system');
+                }
+              }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200 ${activeTab === 'user'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              role="tab"
+              aria-selected={activeTab === 'user'}
+              aria-controls="user-prompt-panel"
+              id="user-prompt-tab"
+            >
+              User Prompt
+            </button>
+            <button
+              onClick={() => setActiveTab('preview')}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowRight') {
+                  e.preventDefault();
+                  setActiveTab('system');
+                } else if (e.key === 'ArrowLeft') {
+                  e.preventDefault();
+                  setActiveTab('user');
+                }
+              }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200 ${activeTab === 'preview'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              role="tab"
+              aria-selected={activeTab === 'preview'}
+              aria-controls="preview-panel"
+              id="preview-tab"
+            >
+              Combined Preview
+            </button>
+          </div>
 
       {/* System Prompt Tab */}
       {activeTab === 'system' && (
-        <div className="space-y-4">
+        <div className="space-y-4" role="tabpanel" id="system-prompt-panel" aria-labelledby="system-prompt-tab">
           {/* System Prompt Templates */}
           {(systemPromptTemplates.length > 0 || allSystemPromptTemplates.length > 0) && (
             <div>
@@ -421,16 +516,18 @@ const PromptEditor = ({
                 </button>
               )}
             </div>
-            <textarea
-              ref={systemPromptRef}
-              id="system-prompt-input"
-              value={systemPrompt}
-              onChange={handleSystemPromptChange}
-              placeholder="Optional: Define the AI's role and expertise. Leave empty for natural responses, or specify like: 'You are an expert data analyst specializing in fraud detection...'"
-              className={`input-field resize-none transition-all duration-200 prompt-editor-textarea ${systemPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-blue-200 focus:border-blue-500 focus:ring-blue-500'
-                }`}
-              style={{ overflow: 'hidden', minHeight: '128px', whiteSpace: 'pre-wrap' }}
-            />
+            <div className="resizable-textarea">
+              <textarea
+                ref={systemPromptRef}
+                id="system-prompt-input"
+                value={systemPrompt}
+                onChange={handleSystemPromptChange}
+                placeholder="Optional: Define the AI's role and expertise. Leave empty for natural responses, or specify like: 'You are an expert data analyst specializing in fraud detection...'"
+                className={`input-field resize-both prompt-editor-textarea ${systemPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-blue-200 focus:border-blue-500 focus:ring-blue-500'
+                  }`}
+                style={{ minHeight: '128px', whiteSpace: 'pre-wrap' }}
+              />
+            </div>
             {systemPromptError && (
               <p className="mt-1 text-sm text-red-600">{systemPromptError}</p>
             )}
@@ -452,7 +549,7 @@ const PromptEditor = ({
 
       {/* User Prompt Tab */}
       {activeTab === 'user' && (
-        <div className="space-y-4">
+        <div className="space-y-4" role="tabpanel" id="user-prompt-panel" aria-labelledby="user-prompt-tab">
           {/* User Prompt Templates */}
           {userPromptTemplates.length > 0 && (
             <div>
@@ -500,16 +597,18 @@ const PromptEditor = ({
                 </button>
               )}
             </div>
-            <textarea
-              ref={userPromptRef}
-              id="user-prompt-input"
-              value={userPrompt}
-              onChange={handleUserPromptChange}
-              placeholder="Enter your specific request or question. For example: 'Please analyze the following data for fraud patterns...'"
-              className={`input-field resize-none transition-all duration-200 prompt-editor-textarea ${userPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-green-200 focus:border-green-500 focus:ring-green-500'
-                }`}
-              style={{ overflow: 'hidden', minHeight: '128px', whiteSpace: 'pre-wrap' }}
-            />
+            <div className="resizable-textarea">
+              <textarea
+                ref={userPromptRef}
+                id="user-prompt-input"
+                value={userPrompt}
+                onChange={handleUserPromptChange}
+                placeholder="Enter your specific request or question. For example: 'Please analyze the following data for fraud patterns...'"
+                className={`input-field resize-both prompt-editor-textarea ${userPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-green-200 focus:border-green-500 focus:ring-green-500'
+                  }`}
+                style={{ minHeight: '128px', whiteSpace: 'pre-wrap' }}
+              />
+            </div>
             {userPromptError && (
               <p className="mt-1 text-sm text-red-600">{userPromptError}</p>
             )}
@@ -531,7 +630,7 @@ const PromptEditor = ({
 
       {/* Combined Preview Tab */}
       {activeTab === 'preview' && (
-        <div className="space-y-4">
+        <div className="space-y-4" role="tabpanel" id="preview-panel" aria-labelledby="preview-tab">
           <div className="flex items-center space-x-2">
             <h4 className="text-sm font-medium text-gray-700">Combined Message Preview</h4>
             <HelpTooltip
@@ -596,6 +695,8 @@ const PromptEditor = ({
           )}
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 };
@@ -626,7 +727,11 @@ PromptEditor.propTypes = {
   // Legacy single prompt mode props (for backward compatibility)
   prompt: PropTypes.string,
   onPromptChange: PropTypes.func,
-  validationError: PropTypes.string
+  validationError: PropTypes.string,
+
+  // Collapsible functionality
+  isCollapsed: PropTypes.bool,
+  onToggleCollapse: PropTypes.func
 };
 
 export default PromptEditor;

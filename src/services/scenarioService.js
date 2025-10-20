@@ -7,20 +7,8 @@ import { validateScenario, extractScenarioMetadata } from '../utils/scenarioMode
 // Import manifest and scenario configurations directly
 import manifestData from '../scenarios/manifest.json';
 
-// Create dynamic imports mapping from manifest
-const createScenarioImports = () => {
-  const imports = {};
-  manifestData.scenarios.forEach(scenario => {
-    if (scenario.enabled !== false) {
-      imports[scenario.folder] = () => import(/* @vite-ignore */ `../scenarios/${scenario.folder}/${scenario.configFile}`);
-      // Also map by scenario ID for flexibility
-      imports[scenario.id] = () => import(/* @vite-ignore */ `../scenarios/${scenario.folder}/${scenario.configFile}`);
-    }
-  });
-  return imports;
-};
-
-const scenarioImports = createScenarioImports();
+const scenarioJsonModules = import.meta.glob('../scenarios/*/scenario.json', { eager: true, import: 'default' });
+const jsonDatasetModules = import.meta.glob('../scenarios/*/datasets/*.json', { eager: true, import: 'default' });
 
 /**
  * ScenarioService class for managing scenario operations
@@ -202,21 +190,13 @@ export class ScenarioService {
       // Extract folder name from filename (e.g., "fraud-detection/scenario.json" -> "fraud-detection")
       const folderName = filename.includes('/') ? filename.split('/')[0] : filename.replace('.json', '');
 
-      // Use dynamic import instead of HTTP fetch
-      let scenarioData;
-      if (scenarioImports[folderName]) {
-        const scenarioModule = await scenarioImports[folderName]();
-        scenarioData = scenarioModule.default;
-      } else {
-        // Try to find by scenario ID in manifest
-        const scenarioInfo = manifestData.scenarios.find(s => s.folder === folderName || s.id === folderName);
-        if (scenarioInfo && scenarioImports[scenarioInfo.id]) {
-          const scenarioModule = await scenarioImports[scenarioInfo.id]();
-          scenarioData = scenarioModule.default;
-        } else {
-          throw new Error(`No import configured for scenario: ${folderName}`);
-        }
+      const scenarioInfo = manifestData.scenarios.find(s => s.folder === folderName || s.id === folderName);
+      if (!scenarioInfo) {
+        throw new Error(`No manifest entry for scenario: ${folderName}`);
       }
+
+      const scenarioModuleKey = `../scenarios/${scenarioInfo.folder}/scenario.json`;
+      const scenarioData = scenarioJsonModules[scenarioModuleKey];
 
       if (!scenarioData) {
         throw new Error(`Scenario data not found: ${filename}`);
@@ -352,24 +332,57 @@ export class ScenarioService {
         throw new Error(`Scenario ${scenarioId} not found in manifest`);
       }
 
-      // Construct the dataset path using dynamic import
-      const datasetPath = `../scenarios/${scenarioInfo.folder}/${dataset.file}`;
+      // Construct the dataset keys for the preloaded module maps
+      const baseKey = `../scenarios/${scenarioInfo.folder}/${dataset.file}`;
 
-      try {
-        // For the consolidated structure, use dynamic imports with explicit paths
-        if (dataset.file.endsWith('.json')) {
-          // Use dynamic import for JSON files
-          const datasetModule = await import(/* @vite-ignore */ `../scenarios/${scenarioInfo.folder}/${dataset.file}`);
-          return JSON.stringify(datasetModule.default, null, 2);
-        } else {
-          // For CSV files, use Vite's ?raw suffix to import as text
-          const datasetModule = await import(/* @vite-ignore */ `../scenarios/${scenarioInfo.folder}/${dataset.file}?raw`);
-          return datasetModule.default;
+      // Try JSON datasets first
+      if (dataset.file.endsWith('.json')) {
+        let jsonModule = jsonDatasetModules[baseKey];
+        if (!jsonModule) {
+          // Fallback: search keys to tolerate minor path/query differences
+          const jsonKey = Object.keys(jsonDatasetModules).find(k =>
+            k.endsWith(`/${scenarioInfo.folder}/${dataset.file}`)
+          );
+          if (jsonKey) {
+            jsonModule = jsonDatasetModules[jsonKey];
+          }
         }
-      } catch (importError) {
-        console.error(`Failed to import dataset ${dataset.file}:`, importError);
-        throw new Error(`Dataset file not found or not accessible: ${dataset.file}. Make sure the file exists in the consolidated structure and is properly configured for import.`);
+        if (!jsonModule) {
+          throw new Error(`Dataset file not found or not accessible: ${dataset.file}. Make sure the file exists in the consolidated structure and is properly configured for import.`);
+        }
+        return JSON.stringify(jsonModule, null, 2);
       }
+
+      // Then CSV/TSV datasets via URL + fetch to get raw text (no pre-imports)
+      if (dataset.file.endsWith('.csv') || dataset.file.endsWith('.tsv')) {
+        // Build a stable asset URL that works in dev and build
+        let urlString = '';
+        try {
+          // Let Vite resolve the asset into a served URL when building
+          urlString = new URL(`../scenarios/${scenarioInfo.folder}/${dataset.file}`, import.meta.url).toString();
+        } catch (e) {
+          // Fallback for environments that don't transform the URL
+          urlString = `/src/scenarios/${scenarioInfo.folder}/${dataset.file}`;
+        }
+
+        // Fetch the asset URL to get the file contents as text
+        try {
+          const res = await fetch(urlString);
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+          const text = await res.text();
+          if (!text || !text.trim()) {
+            throw new Error('CSV file is empty');
+          }
+          return text;
+        } catch (e) {
+          throw new Error(`Failed to load dataset file: ${dataset.file}`);
+        }
+      }
+
+      // Unsupported extension
+      throw new Error(`Unsupported dataset file format: ${dataset.file}`);
     } catch (error) {
       console.error(`[ScenarioService] Error loading dataset content:`, error);
       throw error;

@@ -6,7 +6,7 @@ import ScenarioValidationDisplay from './ScenarioValidationDisplay';
 import { scenarioService } from '../services/scenarioService.js';
 import { analyzeError } from '../utils/errorHandling.js';
 
-const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError, onCreateScenario, onRefreshSeedData }) => {
+const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError, onCreateScenario, onRefreshSeedData, isCollapsed, onToggleCollapse }) => {
   const [scenarios, setScenarios] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -27,6 +27,12 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
       setScenarioMetadata(null);
     }
   }, [selectedScenario]);
+
+  useEffect(() => {
+    if (selectedScenario && scenarioService.isInitialized) {
+      loadScenarioMetadata(selectedScenario);
+    }
+  }, [scenarioService.isInitialized]);
 
   const loadAvailableScenarios = async () => {
     setIsLoading(true);
@@ -282,16 +288,55 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-4">
+      <div className={`flex items-center justify-between ${isCollapsed ? 'mb-0' : 'mb-4'}`}>
         <div className="flex items-center space-x-2">
-          <h3 className="text-lg font-semibold text-gray-900">Select Scenario</h3>
-          <HelpTooltip
-            content="Choose a pre-configured scenario that includes datasets, prompts, and tools for specific use cases. Scenarios are stored in the /src/scenarios/ directory."
-            position="right"
-          />
+          <button
+            onClick={onToggleCollapse}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onToggleCollapse();
+              }
+            }}
+            className="collapsible-toggle-button group"
+            aria-expanded={!isCollapsed}
+            aria-controls="scenario-selector-content"
+            aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} scenario selection section`}
+          >
+            <svg
+              className={`collapsible-chevron ${
+                isCollapsed ? 'collapsed' : 'expanded'
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+            <span id="scenario-selector-header">Select Scenario</span>
+          </button>
+          {!isCollapsed && (
+            <HelpTooltip
+              content="Choose a pre-configured scenario that includes datasets, prompts, and tools for specific use cases. Scenarios are stored in the /src/scenarios/ directory."
+              position="right"
+            />
+          )}
         </div>
-        <div className="flex items-center space-x-3">
-          {onCreateScenario && (
+        <div className="flex items-center space-x-3 min-w-0">
+          {isCollapsed && selectedScenario && (
+            <span className="text-sm text-gray-500 truncate max-w-[220px] sm:max-w-[280px]">
+              {(() => {
+                const s = scenarios.find(s => s.id === selectedScenario);
+                return s ? s.name : selectedScenario;
+              })()}
+            </span>
+          )}
+          {!isCollapsed && onCreateScenario && (
             <button
               onClick={onCreateScenario}
               className="text-sm text-secondary-600 hover:text-secondary-700 font-medium flex items-center space-x-1"
@@ -303,130 +348,144 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
               <span>Create</span>
             </button>
           )}
-          <button
-            onClick={handleReloadScenarios}
-            disabled={isLoading}
-            className="text-sm text-primary-600 hover:text-primary-700 font-medium disabled:opacity-50"
-            title="Reload scenarios from disk"
-          >
-            {isLoading ? 'Reloading...' : 'Reload'}
-          </button>
+          {!isCollapsed && (
+            <button
+              onClick={handleReloadScenarios}
+              disabled={isLoading}
+              className="text-sm text-primary-600 hover:text-primary-700 font-medium disabled:opacity-50"
+              title="Reload scenarios from disk"
+            >
+              {isLoading ? 'Reloading...' : 'Reload'}
+            </button>
+          )}
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4">
-          <ScenarioErrorDisplay
-            error={error}
-            scenarioId={selectedScenario}
-            onRetry={handleRetry}
-            onDismiss={handleDismissError}
-            onRecovery={handleErrorRecovery}
-            showDiagnostics={import.meta.env.DEV}
-          />
-        </div>
-      )}
-
-      <div className="space-y-4">
-        {/* Scenario Selection */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label htmlFor="scenario-select" className="block text-sm font-medium text-gray-700">
-              Available Scenarios
-              {isLoading && (
-                <span className="ml-2 text-xs text-blue-600">Loading scenarios...</span>
-              )}
-            </label>
-            {scenarioMetadata?.hasSeedData && (
-              <button
-                onClick={handleRefreshSeedData}
-                disabled={isRefreshingSeedData}
-                className="text-primary-600 hover:text-primary-700 disabled:opacity-50 transition-colors"
-                title="Refresh seed data"
-              >
-                <svg className={`w-4 h-4 ${isRefreshingSeedData ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
-            )}
-          </div>
-          <select
-            id="scenario-select"
-            value={selectedScenario || ''}
-            onChange={(e) => handleScenarioChange(e.target.value)}
-            className={`select-field ${validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
-              }`}
-            disabled={isLoading}
-          >
-            <option value="">
-              {isLoading ? 'Loading scenarios...' : 'Choose a scenario...'}
-            </option>
-            {scenarios.map((scenario) => (
-              <option key={scenario.id} value={scenario.id}>
-                {scenario.name}
-              </option>
-            ))}
-          </select>
-          {isLoading && (
-            <div className="mt-2 flex items-center text-sm text-blue-600">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-              Scanning scenarios directory...
+      <div
+        id="scenario-selector-content"
+        className={`collapsible-content ${
+          isCollapsed ? 'collapsed' : 'expanded'
+        }`}
+        role="region"
+        aria-labelledby="scenario-selector-header"
+        aria-hidden={isCollapsed}
+      >
+        <div className="space-y-4">
+          {error && (
+            <div>
+              <ScenarioErrorDisplay
+                error={error}
+                scenarioId={selectedScenario}
+                onRetry={handleRetry}
+                onDismiss={handleDismissError}
+                onRecovery={handleErrorRecovery}
+                showDiagnostics={import.meta.env.DEV}
+              />
             </div>
           )}
-        </div>
 
-        {/* Simplified Scenario Information - Only show tools when available */}
-        {scenarioMetadata && !scenarioMetadata.hasError && (
-          <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-            <h4 className="text-sm font-medium text-gray-900 mb-2">Scenario Information</h4>
+          <div className="space-y-4">
+            {/* Scenario Selection */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="scenario-select" className="block text-sm font-medium text-gray-700">
+                  Available Scenarios
+                  {isLoading && (
+                    <span className="ml-2 text-xs text-blue-600">Loading scenarios...</span>
+                  )}
+                </label>
+                {scenarioMetadata?.hasSeedData && (
+                  <button
+                    onClick={handleRefreshSeedData}
+                    disabled={isRefreshingSeedData}
+                    className="text-primary-600 hover:text-primary-700 disabled:opacity-50 transition-colors"
+                    title="Refresh seed data"
+                  >
+                    <svg className={`w-4 h-4 ${isRefreshingSeedData ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              <select
+                id="scenario-select"
+                value={selectedScenario || ''}
+                onChange={(e) => handleScenarioChange(e.target.value)}
+                className={`select-field ${validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+                  }`}
+                disabled={isLoading}
+              >
+                <option value="">
+                  {isLoading ? 'Loading scenarios...' : 'Choose a scenario...'}
+                </option>
+                {scenarios.map((scenario) => (
+                  <option key={scenario.id} value={scenario.id}>
+                    {scenario.name}
+                  </option>
+                ))}
+              </select>
+              {isLoading && (
+                <div className="mt-2 flex items-center text-sm text-blue-600">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                  Scanning scenarios directory...
+                </div>
+              )}
+            </div>
 
-            {/* Only show tools if available */}
-            {scenarioMetadata.hasTools && scenarioMetadata.toolNames && (
-              <div className="space-y-2">
-                <p className="text-xs text-gray-600 font-medium">Available Tools:</p>
-                <ul className="text-xs text-gray-700 space-y-1">
-                  {scenarioMetadata.toolNames.map(toolName => (
-                    <li key={toolName} className="flex items-center space-x-2">
-                      <span className="inline-block w-1.5 h-1.5 bg-green-400 rounded-full"></span>
-                      <span>{toolName}</span>
-                    </li>
-                  ))}
-                </ul>
+            {/* Simplified Scenario Information - Only show tools when available */}
+            {scenarioMetadata && !scenarioMetadata.hasError && (
+              <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                <h4 className="text-sm font-medium text-gray-900 mb-2">Scenario Information</h4>
+
+                {/* Only show tools if available */}
+                {scenarioMetadata.hasTools && scenarioMetadata.toolNames && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-600 font-medium">Available Tools:</p>
+                    <ul className="text-xs text-gray-700 space-y-1">
+                      {scenarioMetadata.toolNames.map(toolName => (
+                        <li key={toolName} className="flex items-center space-x-2">
+                          <span className="inline-block w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+                          <span>{toolName}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Scenario Metadata Error */}
+            {scenarioMetadata?.hasError && (
+              <div className="mt-4">
+                <ScenarioErrorDisplay
+                  error={scenarioMetadata.errorInfo}
+                  scenarioId={selectedScenario}
+                  onRetry={() => loadScenarioMetadata(selectedScenario)}
+                  onRecovery={handleErrorRecovery}
+                />
+              </div>
+            )}
+
+            {/* Validation Results */}
+            {validationResult && (
+              <div className="mt-4">
+                <ScenarioValidationDisplay
+                  validation={validationResult}
+                  scenarioId={selectedScenario}
+                  onFix={handleValidationFix}
+                  showDetails={import.meta.env.DEV}
+                />
               </div>
             )}
           </div>
-        )}
 
-        {/* Scenario Metadata Error */}
-        {scenarioMetadata?.hasError && (
-          <div className="mt-4">
-            <ScenarioErrorDisplay
-              error={scenarioMetadata.errorInfo}
-              scenarioId={selectedScenario}
-              onRetry={() => loadScenarioMetadata(selectedScenario)}
-              onRecovery={handleErrorRecovery}
-            />
-          </div>
-        )}
-
-        {/* Validation Results */}
-        {validationResult && (
-          <div className="mt-4">
-            <ScenarioValidationDisplay
-              validation={validationResult}
-              scenarioId={selectedScenario}
-              onFix={handleValidationFix}
-              showDetails={import.meta.env.DEV}
-            />
-          </div>
-        )}
+          {/* Validation Error */}
+          {validationError && (
+            <p className="mt-1 text-sm text-red-600">{validationError}</p>
+          )}
+        </div>
       </div>
-
-      {/* Validation Error */}
-      {validationError && (
-        <p className="mt-1 text-sm text-red-600">{validationError}</p>
-      )}
     </div>
   );
 };
@@ -436,14 +495,18 @@ ScenarioSelector.propTypes = {
   onScenarioSelect: PropTypes.func.isRequired,
   validationError: PropTypes.string,
   onCreateScenario: PropTypes.func,
-  onRefreshSeedData: PropTypes.func
+  onRefreshSeedData: PropTypes.func,
+  isCollapsed: PropTypes.bool,
+  onToggleCollapse: PropTypes.func
 };
 
 ScenarioSelector.defaultProps = {
   selectedScenario: '',
   validationError: null,
   onCreateScenario: null,
-  onRefreshSeedData: null
+  onRefreshSeedData: null,
+  isCollapsed: false,
+  onToggleCollapse: null
 };
 
 export default ScenarioSelector;

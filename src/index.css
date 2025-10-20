@@ -52,6 +52,10 @@
     @apply overflow-y-auto;
   }
 
+  .resize-both {
+    resize: both;
+  }
+
   .select-field {
     @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white;
   }
@@ -160,6 +164,7 @@
     overflow-y: auto;
     max-width: 100%;
     box-sizing: border-box;
+    resize: both;
   }
 
   /* Error notification animations */
@@ -219,6 +224,105 @@
 
   .robot-transitioning {
     @apply transform scale-105;
+  }
+
+  /* Collapsible section styles */
+  .collapsible-section-header {
+    @apply flex items-center justify-between p-4 cursor-pointer;
+    @apply hover:bg-gray-50 transition-colors duration-200;
+    @apply focus-within:bg-gray-50;
+  }
+
+  .collapsible-toggle-button {
+    @apply flex items-center space-x-2 text-lg font-semibold text-gray-900;
+    @apply hover:text-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500;
+    @apply focus:ring-offset-2 rounded-md transition-all duration-200;
+    @apply transform hover:scale-105;
+  }
+
+  .collapsible-chevron {
+    @apply w-5 h-5 transition-all duration-300 ease-in-out;
+    @apply text-gray-500 group-hover:text-primary-600;
+  }
+
+  .collapsible-chevron.expanded {
+    @apply transform rotate-90 text-primary-600;
+  }
+
+  .collapsible-chevron.collapsed {
+    @apply transform rotate-0 text-gray-500;
+  }
+
+  .collapsible-content {
+    @apply overflow-hidden transition-all duration-300 ease-in-out;
+  }
+
+  .collapsible-content.expanded {
+    @apply max-h-screen opacity-100;
+  }
+
+  .collapsible-content.collapsed {
+    @apply max-h-0 opacity-0;
+  }
+
+  /* Enhanced Chad dragging styles */
+  .floating-chad {
+    @apply transition-all duration-200 ease-in-out;
+    will-change: transform, filter;
+  }
+
+  .floating-chad-draggable {
+    @apply cursor-grab;
+  }
+
+  .floating-chad-draggable:hover {
+    @apply transform scale-105;
+    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+  }
+
+  .floating-chad-dragging {
+    @apply cursor-grabbing transform scale-110;
+    filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.25)) brightness(1.1);
+    z-index: 10000 !important;
+  }
+
+  .floating-chad-glow {
+    @apply transition-opacity duration-300;
+  }
+
+  .floating-chad-dragging .floating-chad-glow {
+    @apply opacity-100;
+  }
+
+  /* Enhanced textarea resize styles */
+  .resizable-textarea {
+    @apply relative;
+  }
+
+  .resizable-textarea textarea {
+    @apply resize-both min-h-32 transition-all duration-200;
+  }
+
+  .resizable-textarea textarea:focus {
+    @apply ring-2 ring-primary-500 ring-offset-2;
+    box-shadow: 0 0 0 2px var(--color-primary-500), 0 0 0 4px rgba(92, 140, 90, 0.1);
+  }
+
+  /* Smooth animation utilities */
+  .animate-smooth-expand {
+    animation: smoothExpand 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .animate-smooth-collapse {
+    animation: smoothCollapse 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .animate-drag-start {
+    animation: dragStart 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .animate-drag-end {
+    animation: dragEnd 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   /* Chad reveal utility classes */
@@ -286,7 +390,11 @@
     .animate-bounce-in,
     .animate-fade-out,
     .animate-chad-reveal,
-    .animate-chad-emerge {
+    .animate-chad-emerge,
+    .animate-smooth-expand,
+    .animate-smooth-collapse,
+    .animate-drag-start,
+    .animate-drag-end {
       animation: none !important;
     }
 
@@ -312,6 +420,20 @@
       transform: none !important;
       filter: none !important;
     }
+
+    /* Collapsible sections reduced motion */
+    .collapsible-content,
+    .collapsible-chevron,
+    .collapsible-toggle-button {
+      transition: none !important;
+      animation: none !important;
+    }
+
+    /* Chad dragging reduced motion */
+    .floating-chad,
+    .floating-chad-glow {
+      transition: none !important;
+    }
   }
 
   /* High contrast mode support */
@@ -326,6 +448,32 @@
       background: #ffffff !important;
       color: #000000 !important;
       border: 2px solid #000000 !important;
+    }
+
+    /* Collapsible sections high contrast */
+    .collapsible-chevron {
+      color: #000000 !important;
+    }
+
+    .collapsible-toggle-button {
+      color: #000000 !important;
+      border: 2px solid #000000 !important;
+    }
+
+    .collapsible-toggle-button:hover,
+    .collapsible-toggle-button:focus {
+      background: #000000 !important;
+      color: #ffffff !important;
+    }
+
+    /* Chad dragging high contrast */
+    .floating-chad-draggable {
+      border: 2px solid #000000 !important;
+    }
+
+    .floating-chad-dragging {
+      border: 3px solid #000000 !important;
+      background: #ffffff !important;
     }
   }
 
@@ -554,33 +702,55 @@
   }
 }
 
+@keyframes smoothExpand {
+  0% {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  100% {
+    max-height: 1000px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes smoothCollapse {
+  0% {
+    max-height: 1000px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes dragStart {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+  }
+  100% {
+    transform: scale(1.1);
+    filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.25)) brightness(1.1);
+  }
+}
+
+@keyframes dragEnd {
+  0% {
+    transform: scale(1.1);
+    filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.25)) brightness(1.1);
+  }
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+  }
+}
+
 /* Responsive Chad scaling for larger screens */
 .responsive-chad {
-  /* Base size is already set via inline styles */
-}
-
-/* Scale up Chad on larger screens */
-@media (min-width: 1024px) {
-  .responsive-chad {
-    transform: scale(1.2) !important;
-  }
-}
-
-@media (min-width: 1280px) {
-  .responsive-chad {
-    transform: scale(1.4) !important;
-  }
-}
-
-@media (min-width: 1536px) {
-  .responsive-chad {
-    transform: scale(1.6) !important;
-  }
-}
-
-/* Ensure Chad doesn't get too small on mobile */
-@media (max-width: 768px) {
-  .responsive-chad {
-    transform: scale(0.9) !important;
-  }
+  /* Base size is set via inline styles, responsive scaling handled in component */
 }

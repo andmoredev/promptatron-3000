@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import HelpTooltip from './HelpTooltip';
 import { scenarioService } from '../services/scenarioService.js';
 
-const ScenarioDatasetSelector = ({ selectedScenario, selectedDataset, onDatasetSelect, validationError }) => {
+const ScenarioDatasetSelector = ({ selectedScenario, selectedDataset, onDatasetSelect, validationError, isCollapsed, onToggleCollapse }) => {
   const [datasets, setDatasets] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -127,12 +127,45 @@ const ScenarioDatasetSelector = ({ selectedScenario, selectedDataset, onDatasetS
 
   return (
     <div className="card">
-      <div className="flex items-center space-x-2 mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Select Dataset</h3>
-        <HelpTooltip
-          content="Choose a dataset from the selected scenario. Each scenario includes its own datasets that are relevant to that specific use case."
-          position="right"
-        />
+      <div className={`flex items-center justify-between ${isCollapsed ? 'mb-0' : 'mb-4'}`}>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={onToggleCollapse}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onToggleCollapse?.();
+              }
+            }}
+            className="collapsible-toggle-button group"
+            aria-expanded={!isCollapsed}
+            aria-controls="scenario-dataset-selector-content"
+            aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} dataset selection section`}
+          >
+            <svg
+              className={`collapsible-chevron ${isCollapsed ? 'collapsed' : 'expanded'}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <span>Select Dataset</span>
+          </button>
+          {!isCollapsed && (
+            <HelpTooltip
+              content="Choose a dataset from the selected scenario. Each scenario includes its own datasets that are relevant to that specific use case."
+              position="right"
+            />
+          )}
+        </div>
+        <div className="min-w-0">
+          {isCollapsed && selectedDataset?.id && (
+            <span className="text-sm text-gray-500 truncate max-w-[240px]" title={selectedDataset.name || selectedDataset.id}>
+              {selectedDataset.name || selectedDataset.id}
+            </span>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -149,6 +182,12 @@ const ScenarioDatasetSelector = ({ selectedScenario, selectedDataset, onDatasetS
         </div>
       )}
 
+      <div
+        id="scenario-dataset-selector-content"
+        className={`collapsible-content ${isCollapsed ? 'collapsed' : 'expanded'}`}
+        role="region"
+        aria-hidden={isCollapsed}
+      >
       <div className="space-y-4">
         {/* Dataset Selection */}
         <div>
@@ -216,6 +255,7 @@ const ScenarioDatasetSelector = ({ selectedScenario, selectedDataset, onDatasetS
       {validationError && (
         <p className="mt-1 text-sm text-red-600">{validationError}</p>
       )}
+      </div>
     </div>
   );
 };
@@ -228,12 +268,16 @@ ScenarioDatasetSelector.propTypes = {
     content: PropTypes.string
   }).isRequired,
   onDatasetSelect: PropTypes.func.isRequired,
-  validationError: PropTypes.string
+  validationError: PropTypes.string,
+  isCollapsed: PropTypes.bool,
+  onToggleCollapse: PropTypes.func
 };
 
 ScenarioDatasetSelector.defaultProps = {
   selectedScenario: null,
-  validationError: null
+  validationError: null,
+  isCollapsed: false,
+  onToggleCollapse: null
 };
 
 export default ScenarioDatasetSelector;
