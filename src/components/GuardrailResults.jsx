@@ -119,7 +119,7 @@ andaloneTest = false,
                 type: 'TOPIC',
                 category: 'Topic Policy',
                 name: topic.name,
-                type: topic.type,
+                topicType: topic.type,
                 confidence: topic.confidence
               });
             }

@@ -8,7 +8,7 @@ import CacheManager from './CacheManager'
 import { scenarioService } from '../services/scenarioService.js';
 import { analyzeError } from '../utils/errorHandling.js';
 
-const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError, onCreateScenario, onRefreshSeedData, isCollapsed, onToggleCollapse, onGuardrailToggle, onTestGuardrails, isTestingGuardrails }) => {
+const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError, onCreateScenario, onRefreshSeedData, isCollapsed, onToggleCollapse, onGuardrailToggle }) => {
   const [scenarios, setScenarios] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -450,10 +450,10 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
             {/* Only show tools if available */}
             {scenarioMetadata.hasTools && scenarioMetadata.toolNames && (
               <div className="space-y-2">
-                <p className="flex items-center gap-2 text-xs text-gray-600 font-medium">
+                <div className="flex items-center gap-2 text-xs text-gray-600 font-medium">
                   Available Tools:
                   <CacheManager compact />
-                </p>
+                </div>
                 <ul className="text-xs text-gray-700 space-y-1">
                   {scenarioMetadata.toolNames.map(toolName => (
                     <li key={toolName} className="flex items-center space-x-2">
@@ -513,9 +513,7 @@ ScenarioSelector.propTypes = {
   onRefreshSeedData: PropTypes.func,
   isCollapsed: PropTypes.bool,
   onToggleCollapse: PropTypes.func,
-  onGuardrailToggle: PropTypes.func,
-  onTestGuardrails: PropTypes.func,
-  isTestingGuardrails: PropTypes.bool
+  onGuardrailToggle: PropTypes.func
 };
 
 ScenarioSelector.defaultProps = {
@@ -525,9 +523,7 @@ ScenarioSelector.defaultProps = {
   onRefreshSeedData: null,
   isCollapsed: false,
   onToggleCollapse: null,
-  onGuardrailToggle: null,
-  onTestGuardrails: null,
-  isTestingGuardrails: false
+  onGuardrailToggle: null
 };
 
 export default ScenarioSelector;

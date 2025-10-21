@@ -7,7 +7,16 @@ import { validateScenario, extractScenarioMetadata, migrateScenarioSchema, needs
 // Import manifest and scenario configurations directly
 import manifestData from '../scenarios/manifest.json' with { type: 'json' };
 
-const scenarioJsonModules = import.meta.glob('../scenarios/*/scenario.json', { eager: true, import: 'default' });
+// Import scenario files directly instead of using import.meta.glob
+import fraudDetectionScenario from '../scenarios/fraud-detection/scenario.json' with { type: 'json' };
+import shippingLogisticsScenario from '../scenarios/shipping-logistics/scenario.json' with { type: 'json' };
+
+// Create a map of scenario modules
+const scenarioJsonModules = {
+  '../scenarios/fraud-detection/scenario.json': fraudDetectionScenario,
+  '../scenarios/shipping-logistics/scenario.json': shippingLogisticsScenario
+};
+
 const jsonDatasetModules = import.meta.glob('../scenarios/*/datasets/*.json', { eager: true, import: 'default' });
 
 /**
@@ -201,15 +210,13 @@ export class ScenarioService {
       if (!scenarioData) {
         throw new Error(`Scenario data not found: ${filename}`);
       }
-
       // Migrate scenario schema if needed for backward compatibility
       if (needsGuardrailsMigration(scenarioData)) {
         scenarioData = migrateScenarioSchema(scenarioData);
       }
-
       // Validate scenario
-      const validation = await validateScenario(scenarioData);
-
+      const validation = validateScenario(scenarioData);
+      console.log(validation);
       if (!validation.isValid) {
         const errorSummary = Object.entries(validation.errors)
           .map(([field, message]) => `${field}: ${message}`)
@@ -517,7 +524,7 @@ export class ScenarioService {
    */
   async validateScenarioWithEnhancedErrors(scenario, options = {}) {
     try {
-      const validation = await validateScenario(scenario, options);
+      const validation = validateScenario(scenario, options);
 
       // Add enhanced error information
       if (!validation.isValid && validation.errors) {

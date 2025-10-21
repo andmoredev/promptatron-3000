@@ -1,27 +1,22 @@
 /**
  * GuardrailConfig class for managing guardrail configurations
- * Handles validation, AWS format convers scenario integration
+ * Handles validation, AWS format conversion, and scenario integration
+ * Supports both simplified and AWS format configurations
  */
+import { GuardrailSchemaTranslator } from '../services/guardrailSchemaTranslator.js';
+
 export class GuardrailConfig {
-  constructor(config = {}) {
-    this.name = config.name || '';
-    this.description = config.description || '';
-    this.blockedInputMessaging = config.blockedInputMessaging || 'This content violates our content policy.';
-    this.blockedOutputsMessaging = config.blockedOutputsMessaging || 'I cannot provide that type of content.';
+  constructor(config = {}, scenarioName = null) {
+    this.scenarioName = scenarioName;
 
-    // Policy configurations
-    this.contentPolicyConfig = config.contentPolicyConfig || null;
-    this.wordPolicyConfig = config.wordPolicyConfig || null;
-    this.sensitiveInformationPolicyConfig = config.sensitiveInformationPolicyConfig || null;
-    this.topicPolicyConfig = config.topicPolicyConfig || null;
-
-    // AWS resource information (set after creation)
-    this.arn = config.arn || null;
-    this.guardrailId = config.guardrailId || null;
-    this.version = config.version || 'DRAFT';
-    this.status = config.status || 'pending'; // pending, creating, ready, error
-    this.createdAt = config.createdAt || null;
-    this.updatedAt = config.updatedAt || null;
+    // Detect if this is simplified format and translate if needed
+    if (this.isSimplifiedFormat(config)) {
+      const translatedConfig = GuardrailSchemaTranslator.translateToAWSFormat(config, scenarioName || 'default');
+      this.initializeFromAWSFormat(translatedConfig);
+      this.originalSimplifiedConfig = config; // Store original for reference
+    } else {
+      this.initializeFromAWSFormat(config);
+    }
 
     // Validation state
     this.validationErrors = [];
@@ -32,12 +27,69 @@ export class GuardrailConfig {
   }
 
   /**
+   * Initialize from AWS format configuration
+   * @param {Object} config - AWS format configuration
+   */
+  initializeFromAWSFormat(config) {
+    this.name = config.name || '';
+    this.description = config.description || '';
+    this.blockedInputMessaging = config.blockedInputMessaging || 'This content violates our content policy.';
+    this.blockedOutputsMessaging = config.blockedOutputsMessaging || 'I cannot provide that type of content.';
+
+    // Policy configurations
+    this.contentPolicyConfig = config.contentPolicyConfig || null;
+    this.wordPolicyConfig = config.wordPolicyConfig || null;
+    this.sensitiveInformationPolicyConfig = config.sensitiveInformationPolicyConfig || null;
+    this.topicPolicyConfig = config.topicPolicyConfig || null;
+    this.contextualGroundingPolicyConfig = config.contextualGroundingPolicyConfig || null;
+
+    // AWS resource information (set after creation)
+    this.arn = config.arn || null;
+    this.guardrailId = config.guardrailId || null;
+    this.version = config.version || 'DRAFT';
+    this.status = config.status || 'pending'; // pending, creating, ready, error
+    this.createdAt = config.createdAt || null;
+    this.updatedAt = config.updatedAt || null;
+  }
+
+  /**
+   * Detect if configuration uses simplified format
+   * @param {Object} config - Configuration to check
+   * @returns {boolean} True if simplified format is detected
+   */
+  isSimplifiedFormat(config) {
+    return GuardrailSchemaTranslator.isSimplifiedFormat(config);
+  }
+
+  /**
    * Validate the guardrail configuration
    * @returns {boolean} True if configuration is valid
    */
   validate() {
     this.validationErrors = [];
 
+    // If we have original simplified config, validate that first
+    if (this.originalSimplifiedConfig) {
+      const simplifiedValidation = GuardrailSchemaTranslator.validateSimplifiedSchema(this.originalSimplifiedConfig);
+      if (!simplifiedValidation.isValid) {
+        this.validationErrors = simplifiedValidation.errors.map(error => ({
+          field: 'simplified',
+          message: error
+        }));
+        this.isValid = false;
+        return false;
+      }
+    }
+
+    // Validate AWS format
+    return this.validateAWSFormat();
+  }
+
+  /**
+   * Validate AWS format configuration
+   * @returns {boolean} True if configuration is valid
+   */
+  validateAWSFormat() {
     // Validate required fields
     if (!this.name || typeof this.name !== 'string' || this.name.trim().length === 0) {
       this.validationErrors.push({
@@ -90,13 +142,14 @@ export class GuardrailConfig {
       this.contentPolicyConfig ||
       this.wordPolicyConfig ||
       this.sensitiveInformationPolicyConfig ||
-      this.topicPolicyConfig
+      this.topicPolicyConfig ||
+      this.contextualGroundingPolicyConfig
     );
 
     if (!hasPolicies) {
       this.validationErrors.push({
         field: 'policies',
-        message: 'At least one policy configuration (content, word, sensitive information, or topic) is required'
+        message: 'At least one policy configuration (content, word, sensitive information, topic, or contextual grounding) is required'
       });
     }
 
@@ -115,6 +168,10 @@ export class GuardrailConfig {
 
     if (this.topicPolicyConfig) {
       this.validateTopicPolicyConfig();
+    }
+
+    if (this.contextualGroundingPolicyConfig) {
+      this.validateContextualGroundingPolicyConfig();
     }
 
     this.isValid = this.validationErrors.length === 0;
@@ -328,6 +385,52 @@ export class GuardrailConfig {
   }
 
   /**
+   * Validate contextual grounding policy configuration
+   */
+  validateContextualGroundingPolicyConfig() {
+    if (!this.contextualGroundingPolicyConfig.filtersConfig || !Array.isArray(this.contextualGroundingPolicyConfig.filtersConfig)) {
+      this.validationErrors.push({
+        field: 'contextualGroundingPolicyConfig.filtersConfig',
+        message: 'Contextual grounding policy must have a filtersConfig array'
+      });
+      return;
+    }
+
+    const validTypes = ['GROUNDING', 'RELEVANCE'];
+    const validActions = ['BLOCK', 'NONE'];
+
+    this.contextualGroundingPolicyConfig.filtersConfig.forEach((filter, index) => {
+      if (!validTypes.includes(filter.type)) {
+        this.validationErrors.push({
+          field: `contextualGroundingPolicyConfig.filtersConfig[${index}].type`,
+          message: `Invalid filter type. Must be one of: ${validTypes.join(', ')}`
+        });
+      }
+
+      if (typeof filter.threshold !== 'number' || filter.threshold < 0 || filter.threshold > 1) {
+        this.validationErrors.push({
+          field: `contextualGroundingPolicyConfig.filtersConfig[${index}].threshold`,
+          message: 'Threshold must be a number between 0 and 1'
+        });
+      }
+
+      if (!validActions.includes(filter.action)) {
+        this.validationErrors.push({
+          field: `contextualGroundingPolicyConfig.filtersConfig[${index}].action`,
+          message: `Invalid action. Must be one of: ${validActions.join(', ')}`
+        });
+      }
+
+      if (typeof filter.enabled !== 'boolean') {
+        this.validationErrors.push({
+          field: `contextualGroundingPolicyConfig.filtersConfig[${index}].enabled`,
+          message: 'Enabled must be a boolean'
+        });
+      }
+    });
+  }
+
+  /**
    * Convert configuration to AWS API format
    * @returns {Object} AWS-compatible configuration object
    */
@@ -360,20 +463,43 @@ export class GuardrailConfig {
       awsConfig.topicPolicyConfig = this.topicPolicyConfig;
     }
 
+    if (this.contextualGroundingPolicyConfig) {
+      awsConfig.contextualGroundingPolicyConfig = this.contextualGroundingPolicyConfig;
+    }
+
     return awsConfig;
   }
 
   /**
    * Create GuardrailConfig from scenario configuration
    * @param {Object} scenarioConfig - Scenario guardrail configuration
+   * @param {string} scenarioName - Name of the scenario for tagging
    * @returns {GuardrailConfig} New GuardrailConfig instance
    */
-  static fromScenarioConfig(scenarioConfig) {
+  static fromScenarioConfig(scenarioConfig, scenarioName = null) {
     if (!scenarioConfig || typeof scenarioConfig !== 'object') {
       throw new Error('Invalid scenario configuration provided');
     }
 
-    return new GuardrailConfig(scenarioConfig);
+    return new GuardrailConfig(scenarioConfig, scenarioName);
+  }
+
+  /**
+   * Create GuardrailConfig from simplified configuration
+   * @param {Object} simplifiedConfig - Simplified guardrail configuration
+   * @param {string} scenarioName - Name of the scenario for tagging
+   * @returns {GuardrailConfig} New GuardrailConfig instance
+   */
+  static fromSimplifiedConfig(simplifiedConfig, scenarioName) {
+    if (!simplifiedConfig || typeof simplifiedConfig !== 'object') {
+      throw new Error('Invalid simplified configuration provided');
+    }
+
+    if (!scenarioName || typeof scenarioName !== 'string') {
+      throw new Error('Scenario name is required for simplified configuration');
+    }
+
+    return new GuardrailConfig(simplifiedConfig, scenarioName);
   }
 
   /**
@@ -434,6 +560,11 @@ export class GuardrailConfig {
       policies.push(`Topic restrictions (${topicCount} topics)`);
     }
 
+    if (this.contextualGroundingPolicyConfig) {
+      const filterCount = this.contextualGroundingPolicyConfig.filtersConfig?.length || 0;
+      policies.push(`Contextual grounding (${filterCount} filters)`);
+    }
+
     return {
       name: this.name,
       description: this.description,
@@ -443,7 +574,8 @@ export class GuardrailConfig {
       policies: policies,
       policyCount: policies.length,
       isValid: this.isValid,
-      errorCount: this.validationErrors.length
+      errorCount: this.validationErrors.length,
+      isSimplified: !!this.originalSimplifiedConfig
     };
   }
 
@@ -461,6 +593,7 @@ export class GuardrailConfig {
       wordPolicyConfig: this.wordPolicyConfig ? JSON.parse(JSON.stringify(this.wordPolicyConfig)) : null,
       sensitiveInformationPolicyConfig: this.sensitiveInformationPolicyConfig ? JSON.parse(JSON.stringify(this.sensitiveInformationPolicyConfig)) : null,
       topicPolicyConfig: this.topicPolicyConfig ? JSON.parse(JSON.stringify(this.topicPolicyConfig)) : null,
+      contextualGroundingPolicyConfig: this.contextualGroundingPolicyConfig ? JSON.parse(JSON.stringify(this.contextualGroundingPolicyConfig)) : null,
       arn: this.arn,
       guardrailId: this.guardrailId,
       version: this.version,
@@ -468,5 +601,10 @@ export class GuardrailConfig {
       createdAt: this.createdAt,
       updatedAt: this.updatedAt
     });
+
+    // Copy original simplified config if it exists
+    if (this.originalSimplifiedConfig) {
+      cloned.originalSimplifiedConfig = JSON.parse(JSON.stringify(this.originalSimplifiedConfig));
+    }
   }
 }

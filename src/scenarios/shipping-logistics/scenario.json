@@ -57,7 +57,11 @@
             "type": "string",
             "description": "Order ID to query - format: one letter followed by 3-6 digits",
             "pattern": "^[A-Z][0-9]{3,6}$",
-            "examples": ["B456", "A1234", "Z123456"]
+            "examples": [
+              "B456",
+              "A1234",
+              "Z123456"
+            ]
           },
           "meta": {
             "type": "object",
@@ -67,24 +71,36 @@
                 "type": "string",
                 "description": "Unique request identifier for tracking and debugging",
                 "pattern": "^req_[a-zA-Z0-9]{6,12}$",
-                "examples": ["req_123456"]
+                "examples": [
+                  "req_123456"
+                ]
               },
               "if_none_match": {
                 "type": "string",
                 "description": "ETag value for conditional requests - returns 304 if content unchanged",
-                "examples": ["\"1696089600-1234\""]
+                "examples": [
+                  "\"1696089600-1234\""
+                ]
               },
               "cache_control": {
                 "type": "string",
                 "description": "Cache control directives",
-                "enum": ["no-cache", "max-age=300", "must-revalidate"],
-                "examples": ["max-age=300"]
+                "enum": [
+                  "no-cache",
+                  "max-age=300",
+                  "must-revalidate"
+                ],
+                "examples": [
+                  "max-age=300"
+                ]
               }
             },
             "additionalProperties": false
           }
         },
-        "required": ["order_id"],
+        "required": [
+          "order_id"
+        ],
         "additionalProperties": false
       }
     },
@@ -99,7 +115,11 @@
             "type": "string",
             "description": "Order ID to query - format: one letter followed by 3-6 digits",
             "pattern": "^[A-Z][0-9]{3,6}$",
-            "examples": ["B456", "A1234", "Z123456"]
+            "examples": [
+              "B456",
+              "A1234",
+              "Z123456"
+            ]
           },
           "meta": {
             "type": "object",
@@ -109,24 +129,36 @@
                 "type": "string",
                 "description": "Unique request identifier for tracking and debugging",
                 "pattern": "^req_[a-zA-Z0-9]{6,12}$",
-                "examples": ["req_123456"]
+                "examples": [
+                  "req_123456"
+                ]
               },
               "if_none_match": {
                 "type": "string",
                 "description": "ETag value for conditional requests - returns 304 if content unchanged",
-                "examples": ["\"1696089600-1234\""]
+                "examples": [
+                  "\"1696089600-1234\""
+                ]
               },
               "cache_control": {
                 "type": "string",
                 "description": "Cache control directives",
-                "enum": ["no-cache", "max-age=300", "must-revalidate"],
-                "examples": ["max-age=300"]
+                "enum": [
+                  "no-cache",
+                  "max-age=300",
+                  "must-revalidate"
+                ],
+                "examples": [
+                  "max-age=300"
+                ]
               }
             },
             "additionalProperties": false
           }
         },
-        "required": ["order_id"],
+        "required": [
+          "order_id"
+        ],
         "additionalProperties": false
       }
     },
@@ -141,7 +173,11 @@
             "type": "string",
             "description": "Order ID to query - format: one letter followed by 3-6 digits",
             "pattern": "^[A-Z][0-9]{3,6}$",
-            "examples": ["B456", "A1234", "Z123456"]
+            "examples": [
+              "B456",
+              "A1234",
+              "Z123456"
+            ]
           },
           "meta": {
             "type": "object",
@@ -151,24 +187,36 @@
                 "type": "string",
                 "description": "Unique request identifier for tracking and debugging",
                 "pattern": "^req_[a-zA-Z0-9]{6,12}$",
-                "examples": ["req_123456"]
+                "examples": [
+                  "req_123456"
+                ]
               },
               "if_none_match": {
                 "type": "string",
                 "description": "ETag value for conditional requests - returns 304 if content unchanged",
-                "examples": ["\"1696089600-1234\""]
+                "examples": [
+                  "\"1696089600-1234\""
+                ]
               },
               "cache_control": {
                 "type": "string",
                 "description": "Cache control directives",
-                "enum": ["no-cache", "max-age=300", "must-revalidate"],
-                "examples": ["max-age=300"]
+                "enum": [
+                  "no-cache",
+                  "max-age=300",
+                  "must-revalidate"
+                ],
+                "examples": [
+                  "max-age=300"
+                ]
               }
             },
             "additionalProperties": false
           }
         },
-        "required": ["order_id"],
+        "required": [
+          "order_id"
+        ],
         "additionalProperties": false
       }
     },
@@ -183,7 +231,11 @@
             "type": "string",
             "description": "Order ID to query - format: one letter followed by 3-6 digits",
             "pattern": "^[A-Z][0-9]{3,6}$",
-            "examples": ["B456", "A1234", "Z123456"]
+            "examples": [
+              "B456",
+              "A1234",
+              "Z123456"
+            ]
           },
           "meta": {
             "type": "object",
@@ -193,24 +245,36 @@
                 "type": "string",
                 "description": "Unique request identifier for tracking and debugging",
                 "pattern": "^req_[a-zA-Z0-9]{6,12}$",
-                "examples": ["req_123456"]
+                "examples": [
+                  "req_123456"
+                ]
               },
               "if_none_match": {
                 "type": "string",
                 "description": "ETag value for conditional requests - returns 304 if content unchanged",
-                "examples": ["\"1696089600-1234\""]
+                "examples": [
+                  "\"1696089600-1234\""
+                ]
               },
               "cache_control": {
                 "type": "string",
                 "description": "Cache control directives",
-                "enum": ["no-cache", "max-age=300", "must-revalidate"],
-                "examples": ["max-age=300"]
+                "enum": [
+                  "no-cache",
+                  "max-age=300",
+                  "must-revalidate"
+                ],
+                "examples": [
+                  "max-age=300"
+                ]
               }
             },
             "additionalProperties": false
           }
         },
-        "required": ["order_id"],
+        "required": [
+          "order_id"
+        ],
         "additionalProperties": false
       }
     },
@@ -225,13 +289,22 @@
             "type": "string",
             "description": "Order ID to query - format: one letter followed by 3-6 digits",
             "pattern": "^[A-Z][0-9]{3,6}$",
-            "examples": ["B456", "A1234", "Z123456"]
+            "examples": [
+              "B456",
+              "A1234",
+              "Z123456"
+            ]
           },
           "speed": {
             "type": "string",
-            "enum": ["overnight", "same_day"],
+            "enum": [
+              "overnight",
+              "same_day"
+            ],
             "description": "Expedite speed option",
-            "examples": ["overnight"]
+            "examples": [
+              "overnight"
+            ]
           },
           "meta": {
             "type": "object",
@@ -241,24 +314,37 @@
                 "type": "string",
                 "description": "Unique request identifier for tracking and debugging",
                 "pattern": "^req_[a-zA-Z0-9]{6,12}$",
-                "examples": ["req_123456"]
+                "examples": [
+                  "req_123456"
+                ]
               },
               "if_none_match": {
                 "type": "string",
                 "description": "ETag value for conditional requests - returns 304 if content unchanged",
-                "examples": ["\"1696089600-1234\""]
+                "examples": [
+                  "\"1696089600-1234\""
+                ]
               },
               "cache_control": {
                 "type": "string",
                 "description": "Cache control directives",
-                "enum": ["no-cache", "max-age=300", "must-revalidate"],
-                "examples": ["max-age=300"]
+                "enum": [
+                  "no-cache",
+                  "max-age=300",
+                  "must-revalidate"
+                ],
+                "examples": [
+                  "max-age=300"
+                ]
               }
             },
             "additionalProperties": false
           }
         },
-        "required": ["order_id", "speed"],
+        "required": [
+          "order_id",
+          "speed"
+        ],
         "additionalProperties": false
       }
     },
@@ -275,30 +361,50 @@
             "properties": {
               "status": {
                 "type": "string",
-                "enum": ["delivery_exception", "in_transit", "delivered", "held", "expedited"],
+                "enum": [
+                  "delivery_exception",
+                  "in_transit",
+                  "delivered",
+                  "held",
+                  "expedited"
+                ],
                 "description": "Filter by order status",
-                "examples": ["delivery_exception"]
+                "examples": [
+                  "delivery_exception"
+                ]
               },
               "customer_tier": {
                 "type": "string",
-                "enum": ["vip", "premium", "standard"],
+                "enum": [
+                  "vip",
+                  "premium",
+                  "standard"
+                ],
                 "description": "Filter by customer tier",
-                "examples": ["vip"]
+                "examples": [
+                  "vip"
+                ]
               },
               "has_hazmat": {
                 "type": "boolean",
                 "description": "Filter orders containing hazardous materials",
-                "examples": [true]
+                "examples": [
+                  true
+                ]
               },
               "is_perishable": {
                 "type": "boolean",
                 "description": "Filter orders containing perishable goods",
-                "examples": [true]
+                "examples": [
+                  true
+                ]
               },
               "sla_at_risk": {
                 "type": "boolean",
                 "description": "Filter orders with SLA violations risk",
-                "examples": [true]
+                "examples": [
+                  true
+                ]
               },
               "date_range": {
                 "type": "object",
@@ -308,13 +414,17 @@
                     "type": "string",
                     "format": "date",
                     "description": "Start date (YYYY-MM-DD)",
-                    "examples": ["2025-09-30"]
+                    "examples": [
+                      "2025-09-30"
+                    ]
                   },
                   "end": {
                     "type": "string",
                     "format": "date",
                     "description": "End date (YYYY-MM-DD)",
-                    "examples": ["2025-10-01"]
+                    "examples": [
+                      "2025-10-01"
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -330,18 +440,28 @@
                 "type": "string",
                 "description": "Unique request identifier for tracking and debugging",
                 "pattern": "^req_[a-zA-Z0-9]{6,12}$",
-                "examples": ["req_123456"]
+                "examples": [
+                  "req_123456"
+                ]
               },
               "if_none_match": {
                 "type": "string",
                 "description": "ETag value for conditional requests - returns 304 if content unchanged",
-                "examples": ["\"1696089600-1234\""]
+                "examples": [
+                  "\"1696089600-1234\""
+                ]
               },
               "cache_control": {
                 "type": "string",
                 "description": "Cache control directives",
-                "enum": ["no-cache", "max-age=300", "must-revalidate"],
-                "examples": ["max-age=300"]
+                "enum": [
+                  "no-cache",
+                  "max-age=300",
+                  "must-revalidate"
+                ],
+                "examples": [
+                  "max-age=300"
+                ]
               },
               "paging": {
                 "type": "object",
@@ -350,7 +470,9 @@
                   "cursor": {
                     "type": "string",
                     "description": "Pagination cursor for next page",
-                    "examples": ["eyJpZCI6MTIzfQ=="]
+                    "examples": [
+                      "eyJpZCI6MTIzfQ=="
+                    ]
                   },
                   "limit": {
                     "type": "integer",
@@ -358,7 +480,9 @@
                     "minimum": 1,
                     "maximum": 100,
                     "default": 20,
-                    "examples": [20]
+                    "examples": [
+                      20
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -382,20 +506,31 @@
             "type": "string",
             "description": "Order ID to expedite - format: one letter followed by 3-6 digits",
             "pattern": "^[A-Z][0-9]{3,6}$",
-            "examples": ["B456", "A1234", "Z123456"]
+            "examples": [
+              "B456",
+              "A1234",
+              "Z123456"
+            ]
           },
           "speed": {
             "type": "string",
-            "enum": ["overnight", "same_day"],
+            "enum": [
+              "overnight",
+              "same_day"
+            ],
             "description": "Expedite speed option - overnight for next business day, same_day for within hours",
-            "examples": ["overnight"]
+            "examples": [
+              "overnight"
+            ]
           },
           "reason": {
             "type": "string",
             "description": "Brief justification for expediting (10-500 characters)",
             "minLength": 10,
             "maxLength": 500,
-            "examples": ["Perishable goods at risk due to temperature control failure"]
+            "examples": [
+              "Perishable goods at risk due to temperature control failure"
+            ]
           },
           "meta": {
             "type": "object",
@@ -405,20 +540,32 @@
                 "type": "string",
                 "description": "Unique key to prevent duplicate operations - format: action_orderid_timestamp",
                 "pattern": "^[a-z_]+_[A-Z][0-9]{3,6}_[0-9]+$",
-                "examples": ["exp_b456_001"]
+                "examples": [
+                  "exp_b456_001"
+                ]
               },
               "request_id": {
                 "type": "string",
                 "description": "Unique request identifier for tracking and debugging",
                 "pattern": "^req_[a-zA-Z0-9]{6,12}$",
-                "examples": ["req_123456"]
+                "examples": [
+                  "req_123456"
+                ]
               }
             },
-            "required": ["idempotency_key", "request_id"],
+            "required": [
+              "idempotency_key",
+              "request_id"
+            ],
             "additionalProperties": false
           }
         },
-        "required": ["order_id", "speed", "reason", "meta"],
+        "required": [
+          "order_id",
+          "speed",
+          "reason",
+          "meta"
+        ],
         "additionalProperties": false
       }
     },
@@ -433,14 +580,20 @@
             "type": "string",
             "description": "Order ID to hold - format: one letter followed by 3-6 digits",
             "pattern": "^[A-Z][0-9]{3,6}$",
-            "examples": ["B456", "A1234", "Z123456"]
+            "examples": [
+              "B456",
+              "A1234",
+              "Z123456"
+            ]
           },
           "reason": {
             "type": "string",
             "description": "Brief justification for holding (10-500 characters)",
             "minLength": 10,
             "maxLength": 500,
-            "examples": ["Package contains hazardous materials - cannot be delivered to residence"]
+            "examples": [
+              "Package contains hazardous materials - cannot be delivered to residence"
+            ]
           },
           "meta": {
             "type": "object",
@@ -450,20 +603,31 @@
                 "type": "string",
                 "description": "Unique key to prevent duplicate operations - format: action_orderid_timestamp",
                 "pattern": "^[a-z_]+_[A-Z][0-9]{3,6}_[0-9]+$",
-                "examples": ["hold_b456_001"]
+                "examples": [
+                  "hold_b456_001"
+                ]
               },
               "request_id": {
                 "type": "string",
                 "description": "Unique request identifier for tracking and debugging",
                 "pattern": "^req_[a-zA-Z0-9]{6,12}$",
-                "examples": ["req_789012"]
+                "examples": [
+                  "req_789012"
+                ]
               }
             },
-            "required": ["idempotency_key", "request_id"],
+            "required": [
+              "idempotency_key",
+              "request_id"
+            ],
             "additionalProperties": false
           }
         },
-        "required": ["order_id", "reason", "meta"],
+        "required": [
+          "order_id",
+          "reason",
+          "meta"
+        ],
         "additionalProperties": false
       }
     },
@@ -478,21 +642,33 @@
             "type": "string",
             "description": "Order ID to escalate - format: one letter followed by 3-6 digits",
             "pattern": "^[A-Z][0-9]{3,6}$",
-            "examples": ["B456", "A1234", "Z123456"]
+            "examples": [
+              "B456",
+              "A1234",
+              "Z123456"
+            ]
           },
           "reason": {
             "type": "string",
             "description": "Why this requires human judgment (10-500 characters)",
             "minLength": 10,
             "maxLength": 500,
-            "examples": ["Complex situation involving both hazmat and perishable goods with conflicting safety requirements"]
+            "examples": [
+              "Complex situation involving both hazmat and perishable goods with conflicting safety requirements"
+            ]
           },
           "urgency": {
             "type": "string",
-            "enum": ["low", "medium", "high"],
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
             "description": "Urgency level for manager review - low: routine, medium: time-sensitive, high: critical",
             "default": "medium",
-            "examples": ["high"]
+            "examples": [
+              "high"
+            ]
           },
           "meta": {
             "type": "object",
@@ -502,20 +678,31 @@
                 "type": "string",
                 "description": "Unique key to prevent duplicate operations - format: action_orderid_timestamp",
                 "pattern": "^[a-z_]+_[A-Z][0-9]{3,6}_[0-9]+$",
-                "examples": ["esc_b456_001"]
+                "examples": [
+                  "esc_b456_001"
+                ]
               },
               "request_id": {
                 "type": "string",
                 "description": "Unique request identifier for tracking and debugging",
                 "pattern": "^req_[a-zA-Z0-9]{6,12}$",
-                "examples": ["req_345678"]
+                "examples": [
+                  "req_345678"
+                ]
               }
             },
-            "required": ["idempotency_key", "request_id"],
+            "required": [
+              "idempotency_key",
+              "request_id"
+            ],
             "additionalProperties": false
           }
         },
-        "required": ["order_id", "reason", "meta"],
+        "required": [
+          "order_id",
+          "reason",
+          "meta"
+        ],
         "additionalProperties": false
       }
     },
@@ -530,14 +717,20 @@
             "type": "string",
             "description": "Order ID - format: one letter followed by 3-6 digits",
             "pattern": "^[A-Z][0-9]{3,6}$",
-            "examples": ["B456", "A1234", "Z123456"]
+            "examples": [
+              "B456",
+              "A1234",
+              "Z123456"
+            ]
           },
           "reason": {
             "type": "string",
             "description": "Why no action is appropriate (10-500 characters)",
             "minLength": 10,
             "maxLength": 500,
-            "examples": ["Standard delivery process is sufficient - no safety, compliance, or SLA concerns identified"]
+            "examples": [
+              "Standard delivery process is sufficient - no safety, compliance, or SLA concerns identified"
+            ]
           },
           "meta": {
             "type": "object",
@@ -547,22 +740,101 @@
                 "type": "string",
                 "description": "Unique key to prevent duplicate operations - format: action_orderid_timestamp",
                 "pattern": "^[a-z_]+_[A-Z][0-9]{3,6}_[0-9]+$",
-                "examples": ["no_action_b456_001"]
+                "examples": [
+                  "no_action_b456_001"
+                ]
               },
               "request_id": {
                 "type": "string",
                 "description": "Unique request identifier for tracking and debugging",
                 "pattern": "^req_[a-zA-Z0-9]{6,12}$",
-                "examples": ["req_901234"]
+                "examples": [
+                  "req_901234"
+                ]
               }
             },
-            "required": ["idempotency_key", "request_id"],
+            "required": [
+              "idempotency_key",
+              "request_id"
+            ],
             "additionalProperties": false
           }
         },
-        "required": ["order_id", "reason", "meta"],
+        "required": [
+          "order_id",
+          "reason",
+          "meta"
+        ],
         "additionalProperties": false
       }
     }
-  ]
+  ],
+  "guardrails": {
+    "enabled": true,
+    "topicPolicy": {
+      "definition": "Any content not directly related to shipment status, routing, delays, damage, customs, delivery exceptions, or structured JSON outputs for logistics triage.",
+      "examples": [
+        "What's your favorite movie?",
+        "Plan my vacation to Italy.",
+        "Write a Python script.",
+        "Give me legal advice.",
+        "How do I invest $10,000?"
+      ]
+    },
+    "contentPolicy": {
+      "filters": [
+        "PROMPT_ATTACK",
+        "INSULTS",
+        "MISCONDUCT"
+      ],
+      "input": {
+        "strength": "HIGH",
+        "action": "BLOCK"
+      },
+      "output": {
+        "strength": "LOW",
+        "action": "NONE"
+      }
+    },
+    "wordPolicy": {
+      "managedLists": [
+        "PROFANITY"
+      ],
+      "input": {
+        "action": "BLOCK"
+      }
+    },
+    "sensitiveInformationPolicy": {
+      "pii": [
+        "EMAIL",
+        "NAME",
+        "PHONE",
+        "ADDRESS",
+        "AWS_ACCESS_KEY",
+        "AWS_SECRET_KEY",
+        "PASSWORD",
+        "CREDIT_DEBIT_CARD_NUMBER"
+      ],
+      "regexes": [
+        {
+          "name": "BearerToken",
+          "pattern": "(?i)bearer\\s+[A-Za-z0-9._\\-]{20,}"
+        }
+      ],
+      "input": {
+        "action": "BLOCK"
+      },
+      "output": {
+        "action": "ANONYMIZE"
+      }
+    },
+    "contextualGroundingPolicy": {
+      "groundingThreshold": 0.75,
+      "relevanceThreshold": 0.70
+    },
+    "blockedMessages": {
+      "input": "Input blocked by logistics policy. Remove PII or unrelated topics.",
+      "output": "Output blocked by logistics policy. Keep response factual, relevant, and logistics-focused."
+    }
+  }
 }

@@ -191,6 +191,7 @@ function App() {
   const [guardrailsError, setGuardrailsError] = useState(null);
   const [scenarioGuardrailMap, setScenarioGuardrailMap] = useState(new Map());
   const [guardrailDiscoveryComplete, setGuardrailDiscoveryComplete] = useState(false);
+  const [isAddingGuardrail, setIsAddingGuardrail] = useState(false);
 
   // Track if this is the initial load
   const isInitialLoad = useRef(true);
@@ -337,28 +338,45 @@ function App() {
 
   // Get guardrail configuration for the current scenario
   const getGuardrailConfigForTest = async () => {
+    console.log('[App] getGuardrailConfigForTest called:', {
+      selectedScenario,
+      guardrailsEnabled,
+      guardrailServiceReady: guardrailService.isReady()
+    });
+
     if (!selectedScenario || !guardrailsEnabled || !guardrailService.isReady()) {
+      console.log('[App] Guardrail config not available - early return');
       return null;
     }
 
     try {
       // Check if scenario has guardrail configuration
       const scenario = scenarioService.getScenario(selectedScenario);
+      console.log('[App] Scenario guardrails config:', scenario?.guardrails);
+
       if (!scenario || !scenario.guardrails || !scenario.guardrails.enabled) {
+        console.log('[App] Scenario does not have enabled guardrails');
         return null;
       }
 
       // Check if we have an existing guardrail for this scenario
       const existingGuardrail = scenarioGuardrailMap.get(selectedScenario);
+      console.log('[App] Existing guardrail for scenario:', existingGuardrail);
+
       if (existingGuardrail) {
-        return {
+        const config = {
           guardrailIdentifier: existingGuardrail.arn,
           guardrailVersion: existingGuardrail.version || 'DRAFT'
         };
+        console.log('[App] Using existing guardrail config:', config);
+        return config;
       }
 
       // Try to ensure guardrail exists (create if needed)
+      console.log('[App] Ensuring guardrail exists for scenario:', selectedScenario);
       const ensureResult = await guardrailService.ensureGuardrailExists(selectedScenario, scenario.guardrails);
+      console.log('[App] Ensure guardrail result:', ensureResult);
+
       if (ensureResult.success) {
         // Update our local map
         setScenarioGuardrailMap(prev => new Map(prev.set(selectedScenario, {
@@ -369,12 +387,15 @@ function App() {
           status: ensureResult.guardrail.status
         })));
 
-        return {
+        const config = {
           guardrailIdentifier: ensureResult.guardrail.arn,
           guardrailVersion: ensureResult.guardrail.version || 'DRAFT'
         };
+        console.log('[App] Created new guardrail config:', config);
+        return config;
       }
 
+      console.log('[App] Failed to ensure guardrail exists');
       return null;
     } catch (error) {
       console.warn('[App] Failed to get guardrail config for test:', error);
@@ -1388,10 +1409,17 @@ function App() {
               guardrailConfig = await getGuardrailConfigForTest();
               if (guardrailConfig) {
                 console.log('[App] Using guardrail configuration:', guardrailConfig);
+              } else {
+                console.log('[App] No guardrail configuration returned');
               }
             } catch (error) {
               console.warn('[App] Failed to configure guardrails, proceeding without:', error);
             }
+          } else {
+            console.log('[App] Guardrails not enabled or no scenario selected:', {
+              guardrailsEnabled,
+              selectedScenario
+            });
           }
 
           let response;
@@ -1491,10 +1519,31 @@ function App() {
               );
 
               // Extract response and workflow data
+              console.log('[App] Processing workflow result:', {
+                text: workflowResult.results.text,
+                stopReason: workflowResult.results.stopReason,
+                hasGuardrailResults: !!workflowResult.results.guardrailResults,
+                guardrailViolations: workflowResult.results.guardrailResults?.hasViolations,
+                guardrailOutputText: workflowResult.results.guardrailResults?.outputText,
+                guardrailConfig: !!guardrailConfig
+              });
+
+              let responseText = workflowResult.results.text || '';
+
+              // Check if guardrail intervened and provide appropriate message
+              if (!responseText && workflowResult.results.guardrailResults?.hasViolations) {
+                console.log('[App] Using guardrail message as response text');
+                responseText = workflowResult.results.guardrailResults.outputText ||
+                              "Content was filtered by guardrails";
+              } else if (!responseText) {
+                console.log('[App] No response text and no guardrail intervention, using default message');
+                responseText = "Tool execution completed without final response";
+              } else {
+                console.log('[App] Using workflow result text as response');
+              }
+
               response = {
-                text:
-                  workflowResult.results.finalResponse ||
-                  "Tool execution completed without final response",
+                text: responseText,
                 usage: workflowResult.metadata?.usage || null,
                 toolUsage: {
                   hasToolUsage: true, // UI expects this property name
@@ -1526,6 +1575,10 @@ function App() {
                   extractionWarnings: [],
                   executionMode: "execution", // Indicate this was execution mode
                 },
+                // Add guardrail results if available
+                guardrailResults: workflowResult.results.guardrailResults,
+                guardrailsEnabled: !!guardrailConfig, // True if guardrails were configured for this test
+                stopReason: workflowResult.results.stopReason, // Include stop reason from tool execution
               };
 
               workflowData = {
@@ -2047,6 +2100,62 @@ function App() {
     markFieldAsTouched("model");
   };
 
+  const handleToggleGuardrails = () => {
+    const newEnabled = !guardrailsEnabled;
+    setGuardrailsEnabled(newEnabled);
+
+    if (newEnabled) {
+      console.log('[App] Guardrails auto-add enabled');
+    } else {
+      console.log('[App] Guardrails auto-add disabled');
+    }
+  };
+
+  const handleAddGuardrailToAWS = async (scenarioName, guardrailConfig) => {
+    if (!guardrailService.isReady()) {
+      console.error('[App] Guardrail service not ready');
+      return;
+    }
+
+    setIsAddingGuardrail(true);
+
+    try {
+      console.log(`[App] Manually adding guardrail for scenario: ${scenarioName}`);
+
+      // Add progress callback to track guardrail creation progress
+      // For manual creation, we'll wait for the guardrail to be ready
+      const ensureResult = await guardrailService.ensureGuardrailExists(scenarioName, guardrailConfig, {
+        waitForReady: true  // Wait for guardrail to become READY before returning
+      });
+
+      if (ensureResult.success) {
+        // Update the scenario guardrail map
+        setScenarioGuardrailMap(prev => {
+          const newMap = new Map(prev);
+          newMap.set(scenarioName, {
+            id: ensureResult.guardrail.id,
+            arn: ensureResult.guardrail.arn,
+            version: ensureResult.guardrail.version,
+            name: ensureResult.guardrail.name,
+            status: ensureResult.guardrail.status,
+            createdAt: ensureResult.guardrail.createdAt
+          });
+          return newMap;
+        });
+
+        console.log(`[App] Guardrail ${ensureResult.action} for scenario ${scenarioName}: ${ensureResult.guardrail.id}`);
+      } else {
+        console.error(`[App] Failed to add guardrail for scenario ${scenarioName}:`, ensureResult.error);
+        // You might want to show an error message to the user here
+      }
+    } catch (error) {
+      console.error(`[App] Error adding guardrail for scenario ${scenarioName}:`, error);
+      // You might want to show an error message to the user here
+    } finally {
+      setIsAddingGuardrail(false);
+    }
+  };
+
   const handleScenarioSelect = async (scenarioId) => {
     setSelectedScenario(scenarioId);
     markFieldAsTouched("scenario");
@@ -2054,6 +2163,47 @@ function App() {
     // Clear dataset selection when switching scenarios
     if (scenarioId) {
       setSelectedDataset({ id: "", name: "", content: null });
+    }
+
+    // Auto-add guardrails if enabled and scenario has guardrail configuration
+    if (guardrailsEnabled && scenarioId && guardrailService.isReady()) {
+      try {
+        const scenario = scenarioService.getScenario(scenarioId);
+        if (scenario && scenario.guardrails && scenario.guardrails.enabled) {
+          // Check if guardrail already exists for this scenario
+          const guardrailExists = scenarioGuardrailMap.has(scenarioId);
+
+          if (!guardrailExists) {
+            console.log(`[App] Auto-adding guardrails for scenario: ${scenarioId}`);
+
+            const ensureResult = await guardrailService.ensureGuardrailExists(scenarioId, scenario.guardrails);
+
+            if (ensureResult.success) {
+              // Update the scenario guardrail map
+              setScenarioGuardrailMap(prev => {
+                const newMap = new Map(prev);
+                newMap.set(scenarioId, {
+                  id: ensureResult.guardrail.id,
+                  arn: ensureResult.guardrail.arn,
+                  version: ensureResult.guardrail.version,
+                  name: ensureResult.guardrail.name,
+                  status: ensureResult.guardrail.status,
+                  createdAt: ensureResult.guardrail.createdAt
+                });
+                return newMap;
+              });
+
+              console.log(`[App] Guardrail ${ensureResult.action} for scenario ${scenarioId}: ${ensureResult.guardrail.id}`);
+            } else {
+              console.warn(`[App] Failed to ensure guardrail for scenario ${scenarioId}:`, ensureResult.error);
+            }
+          } else {
+            console.log(`[App] Guardrail already exists for scenario ${scenarioId}, skipping auto-add`);
+          }
+        }
+      } catch (error) {
+        console.error(`[App] Error auto-adding guardrails for scenario ${scenarioId}:`, error);
+      }
     }
   };
 
@@ -2448,14 +2598,10 @@ function App() {
                           })()}
                           isEnabled={guardrailsEnabled}
                           onToggleEnabled={() => setGuardrailsEnabled(!guardrailsEnabled)}
-                          onTestGuardrails={() => {
-                            // TODO: Implement guardrail testing functionality
-                            console.log('Testing guardrails for scenario:', selectedScenario);
-                          }}
                           isCollapsed={collapsedSections.guardrails || false}
                           onToggleCollapse={() => toggleSectionCollapse('guardrails')}
                           validationErrors={validationErrors.guardrails ? [validationErrors.guardrails] : []}
-                          isTestingGuardrails={false}
+                          scenarioName={selectedScenario}
                         />
                       )}
 
@@ -2899,7 +3045,7 @@ function App() {
             }}
             // Guardrail props
             guardrailsEnabled={guardrailsEnabled}
-            onToggleGuardrails={() => setGuardrailsEnabled(!guardrailsEnabled)}
+            onToggleGuardrails={handleToggleGuardrails}
             onTestGuardrails={() => {
               // TODO: Implement guardrail testing functionality
               console.log('Testing guardrails...');

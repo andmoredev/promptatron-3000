@@ -4,7 +4,7 @@
  */
 
 /**
- * Vae a scenario object against the expected schema
+ * Validate a scenario object against the expected schema
  * @param {Object} scenarioData - The scenario data to validate
  * @returns {Object} Validation result with isValid, errors, warnings, and metadata
  */
@@ -26,8 +26,6 @@ export function validateScenario(scenarioData) {
     // Required fields
     if (!scenarioData.id || typeof scenarioData.id !== 'string' || !scenarioData.id.trim()) {
       errors.id = 'Scenario ID is required and must be a non-empty string';
-    } else if (!/^[a-z0-9-]+$/.test(scenarioData.id)) {
-      errors.id = 'Scenario ID must contain only lowercase letters, numbers, and hyphens';
     }
 
     if (!scenarioData.name || typeof scenarioData.name !== 'string' || !scenarioData.name.trim()) {
@@ -170,14 +168,8 @@ export function validateScenario(scenarioData) {
       }
     }
 
-    // Validate guardrails if present
-    if (scenarioData.guardrails !== undefined) {
-      const guardrailValidation = validateGuardrails(scenarioData.guardrails);
-      if (!guardrailValidation.isValid) {
-        errors.guardrails = guardrailValidation.errors.join(', ');
-      }
-      warnings.push(...guardrailValidation.warnings);
-    }
+    // Skip guardrails validation - guardrails are optional
+    // Note: Guardrails validation has been removed as requested
 
     // Extract metadata
     const metadata = extractScenarioMetadata(scenarioData);
@@ -412,341 +404,19 @@ function validateExample(example, index) {
   };
 }
 
-/**
- * Validate guardrails configuration
- * @param {Object} guardrails - The guardrails configuration to validate
- * @returns {Object} Validation result
- */
-function validateGuardrails(guardrails) {
-  const errors = [];
-  const warnings = [];
 
-  if (!guardrails || typeof guardrails !== 'object') {
-    errors.push('guardrails must be an object');
-    return { isValid: false, errors, warnings };
-  }
 
-  // Validate enabled flag
-  if (guardrails.enabled !== undefined && typeof guardrails.enabled !== 'boolean') {
-    errors.push('guardrails.enabled must be a boolean if provided');
-  }
 
-  // Validate configs array
-  if (guardrails.configs !== undefined) {
-    if (!Array.isArray(guardrails.configs)) {
-      errors.push('guardrails.configs must be an array if provided');
-    } else {
-      const configErrors = [];
-      guardrails.configs.forEach((config, index) => {
-        const configValidation = validateGuardrailConfig(config, index);
-        if (!configValidation.isValid) {
-          configErrors.push(`Guardrail config ${index + 1}: ${configValidation.errors.join(', ')}`);
-        }
-        warnings.push(...configValidation.warnings);
-      });
 
-      if (configErrors.length > 0) {
-        errors.push(...configErrors);
-      }
 
-      // Check for duplicate guardrail names
-      const guardrailNames = guardrails.configs.map(c => c.name).filter(Boolean);
-      const duplicateNames = guardrailNames.filter((name, index) => guardrailNames.indexOf(name) !== index);
-      if (duplicateNames.length > 0) {
-        errors.push(`Duplicate guardrail names: ${duplicateNames.join(', ')}`);
-      }
-    }
-  }
 
-  return {
-    isValid: errors.length === 0,
-    errors,
-    warnings
-  };
-}
 
-/**
- * Validate individual guardrail configuration
- * @param {Object} config - The guardrail configuration to validate
- * @param {number} index - The index of the config in the array
- * @returns {Object} Validation result
- */
-function validateGuardrailConfig(config, index) {
-  const errors = [];
-  const warnings = [];
 
-  if (!config || typeof config !== 'object') {
-    errors.push('must be an object');
-    return { isValid: false, errors, warnings };
-  }
 
-  // Validate required fields
-  if (!config.name || typeof config.name !== 'string' || !config.name.trim()) {
-    errors.push('name is required and must be a non-empty string');
-  } else {
-    // Validate name format
-    if (!/^[a-zA-Z0-9_-]+$/.test(config.name)) {
-      errors.push('name can only contain letters, numbers, hyphens, and underscores');
-    }
-    if (config.name.length > 50) {
-      errors.push('name must be 50 characters or less');
-    }
-  }
 
-  // Validate optional fields
-  if (config.description !== undefined && (typeof config.description !== 'string' || config.description.length > 200)) {
-    errors.push('description must be a string of 200 characters or less if provided');
-  }
 
-  if (config.blockedInputMessaging !== undefined && (typeof config.blockedInputMessaging !== 'string' || config.blockedInputMessaging.length > 500)) {
-    errors.push('blockedInputMessaging must be a string of 500 characters or less if provided');
-  }
 
-  if (config.blockedOutputsMessaging !== undefined && (typeof config.blockedOutputsMessaging !== 'string' || config.blockedOutputsMessaging.length > 500)) {
-    errors.push('blockedOutputsMessaging must be a string of 500 characters or less if provided');
-  }
 
-  // Validate that at least one policy is configured
-  const hasPolicies = !!(
-    config.contentPolicyConfig ||
-    config.wordPolicyConfig ||
-    config.sensitiveInformationPolicyConfig ||
-    config.topicPolicyConfig
-  );
-
-  if (!hasPolicies) {
-    errors.push('at least one policy configuration (content, word, sensitive information, or topic) is required');
-  }
-
-  // Validate individual policy configurations
-  if (config.contentPolicyConfig) {
-    const contentValidation = validateContentPolicyConfig(config.contentPolicyConfig);
-    if (!contentValidation.isValid) {
-      errors.push(`contentPolicyConfig: ${contentValidation.errors.join(', ')}`);
-    }
-    warnings.push(...contentValidation.warnings);
-  }
-
-  if (config.wordPolicyConfig) {
-    const wordValidation = validateWordPolicyConfig(config.wordPolicyConfig);
-    if (!wordValidation.isValid) {
-      errors.push(`wordPolicyConfig: ${wordValidation.errors.join(', ')}`);
-    }
-    warnings.push(...wordValidation.warnings);
-  }
-
-  if (config.sensitiveInformationPolicyConfig) {
-    const piiValidation = validateSensitiveInformationPolicyConfig(config.sensitiveInformationPolicyConfig);
-    if (!piiValidation.isValid) {
-      errors.push(`sensitiveInformationPolicyConfig: ${piiValidation.errors.join(', ')}`);
-    }
-    warnings.push(...piiValidation.warnings);
-  }
-
-  if (config.topicPolicyConfig) {
-    const topicValidation = validateTopicPolicyConfig(config.topicPolicyConfig);
-    if (!topicValidation.isValid) {
-      errors.push(`topicPolicyConfig: ${topicValidation.errors.join(', ')}`);
-    }
-    warnings.push(...topicValidation.warnings);
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    warnings
-  };
-}
-
-/**
- * Validate content policy configuration
- * @param {Object} contentPolicy - The content policy configuration
- * @returns {Object} Validation result
- */
-function validateContentPolicyConfig(contentPolicy) {
-  const errors = [];
-  const warnings = [];
-
-  if (!contentPolicy.filtersConfig || !Array.isArray(contentPolicy.filtersConfig)) {
-    errors.push('filtersConfig is required and must be an array');
-    return { isValid: false, errors, warnings };
-  }
-
-  const validTypes = ['SEXUAL', 'VIOLENCE', 'HATE', 'INSULTS', 'MISCONDUCT', 'PROMPT_ATTACK'];
-  const validStrengths = ['NONE', 'LOW', 'MEDIUM', 'HIGH'];
-
-  contentPolicy.filtersConfig.forEach((filter, index) => {
-    if (!filter.type || !validTypes.includes(filter.type)) {
-      errors.push(`filtersConfig[${index}].type must be one of: ${validTypes.join(', ')}`);
-    }
-
-    if (!filter.inputStrength || !validStrengths.includes(filter.inputStrength)) {
-      errors.push(`filtersConfig[${index}].inputStrength must be one of: ${validStrengths.join(', ')}`);
-    }
-
-    if (!filter.outputStrength || !validStrengths.includes(filter.outputStrength)) {
-      errors.push(`filtersConfig[${index}].outputStrength must be one of: ${validStrengths.join(', ')}`);
-    }
-  });
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    warnings
-  };
-}
-
-/**
- * Validate word policy configuration
- * @param {Object} wordPolicy - The word policy configuration
- * @returns {Object} Validation result
- */
-function validateWordPolicyConfig(wordPolicy) {
-  const errors = [];
-  const warnings = [];
-
-  if (wordPolicy.wordsConfig && !Array.isArray(wordPolicy.wordsConfig)) {
-    errors.push('wordsConfig must be an array if provided');
-  }
-
-  if (wordPolicy.managedWordListsConfig && !Array.isArray(wordPolicy.managedWordListsConfig)) {
-    errors.push('managedWordListsConfig must be an array if provided');
-  }
-
-  // Validate managed word lists
-  if (wordPolicy.managedWordListsConfig) {
-    const validManagedTypes = ['PROFANITY'];
-    wordPolicy.managedWordListsConfig.forEach((list, index) => {
-      if (!list.type || !validManagedTypes.includes(list.type)) {
-        errors.push(`managedWordListsConfig[${index}].type must be one of: ${validManagedTypes.join(', ')}`);
-      }
-    });
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    warnings
-  };
-}
-
-/**
- * Validate sensitive information policy configuration
- * @param {Object} piiPolicy - The sensitive information policy configuration
- * @returns {Object} Validation result
- */
-function validateSensitiveInformationPolicyConfig(piiPolicy) {
-  const errors = [];
-  const warnings = [];
-
-  if (piiPolicy.piiEntitiesConfig && !Array.isArray(piiPolicy.piiEntitiesConfig)) {
-    errors.push('piiEntitiesConfig must be an array if provided');
-  }
-
-  if (piiPolicy.regexesConfig && !Array.isArray(piiPolicy.regexesConfig)) {
-    errors.push('regexesConfig must be an array if provided');
-  }
-
-  // Validate PII entities
-  if (piiPolicy.piiEntitiesConfig) {
-    const validPiiTypes = [
-      'ADDRESS', 'AGE', 'AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'CA_HEALTH_NUMBER',
-      'CA_SOCIAL_INSURANCE_NUMBER', 'CREDIT_DEBIT_CARD_CVV', 'CREDIT_DEBIT_CARD_EXPIRY',
-      'CREDIT_DEBIT_CARD_NUMBER', 'DRIVER_ID', 'EMAIL', 'INTERNATIONAL_BANK_ACCOUNT_NUMBER',
-      'IP_ADDRESS', 'LICENSE_PLATE', 'MAC_ADDRESS', 'NAME', 'PASSWORD', 'PHONE', 'PIN',
-      'SWIFT_CODE', 'UK_NATIONAL_HEALTH_SERVICE_NUMBER', 'UK_NATIONAL_INSURANCE_NUMBER',
-      'UK_UNIQUE_TAXPAYER_REFERENCE_NUMBER', 'URL', 'USERNAME', 'US_BANK_ACCOUNT_NUMBER',
-      'US_BANK_ROUTING_NUMBER', 'US_INDIVIDUAL_TAX_IDENTIFICATION_NUMBER',
-      'US_PASSPORT_NUMBER', 'US_SOCIAL_SECURITY_NUMBER', 'VEHICLE_IDENTIFICATION_NUMBER'
-    ];
-    const validActions = ['BLOCK', 'ANONYMIZE'];
-
-    piiPolicy.piiEntitiesConfig.forEach((entity, index) => {
-      if (!entity.type || !validPiiTypes.includes(entity.type)) {
-        errors.push(`piiEntitiesConfig[${index}].type must be one of the supported PII types`);
-      }
-
-      if (!entity.action || !validActions.includes(entity.action)) {
-        errors.push(`piiEntitiesConfig[${index}].action must be one of: ${validActions.join(', ')}`);
-      }
-    });
-  }
-
-  // Validate regex configurations
-  if (piiPolicy.regexesConfig) {
-    const validActions = ['BLOCK', 'ANONYMIZE'];
-
-    piiPolicy.regexesConfig.forEach((regex, index) => {
-      if (!regex.name || typeof regex.name !== 'string') {
-        errors.push(`regexesConfig[${index}].name is required and must be a string`);
-      }
-
-      if (!regex.pattern || typeof regex.pattern !== 'string') {
-        errors.push(`regexesConfig[${index}].pattern is required and must be a string`);
-      }
-
-      if (!regex.action || !validActions.includes(regex.action)) {
-        errors.push(`regexesConfig[${index}].action must be one of: ${validActions.join(', ')}`);
-      }
-
-      // Validate regex pattern
-      if (regex.pattern) {
-        try {
-          new RegExp(regex.pattern);
-        } catch (regexError) {
-          errors.push(`regexesConfig[${index}].pattern is not a valid regex: ${regexError.message}`);
-        }
-      }
-    });
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    warnings
-  };
-}
-
-/**
- * Validate topic policy configuration
- * @param {Object} topicPolicy - The topic policy configuration
- * @returns {Object} Validation result
- */
-function validateTopicPolicyConfig(topicPolicy) {
-  const errors = [];
-  const warnings = [];
-
-  if (!topicPolicy.topicsConfig || !Array.isArray(topicPolicy.topicsConfig)) {
-    errors.push('topicsConfig is required and must be an array');
-    return { isValid: false, errors, warnings };
-  }
-
-  const validTypes = ['DENY'];
-
-  topicPolicy.topicsConfig.forEach((topic, index) => {
-    if (!topic.name || typeof topic.name !== 'string') {
-      errors.push(`topicsConfig[${index}].name is required and must be a string`);
-    }
-
-    if (!topic.definition || typeof topic.definition !== 'string') {
-      errors.push(`topicsConfig[${index}].definition is required and must be a string`);
-    }
-
-    if (!topic.type || !validTypes.includes(topic.type)) {
-      errors.push(`topicsConfig[${index}].type must be one of: ${validTypes.join(', ')}`);
-    }
-
-    if (topic.examples && !Array.isArray(topic.examples)) {
-      errors.push(`topicsConfig[${index}].examples must be an array if provided`);
-    }
-  });
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    warnings
-  };
-}
 
 /**
  * Extract metadata from a scenario object
@@ -792,14 +462,39 @@ export function extractScenarioMetadata(scenarioData) {
     exampleCount: scenarioData.examples ? scenarioData.examples.length : 0,
 
     // Guardrail information
-    hasGuardrails: !!(scenarioData.guardrails && scenarioData.guardrails.configs && scenarioData.guardrails.configs.length > 0),
-    guardrailCount: scenarioData.guardrails?.configs ? scenarioData.guardrails.configs.length : 0,
+    hasGuardrails: !!scenarioData.guardrails && (
+      // Check for simplified format
+      !!(scenarioData.guardrails.topicPolicy ||
+        scenarioData.guardrails.contentPolicy ||
+        scenarioData.guardrails.wordPolicy ||
+        scenarioData.guardrails.sensitiveInformationPolicy ||
+        scenarioData.guardrails.contextualGroundingPolicy) ||
+      // Check for AWS format
+      !!(scenarioData.guardrails.contentPolicyConfig ||
+        scenarioData.guardrails.wordPolicyConfig ||
+        scenarioData.guardrails.sensitiveInformationPolicyConfig ||
+        scenarioData.guardrails.topicPolicyConfig ||
+        scenarioData.guardrails.contextualGroundingPolicyConfig)
+    ),
     guardrailsEnabled: scenarioData.guardrails?.enabled !== false,
-    guardrailNames: scenarioData.guardrails?.configs ? scenarioData.guardrails.configs.map(config => config.name) : [],
-    hasContentPolicyGuardrails: scenarioData.guardrails?.configs ? scenarioData.guardrails.configs.some(config => config.contentPolicyConfig) : false,
-    hasWordPolicyGuardrails: scenarioData.guardrails?.configs ? scenarioData.guardrails.configs.some(config => config.wordPolicyConfig) : false,
-    hasPiiGuardrails: scenarioData.guardrails?.configs ? scenarioData.guardrails.configs.some(config => config.sensitiveInformationPolicyConfig) : false,
-    hasTopicGuardrails: scenarioData.guardrails?.configs ? scenarioData.guardrails.configs.some(config => config.topicPolicyConfig) : false,
+    guardrailName: scenarioData.guardrails?.name || null,
+    guardrailDescription: scenarioData.guardrails?.description || null,
+
+    // Policy type detection (works for both simplified and AWS formats)
+    hasContentPolicyGuardrails: !!(scenarioData.guardrails?.contentPolicy || scenarioData.guardrails?.contentPolicyConfig),
+    hasWordPolicyGuardrails: !!(scenarioData.guardrails?.wordPolicy || scenarioData.guardrails?.wordPolicyConfig),
+    hasPiiGuardrails: !!(scenarioData.guardrails?.sensitiveInformationPolicy || scenarioData.guardrails?.sensitiveInformationPolicyConfig),
+    hasTopicGuardrails: !!(scenarioData.guardrails?.topicPolicy || scenarioData.guardrails?.topicPolicyConfig),
+    hasContextualGroundingGuardrails: !!(scenarioData.guardrails?.contextualGroundingPolicy || scenarioData.guardrails?.contextualGroundingPolicyConfig),
+
+    // Format detection
+    guardrailsFormat: scenarioData.guardrails ? (
+      !!(scenarioData.guardrails.topicPolicy ||
+        scenarioData.guardrails.contentPolicy ||
+        scenarioData.guardrails.wordPolicy ||
+        scenarioData.guardrails.sensitiveInformationPolicy ||
+        scenarioData.guardrails.contextualGroundingPolicy) ? 'simplified' : 'aws'
+    ) : null,
 
     // Seed data information (only scenarios with explicit seed data configuration can be refreshed)
     hasSeedData: !!(
@@ -1127,22 +822,40 @@ export function migrateScenarioSchema(scenarioData) {
       enabled: false,
       configs: []
     };
+    return migratedScenario;
   }
 
-  // Ensure guardrails has the correct structure
+  // If guardrails is not an object, reset it
   if (typeof migratedScenario.guardrails !== 'object') {
     migratedScenario.guardrails = {
       enabled: false,
       configs: []
     };
+    return migratedScenario;
   }
 
-  // Ensure enabled property exists and is boolean
+  // Check if this is using the scenario format (has policy objects directly)
+  const hasScenarioFormat = !!(
+    migratedScenario.guardrails.topicPolicy ||
+    migratedScenario.guardrails.contentPolicy ||
+    migratedScenario.guardrails.wordPolicy ||
+    migratedScenario.guardrails.sensitiveInformationPolicy ||
+    migratedScenario.guardrails.contextualGroundingPolicy
+  );
+
+  // If using scenario format, preserve it and just ensure enabled is set
+  if (hasScenarioFormat) {
+    if (typeof migratedScenario.guardrails.enabled !== 'boolean') {
+      migratedScenario.guardrails.enabled = true; // Default to true for scenario format
+    }
+    return migratedScenario;
+  }
+
+  // For array format, ensure proper structure
   if (typeof migratedScenario.guardrails.enabled !== 'boolean') {
     migratedScenario.guardrails.enabled = false;
   }
 
-  // Ensure configs property exists and is array
   if (!Array.isArray(migratedScenario.guardrails.configs)) {
     migratedScenario.guardrails.configs = [];
   }
@@ -1169,6 +882,21 @@ export function needsGuardrailsMigration(scenarioData) {
     return true;
   }
 
+  // Check if this is using the scenario format (has policy objects directly)
+  const hasScenarioFormat = !!(
+    scenarioData.guardrails.topicPolicy ||
+    scenarioData.guardrails.contentPolicy ||
+    scenarioData.guardrails.wordPolicy ||
+    scenarioData.guardrails.sensitiveInformationPolicy ||
+    scenarioData.guardrails.contextualGroundingPolicy
+  );
+
+  // If using scenario format, no migration needed
+  if (hasScenarioFormat) {
+    return false;
+  }
+
+  // For array format, check if structure is correct
   if (typeof scenarioData.guardrails.enabled !== 'boolean') {
     return true;
   }
@@ -1268,4 +996,45 @@ export function createScenarioTemplate(templateType, id, name) {
     default:
       return baseScenario;
   }
+}
+
+/**
+ * Check if a scenario uses the simplified guardrails format
+ * @param {Object} scenarioData - The scenario data to check
+ * @returns {boolean} True if using simplified format
+ */
+export function isSimplifiedGuardrailsFormat(scenarioData) {
+  if (!scenarioData?.guardrails) {
+    return false;
+  }
+
+  return !!(
+    scenarioData.guardrails.topicPolicy ||
+    scenarioData.guardrails.contentPolicy ||
+    scenarioData.guardrails.wordPolicy ||
+    scenarioData.guardrails.sensitiveInformationPolicy ||
+    scenarioData.guardrails.contextualGroundingPolicy ||
+    scenarioData.guardrails.blockedMessages
+  );
+}
+
+/**
+ * Check if a scenario uses the AWS guardrails format
+ * @param {Object} scenarioData - The scenario data to check
+ * @returns {boolean} True if using AWS format
+ */
+export function isAWSGuardrailsFormat(scenarioData) {
+  if (!scenarioData?.guardrails) {
+    return false;
+  }
+
+  return !!(
+    scenarioData.guardrails.contentPolicyConfig ||
+    scenarioData.guardrails.wordPolicyConfig ||
+    scenarioData.guardrails.sensitiveInformationPolicyConfig ||
+    scenarioData.guardrails.topicPolicyConfig ||
+    scenarioData.guardrails.contextualGroundingPolicyConfig ||
+    scenarioData.guardrails.blockedInputMessaging ||
+    scenarioData.guardrails.blockedOutputsMessaging
+  );
 }

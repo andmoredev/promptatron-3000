@@ -1,6 +1,7 @@
 import { BedrockClient, CreateGuardrailCommand, DeleteGuardrailCommand, ListGuardrailsCommand, GetGuardrailCommand } from "@aws-sdk/client-bedrock";
 import { BedrockRuntimeClient, ApplyGuardrailCommand } from "@aws-sdk/client-bedrock-runtime";
 import { analyzeError, handleError, ErrorTypes, retryWithBackoff } from '../utils/errorHandling.js';
+import { GuardrailSchemaTranslator } from './guardrailSchemaTranslator.js';
 
 /**
  * Service class for AWS Bedrock Guardrails integration
@@ -305,7 +306,7 @@ export class GuardrailService {
    * @param {Object} guardrailConfig - Guardrail configuration object
    * @returns {Promise<Object>} Creation result with ARN and version
    */
-  async createGuardrailForScenario(scenarioName, guardrailConfig) {
+  async createGuardrailForScenario(scenarioName, guardrailConfig, options = {}) {
     if (!this.isReady()) {
       const initResult = await this.initialize();
       if (!initResult.success) {
@@ -315,48 +316,86 @@ export class GuardrailService {
 
     return await this.executeWithErrorHandling(
       async () => {
-        // Generate guardrail name based on scenario
-        const guardrailName = `${scenarioName}-guardrail`;
+        // Check if the config is in simplified format and translate it
+        let createParams;
 
-        // Prepare the AWS CreateGuardrail command parameters
-        const createParams = {
-          name: guardrailName,
-          description: guardrailConfig.description || `Guardrail for ${scenarioName} scenario`,
-          blockedInputMessaging: guardrailConfig.blockedInputMessaging || 'This content violates our content policy.',
-          blockedOutputsMessaging: guardrailConfig.blockedOutputsMessaging || 'I cannot provide that type of content.',
-          tags: this.generateGuardrailTags(scenarioName)
-        };
+        if (GuardrailSchemaTranslator.isSimplifiedFormat(guardrailConfig)) {
+          // Translate simplified format to AWS format
+          console.log(`[GuardrailService] Translating simplified guardrail config for scenario: ${scenarioName}`);
+          createParams = GuardrailSchemaTranslator.translateToAWSFormat(guardrailConfig, scenarioName);
+          console.log(`[GuardrailService] Translation completed. Config has ${Object.keys(createParams).length} properties`);
+        } else {
+          // Already in AWS format, use as-is but ensure required fields
+          const guardrailName = `${scenarioName}-guardrail`;
+          createParams = {
+            name: guardrailName,
+            description: guardrailConfig.description || `Guardrail for ${scenarioName} scenario`,
+            blockedInputMessaging: guardrailConfig.blockedInputMessaging || 'This content violates our content policy.',
+            blockedOutputsMessaging: guardrailConfig.blockedOutputsMessaging || 'I cannot provide that type of content.',
+            tags: this.generateGuardrailTags(scenarioName),
+            ...guardrailConfig
+          };
 
-        // Add policy configurations if they exist
-        if (guardrailConfig.contentPolicyConfig) {
-          createParams.contentPolicyConfig = guardrailConfig.contentPolicyConfig;
+          // Add policy configurations if they exist
+          if (guardrailConfig.contentPolicyConfig) {
+            createParams.contentPolicyConfig = guardrailConfig.contentPolicyConfig;
+          }
+
+          if (guardrailConfig.wordPolicyConfig) {
+            createParams.wordPolicyConfig = guardrailConfig.wordPolicyConfig;
+          }
+
+          if (guardrailConfig.sensitiveInformationPolicyConfig) {
+            createParams.sensitiveInformationPolicyConfig = guardrailConfig.sensitiveInformationPolicyConfig;
+          }
+
+          if (guardrailConfig.topicPolicyConfig) {
+            createParams.topicPolicyConfig = guardrailConfig.topicPolicyConfig;
+          }
         }
 
-        if (guardrailConfig.wordPolicyConfig) {
-          createParams.wordPolicyConfig = guardrailConfig.wordPolicyConfig;
-        }
-
-        if (guardrailConfig.sensitiveInformationPolicyConfig) {
-          createParams.sensitiveInformationPolicyConfig = guardrailConfig.sensitiveInformationPolicyConfig;
-        }
-
-        if (guardrailConfig.topicPolicyConfig) {
-          createParams.topicPolicyConfig = guardrailConfig.topicPolicyConfig;
-        }
+        console.log(`[GuardrailService] Creating guardrail with params:`, JSON.stringify(createParams, null, 2));
 
         const command = new CreateGuardrailCommand(createParams);
         const response = await this.managementClient.send(command);
 
         this.lastSuccessfulCall = new Date().toISOString();
 
-        return {
-          success: true,
-          guardrailId: response.guardrailId,
-          guardrailArn: response.guardrailArn,
-          version: response.version,
-          createdAt: response.createdAt,
-          scenarioName: scenarioName
-        };
+        const { waitForReady = true } = options;
+
+        if (waitForReady) {
+          // Poll for guardrail to become ready
+          console.log(`[GuardrailService] Guardrail created with ID: ${response.guardrailId}, polling for ready status...`);
+          const readyGuardrail = await this.waitForGuardrailReady(response.guardrailId, response.version, {
+            maxAttempts: 20,     // Reduce max attempts for faster feedback
+            intervalMs: 3000,    // 3 second intervals
+            timeoutMs: 60000     // 1 minute timeout
+          });
+
+          return {
+            success: true,
+            guardrailId: response.guardrailId,
+            guardrailArn: response.guardrailArn,
+            version: response.version,
+            createdAt: response.createdAt,
+            scenarioName: scenarioName,
+            status: readyGuardrail.status,
+            pollingCompleted: true
+          };
+        } else {
+          // Return immediately without polling
+          console.log(`[GuardrailService] Guardrail created with ID: ${response.guardrailId}, skipping polling (will be in DRAFT status)`);
+          return {
+            success: true,
+            guardrailId: response.guardrailId,
+            guardrailArn: response.guardrailArn,
+            version: response.version,
+            createdAt: response.createdAt,
+            scenarioName: scenarioName,
+            status: 'CREATING', // Assume it's still creating
+            pollingCompleted: false
+          };
+        }
       },
       {
         operationName: 'create guardrail for scenario',
@@ -423,7 +462,8 @@ export class GuardrailService {
 
   /**
    * Discover existing guardrails created by this application
-   * @returns {Promise<Array>} Array of promptatron-tagged guardrails
+   * Uses name-based matching to identify guardrails following the pattern: {scenarioName}-guardrail
+   * @returns {Promise<Array>} Array of Promptatron guardrails
    */
   async discoverExistingGuardrails() {
     if (!this.isReady()) {
@@ -437,30 +477,34 @@ export class GuardrailService {
       // Get all guardrails from AWS
       const allGuardrails = await this.listGuardrails();
 
-      // Filter for guardrails tagged with 'promptatron' source
+      // Filter for guardrails created by Promptatron based on naming pattern
       const promptatronGuardrails = [];
 
       for (const guardrail of allGuardrails) {
-        try {
-          // Get detailed guardrail information to access tags
-          const detailedGuardrail = await this.getGuardrail(guardrail.id, guardrail.version);
-          const tagInfo = this.parseGuardrailTags(detailedGuardrail);
+        // Check if the guardrail name follows our naming pattern: {scenarioName}-guardrail
+        if (guardrail.name && guardrail.name.endsWith('-guardrail')) {
+          // Extract scenario name from guardrail name
+          const scenarioName = guardrail.name.replace('-guardrail', '');
 
-          if (tagInfo.isPromptatronGuardrail) {
+          // Only include if the scenario name looks valid (no spaces, reasonable length, valid characters)
+          if (scenarioName &&
+              scenarioName.length > 0 &&
+              scenarioName.length < 100 &&
+              !scenarioName.includes(' ') &&
+              /^[a-z0-9-]+$/.test(scenarioName)) { // Only lowercase letters, numbers, and hyphens
             promptatronGuardrails.push({
               ...guardrail,
-              scenarioName: tagInfo.scenario,
-              createdBy: tagInfo.createdBy,
-              createdAt: tagInfo.createdAt,
-              tags: detailedGuardrail.tags
+              scenarioName: scenarioName,
+              createdBy: 'promptatron', // Assume it's ours based on naming pattern
+              createdAt: guardrail.createdAt || new Date().toISOString()
             });
+
+            console.log(`[GuardrailService] Found Promptatron guardrail: ${guardrail.name} -> scenario: ${scenarioName}`);
           }
-        } catch (error) {
-          // Log error but continue processing other guardrails
-          console.warn(`Failed to get details for guardrail ${guardrail.id}:`, error.message);
         }
       }
 
+      console.log(`[GuardrailService] Discovered ${promptatronGuardrails.length} Promptatron guardrails`);
       this.lastSuccessfulCall = new Date().toISOString();
       return promptatronGuardrails;
     } catch (error) {
@@ -554,7 +598,7 @@ export class GuardrailService {
    * @param {Object} guardrailConfig - Guardrail configuration object
    * @returns {Promise<Object>} Guardrail information (existing or newly created)
    */
-  async ensureGuardrailExists(scenarioName, guardrailConfig) {
+  async ensureGuardrailExists(scenarioName, guardrailConfig, options = {}) {
     if (!this.isReady()) {
       const initResult = await this.initialize();
       if (!initResult.success) {
@@ -582,7 +626,7 @@ export class GuardrailService {
         };
       } else {
         // Guardrail doesn't exist, create it
-        const createResult = await this.createGuardrailForScenario(scenarioName, guardrailConfig);
+        const createResult = await this.createGuardrailForScenario(scenarioName, guardrailConfig, options);
 
         return {
           success: true,
@@ -592,9 +636,10 @@ export class GuardrailService {
             arn: createResult.guardrailArn,
             version: createResult.version,
             name: `${scenarioName}-guardrail`,
-            status: 'CREATING', // AWS status during creation
+            status: createResult.status || 'CREATING', // Use actual status from creation
             scenarioName: scenarioName,
-            createdAt: createResult.createdAt
+            createdAt: createResult.createdAt,
+            pollingCompleted: createResult.pollingCompleted
           }
         };
       }
@@ -606,6 +651,64 @@ export class GuardrailService {
         scenarioName: scenarioName
       };
     }
+  }
+
+  /**
+   * Wait for a guardrail to become ready by polling its status
+   * @param {string} guardrailId - The guardrail ID to poll
+   * @param {string} version - The guardrail version (usually 'DRAFT')
+   * @param {Object} options - Polling options
+   * @returns {Promise<Object>} Final guardrail status
+   */
+  async waitForGuardrailReady(guardrailId, version = 'DRAFT', options = {}) {
+    const {
+      maxAttempts = 30,        // Maximum polling attempts
+      intervalMs = 2000,       // Polling interval in milliseconds
+      timeoutMs = 60000        // Total timeout in milliseconds
+    } = options;
+
+    const startTime = Date.now();
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      try {
+        attempts++;
+
+        // Check if we've exceeded the timeout
+        if (Date.now() - startTime > timeoutMs) {
+          throw new Error(`Timeout waiting for guardrail ${guardrailId} to become ready after ${timeoutMs}ms`);
+        }
+
+        console.log(`[GuardrailService] Polling guardrail ${guardrailId} status (attempt ${attempts}/${maxAttempts})...`);
+
+        const guardrailDetails = await this.getGuardrail(guardrailId, version);
+
+        if (guardrailDetails.status === 'READY') {
+          console.log(`[GuardrailService] Guardrail ${guardrailId} is now READY after ${attempts} attempts`);
+          return guardrailDetails;
+        } else if (guardrailDetails.status === 'FAILED') {
+          throw new Error(`Guardrail ${guardrailId} creation failed with status: FAILED`);
+        }
+
+        console.log(`[GuardrailService] Guardrail ${guardrailId} status: ${guardrailDetails.status}, waiting ${intervalMs}ms...`);
+
+        // Wait before next poll
+        await new Promise(resolve => setTimeout(resolve, intervalMs));
+
+      } catch (error) {
+        if (error.name === 'ResourceNotFoundException') {
+          console.log(`[GuardrailService] Guardrail ${guardrailId} not found yet, continuing to poll...`);
+          await new Promise(resolve => setTimeout(resolve, intervalMs));
+          continue;
+        }
+
+        // For other errors, rethrow
+        throw error;
+      }
+    }
+
+    // If we get here, we've exceeded max attempts
+    throw new Error(`Guardrail ${guardrailId} did not become ready after ${maxAttempts} attempts`);
   }
 
   /**

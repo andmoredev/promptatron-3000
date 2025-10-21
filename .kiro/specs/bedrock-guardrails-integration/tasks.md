@@ -50,6 +50,11 @@ plement GuardrailConfig and GuardrailResult data models
 
 
 
+
+
+
+
+
   - Extend scenarioModels.js with guardrails schema definition
   - Add validation for all guardrail policy types (content, word, PII, topic)
   - Implement schema migration for existing scenarios
@@ -68,11 +73,25 @@ plement GuardrailConfig and GuardrailResult data models
   - Add methods for extracting and managing guardrail configurations
   - _Requirements: 1.2, 4.1, 8.2, 8.4_
 
-- [ ]* 2.3 Write tests for scenario schema extensions
+- [x] 2.3 Implement simplified schema translation system
+
+
+
+
+
+  - Create GuardrailSchemaTranslator service for converting simplified schema to AWS format
+  - Add translation methods for all policy types (topic, content, word, PII, contextual grounding)
+  - Implement validation for simplified schema format with clear error messages
+  - Extend GuardrailConfig class to detect and handle simplified format automatically
+  - Add support for sensible defaults when input/output configurations are omitted
+  - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 8.9, 8.10_
+
+- [ ]* 2.4 Write tests for scenario schema extensions
   - Create tests for guardrail schema validation
   - Write tests for scenario loading with guardrails
   - Add tests for backward compatibility
-  - _Requirements: 1.2, 8.1, 8.3_
+  - Create tests for simplified schema translation and validation
+  - _Requirements: 1.2, 8.1, 8.3, 8.10_
 
 - [x] 3. Create guardrails UI components
 

@@ -290,6 +290,435 @@ export class GuardrailResult {
 }
 ```
 
+## Schema Translation Architecture
+
+### Simplified Schema Format
+
+The system supports a simplified, user-friendly schema format that abstracts away the complexity of the AWS CreateGuardrailCommand structure. This simplified format focuses on common use cases and provides sensible defaults.
+
+#### Simplified Schema Structure
+```javascript
+// Example simplified guardrail configuration
+{
+  "topicPolicy": {
+    "definition": "Any content not directly related to shipment status, routing, delays, damage, customs, delivery exceptions, or structured JSON outputs for logistics triage.",
+    "examples": [
+      "What's your favorite movie?",
+      "Plan my vacation to Italy.",
+      "Write a Python script.",
+      "Give me legal advice.",
+      "How do I invest $10,000?"
+    ]
+  },
+  "contentPolicy": {
+    "filters": ["PROMPT_ATTACK", "INSULTS", "MISCONDUCT"],
+    "input": {
+      "strength": "HIGH",
+      "action": "BLOCK"
+    },
+    "output": {
+      "strength": "LOW",
+      "action": "NONE"
+    }
+  },
+  "wordPolicy": {
+    "managedLists": ["PROFANITY"],
+    "input": {
+      "action": "BLOCK"
+    }
+  },
+  "sensitiveInformationPolicy": {
+    "pii": ["EMAIL", "NAME", "PHONE", "ADDRESS", "AWS_ACCESS_KEY", "AWS_SECRET_KEY", "PASSWORD", "CREDIT_DEBIT_CARD_NUMBER"],
+    "regexes": [
+      {
+        "name": "BearerToken",
+        "pattern": "(?i)bearer\\s+[A-Za-z0-9._\\-]{20,}"
+      }
+    ],
+    "input": {
+      "action": "BLOCK"
+    },
+    "output": {
+      "action": "ANONYMIZE"
+    }
+  },
+  "contextualGroundingPolicy": {
+    "groundingThreshold": 0.75,
+    "relevanceThreshold": 0.70
+  },
+  "blockedMessages": {
+    "input": "Input blocked by logistics policy. Remove PII or unrelated topics.",
+    "output": "Output blocked by logistics policy. Keep response factual, relevant, and logistics-focused."
+  }
+}
+```
+
+### Schema Translation Service
+
+#### GuardrailSchemaTranslator Class
+```javascript
+// Location: src/services/guardrailSchemaTranslator.js
+export class GuardrailSchemaTranslator {
+
+  /**
+   * Translates simplified schema to AWS CreateGuardrailCommand format
+   */
+  static translateToAWSFormat(simplifiedConfig, scenarioName) {
+    const awsConfig = {
+      name: `$Name}-guardrail`,
+      description: simplifiedConfig.description || `Guardrail for ${scenarioName} scenario`,
+      tags: [
+        { key: 'source', value: 'promptatron' },
+        { key: 'scenario', value: scenarioName }
+      ]
+    }
+
+    // Add blocked messaging
+    if (simplifiedConfig.blockedMessages) {
+      awsConfig.blockedInputMessaging = simplifiedConfig.blockedMessages.input
+      awsConfig.blockedOutputsMessaging = simplifiedConfig.blockedMessages.output
+    }
+
+    // Translate topic policy
+    if (simplifiedConfig.topicPolicy) {
+      awsConfig.topicPolicyConfig = this.translateTopicPolicy(simplifiedConfig.topicPolicy)
+    }
+
+    // Translate content policy
+    if (simplifiedConfig.contentPolicy) {
+      awsConfig.contentPolicyConfig = this.translateContentPolicy(simplifiedConfig.contentPolicy)
+    }
+
+    // Translate word policy
+    if (simplifiedConfig.wordPolicy) {
+      awsConfig.wordPolicyConfig = this.translateWordPolicy(simplifiedConfig.wordPolicy)
+    }
+
+    // Translate sensitive information policy
+    if (simplifiedConfig.sensitiveInformationPolicy) {
+      awsConfig.sensitiveInformationPolicyConfig = this.translateSensitiveInformationPolicy(
+        simplifiedConfig.sensitiveInformationPolicy
+      )
+    }
+
+    // Translate contextual grounding policy
+    if (simplifiedConfig.contextualGroundingPolicy) {
+      awsConfig.contextualGroundingPolicyConfig = this.translateContextualGroundingPolicy(
+        simplifiedConfig.contextualGroundingPolicy
+      )
+    }
+
+    return awsConfig
+  }
+
+  /**
+   * Translates topic policy to AWS format
+   */
+  static translateTopicPolicy(topicPolicy) {
+    return {
+      topicsConfig: [
+        {
+          name: 'restricted-topics',
+          definition: topicPolicy.definition,
+          examples: topicPolicy.examples || [],
+          type: 'DENY',
+          inputAction: 'BLOCK',
+          outputAction: 'BLOCK',
+          inputEnabled: true,
+          outputEnabled: true
+        }
+      ],
+      tierConfig: {
+        tierName: 'STANDARD'
+      }
+    }
+  }
+
+  /**
+   * Translates content policy to AWS format
+   */
+  static translateContentPolicy(contentPolicy) {
+    const filtersConfig = contentPolicy.filters.map(filterType => {
+      const inputConfig = contentPolicy.input || {}
+      const outputConfig = contentPolicy.output || {}
+
+      return {
+        type: filterType,
+        inputStrength: inputConfig.strength || 'HIGH',
+        outputStrength: outputConfig.strength || 'LOW',
+        inputModalities: ['TEXT'],
+        outputModalities: ['TEXT'],
+        inputAction: inputConfig.action || 'BLOCK',
+        outputAction: outputConfig.action || 'NONE',
+        inputEnabled: true,
+        outputEnabled: true
+      }
+    })
+
+    return {
+      filtersConfig,
+      tierConfig: {
+        tierName: 'STANDARD'
+      }
+    }
+  }
+
+  /**
+   * Translates word policy to AWS format
+   */
+  static translateWordPolicy(wordPolicy) {
+    const config = {}
+
+    // Handle managed word lists
+    if (wordPolicy.managedLists) {
+      config.managedWordListsConfig = wordPolicy.managedLists.map(listType => ({
+        type: listType,
+        inputAction: wordPolicy.input?.action || 'BLOCK',
+        outputAction: wordPolicy.output?.action || 'NONE',
+        inputEnabled: true,
+        outputEnabled: true
+      }))
+    }
+
+    // Handle custom words
+    if (wordPolicy.words) {
+      config.wordsConfig = wordPolicy.words.map(word => ({
+        text: word,
+        inputAction: wordPolicy.input?.action || 'BLOCK',
+        outputAction: wordPolicy.output?.action || 'NONE',
+        inputEnabled: true,
+        outputEnabled: true
+      }))
+    }
+
+    return config
+  }
+
+  /**
+   * Translates sensitive information policy to AWS format
+   */
+  static translateSensitiveInformationPolicy(sensitiveInfoPolicy) {
+    const config = {}
+
+    // Handle PII entities
+    if (sensitiveInfoPolicy.pii) {
+      config.piiEntitiesConfig = sensitiveInfoPolicy.pii.map(piiType => ({
+        type: piiType,
+        action: 'NONE', // Default to NONE, rely on input/output actions
+        inputAction: sensitiveInfoPolicy.input?.action || 'BLOCK',
+        outputAction: sensitiveInfoPolicy.output?.action || 'ANONYMIZE',
+        inputEnabled: true,
+        outputEnabled: true
+      }))
+    }
+
+    // Handle regex patterns
+    if (sensitiveInfoPolicy.regexes) {
+      config.regexesConfig = sensitiveInfoPolicy.regexes.map(regex => ({
+        name: regex.name,
+        description: regex.description || `Custom pattern: ${regex.name}`,
+        pattern: regex.pattern,
+        action: 'NONE', // Default to NONE, rely on input/output actions
+        inputAction: sensitiveInfoPolicy.input?.action || 'BLOCK',
+        outputAction: sensitiveInfoPolicy.output?.action || 'ANONYMIZE',
+        inputEnabled: true,
+        outputEnabled: true
+      }))
+    }
+
+    return config
+  }
+
+  /**
+   * Translates contextual grounding policy to AWS format
+   */
+  static translateContextualGroundingPolicy(groundingPolicy) {
+    const filtersConfig = []
+
+    // Add grounding filter if threshold specified
+    if (groundingPolicy.groundingThreshold !== undefined) {
+      filtersConfig.push({
+        type: 'GROUNDING',
+        threshold: groundingPolicy.groundingThreshold,
+        action: 'BLOCK',
+        enabled: true
+      })
+    }
+
+    // Add relevance filter if threshold specified
+    if (groundingPolicy.relevanceThreshold !== undefined) {
+      filtersConfig.push({
+        type: 'RELEVANCE',
+        threshold: groundingPolicy.relevanceThreshold,
+        action: 'BLOCK',
+        enabled: true
+      })
+    }
+
+    return {
+      filtersConfig
+    }
+  }
+
+  /**
+   * Validates simplified schema structure
+   */
+  static validateSimplifiedSchema(config) {
+    const errors = []
+
+    // Validate topic policy
+    if (config.topicPolicy) {
+      if (!config.topicPolicy.definition) {
+        errors.push('topicPolicy.definition is required')
+      }
+    }
+
+    // Validate content policy
+    if (config.contentPolicy) {
+      if (!Array.isArray(config.contentPolicy.filters)) {
+        errors.push('contentPolicy.filters must be an array')
+      } else {
+        const validFilters = ['SEXUAL', 'VIOLENCE', 'HATE', 'INSULTS', 'MISCONDUCT', 'PROMPT_ATTACK']
+        config.contentPolicy.filters.forEach(filter => {
+          if (!validFilters.includes(filter)) {
+            errors.push(`Invalid content filter: ${filter}`)
+          }
+        })
+      }
+    }
+
+    // Validate word policy
+    if (config.wordPolicy) {
+      if (config.wordPolicy.managedLists) {
+        const validManagedLists = ['PROFANITY']
+        config.wordPolicy.managedLists.forEach(list => {
+          if (!validManagedLists.includes(list)) {
+            errors.push(`Invalid managed word list: ${list}`)
+          }
+        })
+      }
+    }
+
+    // Validate sensitive information policy
+    if (config.sensitiveInformationPolicy) {
+      if (config.sensitiveInformationPolicy.pii) {
+        const validPiiTypes = [
+          'ADDRESS', 'AGE', 'AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'CA_HEALTH_NUMBER',
+          'CA_SOCIAL_INSURANCE_NUMBER', 'CREDIT_DEBIT_CARD_CVV', 'CREDIT_DEBIT_CARD_EXPIRY',
+          'CREDIT_DEBIT_CARD_NUMBER', 'DRIVER_ID', 'EMAIL', 'INTERNATIONAL_BANK_ACCOUNT_NUMBER',
+          'IP_ADDRESS', 'LICENSE_PLATE', 'MAC_ADDRESS', 'NAME', 'PASSWORD', 'PHONE', 'PIN',
+          'SWIFT_CODE', 'UK_NATIONAL_HEALTH_SERVICE_NUMBER', 'UK_NATIONAL_INSURANCE_NUMBER',
+          'UK_UNIQUE_TAXPAYER_REFERENCE_NUMBER', 'URL', 'USERNAME', 'US_BANK_ACCOUNT_NUMBER',
+          'US_BANK_ROUTING_NUMBER', 'US_INDIVIDUAL_TAX_IDENTIFICATION_NUMBER',
+          'US_PASSPORT_NUMBER', 'US_SOCIAL_SECURITY_NUMBER', 'VEHICLE_IDENTIFICATION_NUMBER'
+        ]
+
+        config.sensitiveInformationPolicy.pii.forEach(piiType => {
+          if (!validPiiTypes.includes(piiType)) {
+            errors.push(`Invalid PII type: ${piiType}`)
+          }
+        })
+      }
+
+      if (config.sensitiveInformationPolicy.regexes) {
+        config.sensitiveInformationPolicy.regexes.forEach(regex => {
+          if (!regex.name || !regex.pattern) {
+            errors.push('Regex configurations must have name and pattern properties')
+          }
+        })
+      }
+    }
+
+    // Validate contextual grounding policy
+    if (config.contextualGroundingPolicy) {
+      if (config.contextualGroundingPolicy.groundingThreshold !== undefined) {
+        const threshold = config.contextualGroundingPolicy.groundingThreshold
+        if (threshold < 0 || threshold > 1) {
+          errors.push('groundingThreshold must be between 0 and 1')
+        }
+      }
+
+      if (config.contextualGroundingPolicy.relevanceThreshold !== undefined) {
+        const threshold = config.contextualGroundingPolicy.relevanceThreshold
+        if (threshold < 0 || threshold > 1) {
+          errors.push('relevanceThreshold must be between 0 and 1')
+        }
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    }
+  }
+}
+```
+
+### Integration with GuardrailConfig
+
+The `GuardrailConfig` class is extended to support both simplified and AWS formats:
+
+```javascript
+// Extended GuardrailConfig class
+export class GuardrailConfig {
+  constructor(config, scenarioName) {
+    this.scenarioName = scenarioName
+
+    // Detect if this is simplified format and translate if needed
+    if (this.isSimplifiedFormat(config)) {
+      const translatedConfig = GuardrailSchemaTranslator.translateToAWSFormat(config, scenarioName)
+      this.initializeFromAWSFormat(translatedConfig)
+      this.originalSimplifiedConfig = config // Store original for reference
+    } else {
+      this.initializeFromAWSFormat(config)
+    }
+  }
+
+  isSimplifiedFormat(config) {
+    // Check for simplified format indicators
+    return !!(
+      config.topicPolicy ||
+      config.contentPolicy ||
+      config.wordPolicy ||
+      config.sensitiveInformationPolicy ||
+      config.contextualGroundingPolicy ||
+      config.blockedMessages
+    )
+  }
+
+  initializeFromAWSFormat(config) {
+    this.name = config.name || `${this.scenarioName}-guardrail`
+    this.description = config.description
+    this.blockedInputMessaging = config.blockedInputMessaging
+    this.blockedOutputsMessaging = config.blockedOutputsMessaging
+    this.contentPolicyConfig = config.contentPolicyConfig
+    this.wordPolicyConfig = config.wordPolicyConfig
+    this.sensitiveInformationPolicyConfig = config.sensitiveInformationPolicyConfig
+    this.topicPolicyConfig = config.topicPolicyConfig
+    this.contextualGroundingPolicyConfig = config.contextualGroundingPolicyConfig
+
+    // Runtime properties
+    this.arn = config.arn || null
+    this.version = config.version || 'DRAFT'
+    this.status = 'pending'
+  }
+
+  validate() {
+    // If we have original simplified config, validate that first
+    if (this.originalSimplifiedConfig) {
+      return GuardrailSchemaTranslator.validateSimplifiedSchema(this.originalSimplifiedConfig)
+    }
+
+    // Otherwise validate AWS format
+    return this.validateAWSFormat()
+  }
+
+  static fromSimplifiedConfig(simplifiedConfig, scenarioName) {
+    return new GuardrailConfig(simplifiedConfig, scenarioName)
+  }
+}
+```
+
 ## Error Handling
 
 ### Error Categories and Responses

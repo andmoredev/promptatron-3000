@@ -90,3 +90,20 @@ This feature adds comprehensive AWS Bedrock Guardrails integration to the Bedroc
 3. WHEN scenarios with guardrails are imported THEN the system SHALL validate and apply the guardrail configurations
 4. WHEN a scenario guardrail configuration is updated THEN the system SHALL update the corresponding AWS guardrail resource
 5. WHEN multiple scenarios have identical guardrail configurations THEN the system SHALL create separate guardrails for each scenario
+
+### Requirement 8
+
+**User Story:** As a developer defining guardrails, I want to use a simplified schema format in my scenario configurations so that I can easily specify guardrail policies without needing to understand the complex AWS API structure.
+
+#### Acceptance Criteria
+
+1. WHEN a user defines guardrails in a scenario THEN the system SHALL accept a simplified schema format with intuitive property names and structure
+2. WHEN the simplified schema is processed THEN the system SHALL automatically translate it to the AWS CreateGuardrailCommand format with proper mappings for all policy types
+3. WHEN topicPolicy is defined THEN the system SHALL map it to topicPolicyConfig with DENY type and BLOCK actions as defaults
+4. WHEN contentPolicy is defined THEN the system SHALL map filters array to individual filterConfig objects with TEXT modalities and STANDARD tier
+5. WHEN wordPolicy is defined THEN the system SHALL map managedLists to managedWordListsConfig with proper type mappings
+6. WHEN sensitiveInformationPolicy is defined THEN the system SHALL map pii entities and regexes to their respective AWS config formats with NONE action defaults
+7. WHEN contextualGroundingPolicy is defined THEN the system SHALL create both GROUNDING and RELEVANCE filters with BLOCK action and specified thresholds
+8. WHEN blockedMessages are defined THEN the system SHALL map them to blockedInputMessaging and blockedOutputsMessaging in the AWS format
+9. WHEN input or output configurations are omitted THEN the system SHALL apply sensible defaults (BLOCK for input, appropriate actions for output)
+10. WHEN the translation is complete THEN the system SHALL validate the resulting AWS format against the CreateGuardrailCommand schema

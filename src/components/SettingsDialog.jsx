@@ -427,10 +427,10 @@ function SettingsDialog({
                         <div className="flex items-center justify-between">
                           <div>
                             <label htmlFor="guardrails-enabled" className="text-sm font-medium text-gray-700">
-                              Enable Guardrails
+                              Auto-Add Guardrails
                             </label>
                             <p className="text-sm text-gray-500">
-                              Automatically apply content filtering to model interactions
+                              Automatically create and deploy guardrails to your AWS account when scenarios are selected
                             </p>
                           </div>
                           <button
