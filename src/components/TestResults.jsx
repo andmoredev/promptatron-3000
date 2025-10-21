@@ -9,6 +9,7 @@ import StreamingOutput from './StreamingOutput';
 import ToolUsageDisplay from './ToolUsageDisplay';
 import ToolConfigurationStatus from './ToolConfigurationStatus';
 import WorkflowTimeline from './WorkflowTimeline';
+import GuardrailResults from './GuardrailResults';
 import { uiErrorRecovery } from '../utils/uiErrorRecovery';
 import { useModelOutput } from '../hooks/useModelOutput';
 import { useDeterminismSettings } from '../hooks/useSettings';
@@ -243,6 +244,23 @@ const TestResults = ({
 
   const displayOutput = getDisplayOutput();
   const displayResults = getDisplayResults();
+
+  // Debug logging for guardrail results
+  useEffect(() => {
+    if (displayResults) {
+      console.log('[TestResults] Display results:', {
+        stopReason: displayResults.stopReason,
+        guardrailsEnabled: displayResults.guardrailsEnabled,
+        guardrailResults: displayResults.guardrailResults,
+        hasGuardrailResults: !!displayResults.guardrailResults,
+        hasViolations: displayResults.guardrailResults?.hasViolations,
+        shouldShowWarning: displayResults.guardrailResults?.hasViolations || displayResults.stopReason === 'guardrail_intervened'
+      });
+
+      // Log the full results object for debugging
+      console.log('[TestResults] Full displayResults object:', displayResults);
+    }
+  }, [displayResults]);
 
   // Show streaming interface during active streaming or when there's streaming content
   if (isStreaming || (streamingContent && !results)) {
@@ -519,25 +537,15 @@ const TestResults = ({
   return (
     <div className="card test-results">
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-2">
-          <h3 className="text-lg font-semibold text-gray-900">Test Results</h3>
-          {toolExecutionEnabled && (
-            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-              Tool Execution
-            </span>
-          )}
-        </div>
+        <h3 className="text-lg font-semibold text-gray-900">Test Results</h3>
         <div className="flex items-center space-x-3">
           {/* View Mode Toggle */}
           <div className="flex bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => setViewMode('formatted')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${viewMode === 'formatted'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
                 }`}
             >
               Formatted
@@ -545,8 +553,8 @@ const TestResults = ({
             <button
               onClick={() => setViewMode('markdown')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${viewMode === 'markdown'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
                 }`}
             >
               Markdown
@@ -554,15 +562,13 @@ const TestResults = ({
             <button
               onClick={() => setViewMode('raw')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${viewMode === 'raw'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
                 }`}
             >
               Raw
             </button>
           </div>
-
-
 
           {/* Expand/Collapse */}
           <button
@@ -574,11 +580,37 @@ const TestResults = ({
         </div>
       </div>
 
+      {/* Status Chips */}
+      {(toolExecutionEnabled || displayResults?.guardrailsEnabled || displayResults?.stopReason === 'guardrail_intervened' || displayResults?.guardrailResults?.hasViolations) && (
+        <div className="flex items-center space-x-2 mb-4">
+          {toolExecutionEnabled && (
+            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              Tool Execution
+            </span>
+          )}
+          {(displayResults?.guardrailsEnabled || displayResults?.stopReason === 'guardrail_intervened' || displayResults?.guardrailResults?.hasViolations) && (
+            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${displayResults.guardrailResults?.hasViolations || displayResults.stopReason === 'guardrail_intervened'
+              ? 'bg-orange-100 text-orange-800'
+              : 'bg-blue-100 text-blue-800'
+              }`}>
+              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {displayResults.guardrailResults?.hasViolations || displayResults.stopReason === 'guardrail_intervened'
+                ? 'Guardrails Intervened'
+                : 'Guardrails Enabled'}
+            </span>
+          )}
+        </div>
+      )}
+
 
 
       {/* Prompt Display */}
       <div className="mb-4">
-        <h4 className="font-medium text-gray-700 mb-2">Prompts Used:</h4>
 
         {/* System Prompt */}
         {displayResults.systemPrompt && (
@@ -621,167 +653,197 @@ const TestResults = ({
                 Restored
               </span>
             )}
+            {displayResults.stopReason && displayResults.stopReason !== 'end_turn' && (
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${displayResults.stopReason === 'guardrail_intervened'
+                ? 'bg-orange-100 text-orange-700'
+                : 'bg-gray-100 text-gray-700'
+                }`}>
+                {displayResults.stopReason.replace(/_/g, ' ')}
+              </span>
+            )}
           </div>
         </div>
 
-        <div className={`bg-white border border-gray-200 rounded-lg overflow-hidden ${isExpanded ? 'max-h-none' : 'max-h-96'
-          }`}>
-          <div className={`${isExpanded ? '' : 'overflow-y-auto max-h-96'}`}>
-            {viewMode === 'raw' && (
-              <div className="p-4">
-                <pre className="whitespace-pre-wrap break-words text-sm text-gray-800 font-mono leading-relaxed">
-                  {displayOutput || displayResults.response}
-                </pre>
+        {/* Guardrail Intervention Indicator */}
+        {(displayResults.guardrailResults?.hasViolations || displayResults.stopReason === 'guardrail_intervened') && (
+          <div className="mb-3 bg-orange-50 border border-orange-200 rounded-lg p-4">
+            <div className="flex items-start space-x-3 mb-4">
+              <div className="flex-shrink-0">
+                <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
               </div>
-            )}
-
-            {viewMode === 'markdown' && (
-              <div className="p-4 prose prose-sm max-w-none test-results-prompt">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeRaw]}
-                  components={markdownComponents}
-                >
-                  {displayOutput || displayResults.response}
-                </ReactMarkdown>
+              <div className="flex-1">
+                <h5 className="text-sm font-medium text-orange-800 mb-1">
+                  Content Filtered by Guardrails
+                </h5>
               </div>
-            )}
+              <div className="flex-shrink-0">
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
+                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Protected
+                </span>
+              </div>
+            </div>
+            <div className={`bg-white rounded-lg overflow-hidden ${isExpanded ? 'max-h-none' : 'max-h-96'} ${displayResults.guardrailResults?.hasViolations || displayResults.stopReason === 'guardrail_intervened'
+              ? 'border-2 border-orange-300 shadow-orange-100 shadow-lg'
+              : 'border border-gray-200'
+              }`}>
+              <div className={`${isExpanded ? '' : 'overflow-y-auto max-h-96'}`}>
+                {viewMode === 'raw' && (
+                  <div className="p-4">
+                    <pre className="whitespace-pre-wrap break-words text-sm text-gray-800 font-mono leading-relaxed">
+                      {displayOutput || displayResults.response}
+                    </pre>
+                  </div>
+                )}
 
-            {viewMode === 'formatted' && (
-              <div className="p-4 test-results-prompt">
-                {(() => {
-                  const responseText = displayOutput || displayResults.response;
-                  const contentType = detectContentType(responseText);
+                {viewMode === 'markdown' && (
+                  <div className="p-4 prose prose-sm max-w-none test-results-prompt">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeRaw]}
+                      components={markdownComponents}
+                    >
+                      {displayOutput || displayResults.response}
+                    </ReactMarkdown>
+                  </div>
+                )}
 
-                  switch (contentType) {
-                    case 'json':
-                      return (
-                        <SyntaxHighlighter
-                          language="json"
-                          style={oneLight}
-                          className="rounded-md"
-                          customStyle={{
-                            margin: 0,
-                            fontSize: '14px',
-                            lineHeight: '1.5'
-                          }}
-                        >
-                          {formatJSON(responseText)}
-                        </SyntaxHighlighter>
-                      );
+                {viewMode === 'formatted' && (
+                  <div className="p-4 test-results-prompt">
+                    {(() => {
+                      const responseText = displayOutput || displayResults.response;
+                      const contentType = detectContentType(responseText);
 
-                    case 'xml':
-                      return (
-                        <SyntaxHighlighter
-                          language="xml"
-                          style={oneLight}
-                          className="rounded-md"
-                          wrapLongLines={true}
-                          customStyle={{
-                            margin: 0,
-                            fontSize: '14px',
-                            lineHeight: '1.5',
-                            overflowX: "hidden"
-                          }}
-                          codeTagProps={{
-                            style: {
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-word",
-                              overflowWrap: "anywhere"
-                            }
-                          }}
-                        >
-                          {responseText}
-                        </SyntaxHighlighter>
-                      );
+                      switch (contentType) {
+                        case 'json':
+                          return (
+                            <SyntaxHighlighter
+                              language="json"
+                              style={oneLight}
+                              className="rounded-md"
+                              customStyle={{
+                                margin: 0,
+                                fontSize: '14px',
+                                lineHeight: '1.5'
+                              }}
+                            >
+                              {formatJSON(responseText)}
+                            </SyntaxHighlighter>
+                          );
 
-                    case 'python':
-                      return (
-                        <SyntaxHighlighter
-                          language="python"
-                          style={oneLight}
-                          className="rounded-md"
-                          customStyle={{
-                            margin: 0,
-                            fontSize: '14px',
-                            lineHeight: '1.5'
-                          }}
-                        >
-                          {responseText}
-                        </SyntaxHighlighter>
-                      );
+                        case 'xml':
+                          return (
+                            <SyntaxHighlighter
+                              language="xml"
+                              style={oneLight}
+                              className="rounded-md"
+                              wrapLongLines={true}
+                              customStyle={{
+                                margin: 0,
+                                fontSize: '14px',
+                                lineHeight: '1.5',
+                                overflowX: "hidden"
+                              }}
+                              codeTagProps={{
+                                style: {
+                                  whiteSpace: "pre-wrap",
+                                  wordBreak: "break-word",
+                                  overflowWrap: "anywhere"
+                                }
+                              }}
+                            >
+                              {responseText}
+                            </SyntaxHighlighter>
+                          );
 
-                    case 'javascript':
-                      return (
-                        <SyntaxHighlighter
-                          language="javascript"
-                          style={oneLight}
-                          className="rounded-md"
-                          customStyle={{
-                            margin: 0,
-                            fontSize: '14px',
-                            lineHeight: '1.5'
-                          }}
-                        >
-                          {responseText}
-                        </SyntaxHighlighter>
-                      );
+                        case 'python':
+                          return (
+                            <SyntaxHighlighter
+                              language="python"
+                              style={oneLight}
+                              className="rounded-md"
+                              customStyle={{
+                                margin: 0,
+                                fontSize: '14px',
+                                lineHeight: '1.5'
+                              }}
+                            >
+                              {responseText}
+                            </SyntaxHighlighter>
+                          );
 
-                    case 'sql':
-                      return (
-                        <SyntaxHighlighter
-                          language="sql"
-                          style={oneLight}
-                          className="rounded-md"
-                          customStyle={{
-                            margin: 0,
-                            fontSize: '14px',
-                            lineHeight: '1.5'
-                          }}
-                        >
-                          {responseText}
-                        </SyntaxHighlighter>
-                      );
+                        case 'javascript':
+                          return (
+                            <SyntaxHighlighter
+                              language="javascript"
+                              style={oneLight}
+                              className="rounded-md"
+                              customStyle={{
+                                margin: 0,
+                                fontSize: '14px',
+                                lineHeight: '1.5'
+                              }}
+                            >
+                              {responseText}
+                            </SyntaxHighlighter>
+                          );
 
-                    case 'markdown':
-                      return (
-                        <div className="prose prose-sm max-w-none test-results-prompt">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            rehypePlugins={[rehypeRaw]}
-                            components={markdownComponents}
-                          >
-                            {responseText}
-                          </ReactMarkdown>
-                        </div>
-                      );
+                        case 'sql':
+                          return (
+                            <SyntaxHighlighter
+                              language="sql"
+                              style={oneLight}
+                              className="rounded-md"
+                              customStyle={{
+                                margin: 0,
+                                fontSize: '14px',
+                                lineHeight: '1.5'
+                              }}
+                            >
+                              {responseText}
+                            </SyntaxHighlighter>
+                          );
 
-                    default:
-                      return (
-                        <div className="space-y-4 test-results-prompt">
-                          {responseText.split('\n\n').map((paragraph, index) => (
-                            <p key={index} className="text-gray-800 leading-relaxed">
-                              {paragraph.split('\n').map((line, lineIndex) => (
-                                <span key={lineIndex}>
-                                  {line}
-                                  {lineIndex < paragraph.split('\n').length - 1 && <br />}
-                                </span>
+                        case 'markdown':
+                          return (
+                            <div className="prose prose-sm max-w-none test-results-prompt">
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                rehypePlugins={[rehypeRaw]}
+                                components={markdownComponents}
+                              >
+                                {responseText}
+                              </ReactMarkdown>
+                            </div>
+                          );
+
+                        default:
+                          return (
+                            <div className="space-y-4 test-results-prompt">
+                              {responseText.split('\n\n').map((paragraph, index) => (
+                                <p key={index} className="text-gray-800 leading-relaxed">
+                                  {paragraph.split('\n').map((line, lineIndex) => (
+                                    <span key={lineIndex}>
+                                      {line}
+                                      {lineIndex < paragraph.split('\n').length - 1 && <br />}
+                                    </span>
+                                  ))}
+                                </p>
                               ))}
-                            </p>
-                          ))}
-                        </div>
-                      );
-                  }
-                })()}
+                            </div>
+                          );
+                      }
+                    })()}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
-
-          {/* Scroll indicator for collapsed view */}
-          {!isExpanded && (
-            <div className="scroll-indicator-gradient" />
-          )}
-        </div>
+        )}
 
         {/* Quick Actions */}
         <div className="mt-3 flex items-center justify-between">
@@ -807,7 +869,7 @@ const TestResults = ({
             )}
           </div>
 
-          <div className="text-xs text-gray-500">
+          <div className="flex items-center space-x-3 text-xs text-gray-500">
             {!isExpanded && (displayOutput || displayResults.response).length > 1000 && (
               <span>Showing preview • Click expand to see full response</span>
             )}
@@ -847,6 +909,8 @@ const TestResults = ({
           </>
         )}
       </div>
+
+
 
       {/* Response Stats */}
       <div className="mt-4 pt-3 border-t border-gray-200">
@@ -907,6 +971,39 @@ const TestResults = ({
               )}
             </>
           )}
+
+          {/* Stop Reason */}
+          {displayResults.stopReason && (
+            <div className="text-center">
+              <div className={`text-lg font-semibold ${displayResults.stopReason === 'guardrail_intervened'
+                ? 'text-orange-600'
+                : displayResults.stopReason === 'end_turn'
+                  ? 'text-green-600'
+                  : 'text-gray-600'
+                }`}>
+                {displayResults.stopReason.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+              </div>
+              <div className="text-xs text-gray-500">Stop Reason</div>
+            </div>
+          )}
+
+          {/* Guardrail Status */}
+          {(displayResults.guardrailsEnabled || displayResults.stopReason === 'guardrail_intervened' || displayResults.guardrailResults?.hasViolations) && (
+            <div className="text-center">
+              <div className={`text-lg font-semibold ${displayResults.guardrailResults?.hasViolations || displayResults.stopReason === 'guardrail_intervened'
+                ? 'text-orange-600'
+                : 'text-green-600'
+                }`}>
+                {displayResults.guardrailResults?.hasViolations || displayResults.stopReason === 'guardrail_intervened'
+                  ? 'Filtered'
+                  : 'Passed'
+                }
+              </div>
+              <div className="text-xs text-gray-500">Guardrails</div>
+            </div>
+          )}
+
+
 
           {/* Show response time if available */}
           {displayResults.responseTime && (
@@ -994,7 +1091,13 @@ TestResults.propTypes = {
       gracefulDegradation: PropTypes.bool,
       validationResult: PropTypes.object,
       toolsAvailable: PropTypes.arrayOf(PropTypes.string)
-    })
+    }),
+    guardrailResults: PropTypes.oneOfType([
+      PropTypes.object,
+      PropTypes.arrayOf(PropTypes.object)
+    ]),
+    guardrailConfig: PropTypes.object,
+    guardrailsEnabled: PropTypes.bool
   }),
   isLoading: PropTypes.bool,
   determinismEnabled: PropTypes.bool,

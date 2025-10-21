@@ -11,7 +11,7 @@
     "dev:local": "./local-setup.sh && npm run dev"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock": "^3.883.0",
+    "@aws-sdk/client-bedrock": "^3.913.0",
     "@aws-sdk/client-bedrock-runtime": "^3.0.0",
     "@aws-sdk/client-service-quotas": "^3.883.0",
     "@gomomento/sdk-web": "^1.116.0",

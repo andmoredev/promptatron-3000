@@ -1,6 +1,7 @@
 import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { analyzeError, handleError, ErrorTypes } from '../utils/errorHandling.js';
 import { workflowTrackingService } from './workflowTrackingService.js';
+import { GuardrailManager } from './bedrock/GuardrailManager.js';
 
 /**
  * Service for orchestrating tool execution workflows with Bedrock models
@@ -12,6 +13,7 @@ export class ToolExecutionService {
     this.activeExecutions = new Map(); // Track active executions
     this.executionHistory = new Map(); // Store execution history
     this.isInitialized = false;
+    this.guardrailManager = new GuardrailManager();
   }
 
   /**
@@ -65,7 +67,15 @@ export class ToolExecutionService {
     const executionId = this.generateExecutionId();
     const maxIterations = options.maxIterations || 10;
     const onStreamUpdate = options.onStreamUpdate || (() => {});
+    const guardrailConfig = options.guardrailConfig || null;
     const startTime = Date.now();
+
+    // Log guardrail configuration for debugging
+    if (guardrailConfig) {
+      console.log('[ToolExecutionService] Received guardrail config:', guardrailConfig);
+    } else {
+      console.log('[ToolExecutionService] No guardrail config provided');
+    }
 
     // Initialize execution state
     const executionState = {
@@ -163,8 +173,13 @@ export class ToolExecutionService {
           modelId,
           systemPrompt,
           executionState.messages,
-          toolConfig
+          toolConfig,
+          guardrailConfig
         );
+
+        // Parse guardrail results from the response
+        const guardrailResults = this.guardrailManager.parseGuardrailResults(modelResponse);
+        console.log('[ToolExecutionService] Parsed guardrail results:', guardrailResults);
 
         // Add workflow step for model response
         this.addWorkflowStep(executionState, {
@@ -174,7 +189,8 @@ export class ToolExecutionService {
           content: {
             stopReason: modelResponse.stopReason,
             usage: modelResponse.usage,
-            hasToolUse: modelResponse.stopReason === 'tool_use'
+            hasToolUse: modelResponse.stopReason === 'tool_use',
+            guardrailResults: guardrailResults
           }
         });
 
@@ -290,6 +306,14 @@ export class ToolExecutionService {
       executionState.totalDuration = executionState.endTime - executionState.startTime;
       executionState.results.iterationCount = currentIteration;
 
+      // Collect guardrail results from workflow steps
+      const guardrailResults = this.collectGuardrailResults(executionState.workflow);
+      if (guardrailResults) {
+        executionState.results.guardrailResults = guardrailResults;
+        executionState.results.stopReason = guardrailResults.stopReason || executionState.results.stopReason;
+        console.log('[ToolExecutionService] Added guardrail results to final results:', guardrailResults);
+      }
+
       // Complete workflow tracking
       if (workflowTrackingService.isInitialized) {
         await workflowTrackingService.completeExecution(executionId, {
@@ -363,9 +387,10 @@ export class ToolExecutionService {
    * @param {string} systemPrompt - System prompt
    * @param {Array} messages - Conversation messages
    * @param {Object} toolConfig - Tool configuration
+   * @param {Object} guardrailConfig - Optional guardrail configuration
    * @returns {Promise<Object>} Bedrock response
    */
-  async sendConverseRequest(modelId, systemPrompt, messages, toolConfig) {
+  async sendConverseRequest(modelId, systemPrompt, messages, toolConfig, guardrailConfig = null) {
     if (!this.isInitialized || !this.runtimeClient) {
       throw new Error('Tool execution service not initialized');
     }
@@ -391,8 +416,55 @@ export class ToolExecutionService {
       };
     }
 
+    // Add guardrail configuration if provided
+    if (guardrailConfig) {
+      console.log('[ToolExecutionService] Adding guardrail config to request:', guardrailConfig);
+      converseParams.guardrailConfig = guardrailConfig;
+    }
+
     const command = new ConverseCommand(converseParams);
     return await this.runtimeClient.send(command);
+  }
+
+  /**
+   * Collect guardrail results from workflow steps
+   * @param {Array} workflow - Workflow steps
+   * @returns {Object|null} Consolidated guardrail results
+   */
+  collectGuardrailResults(workflow) {
+    // Find the most recent LLM response with guardrail results
+    for (let i = workflow.length - 1; i >= 0; i--) {
+      const step = workflow[i];
+      if (step.type === 'llm_response' && step.content?.guardrailResults) {
+        const guardrailResults = step.content.guardrailResults;
+        // Also include the stop reason from the step
+        return {
+          ...guardrailResults,
+          stopReason: step.content.stopReason
+        };
+      }
+    }
+
+    // Check if any step has a guardrail_intervened stop reason
+    for (let i = workflow.length - 1; i >= 0; i--) {
+      const step = workflow[i];
+      if (step.type === 'llm_response' && step.content?.stopReason === 'guardrail_intervened') {
+        return {
+          hasViolations: true,
+          action: 'INTERVENED',
+          violations: [{
+            type: 'guardrail_policy',
+            category: 'content_blocked',
+            action: 'BLOCKED',
+            message: 'Content was blocked by guardrail policy',
+            guardrailIndex: 0
+          }],
+          stopReason: 'guardrail_intervened'
+        };
+      }
+    }
+
+    return null;
   }
 
   /**

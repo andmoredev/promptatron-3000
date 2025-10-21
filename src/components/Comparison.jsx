@@ -657,6 +657,41 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
                     </div>
                   )}
 
+                  {/* Guardrail Information */}
+                  {(test.guardrailsEnabled || test.guardrailResults || test.stopReason === 'guardrail_intervened') && (
+                    <div>
+                      <span className="font-medium text-gray-700">Guardrails:</span>
+                      <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        (test.guardrailResults?.hasViolations || test.guardrailResults?.action === 'INTERVENED' || test.stopReason === 'guardrail_intervened')
+                          ? 'bg-orange-100 text-orange-800'
+                          : 'bg-green-100 text-green-800'
+                      }`}>
+                        🛡️ {(test.guardrailResults?.hasViolations || test.guardrailResults?.action === 'INTERVENED' || test.stopReason === 'guardrail_intervened')
+                          ? 'Intervened'
+                          : 'Passed'}
+                      </span>
+                      {test.guardrailResults?.violations && test.guardrailResults.violations.length > 0 && (
+                        <span className="ml-1 text-xs text-orange-600">
+                          ({test.guardrailResults.violations.length} violations)
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Stop Reason */}
+                  {test.stopReason && test.stopReason !== 'end_turn' && (
+                    <div>
+                      <span className="font-medium text-gray-700">Stop Reason:</span>
+                      <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        test.stopReason === 'guardrail_intervened'
+                          ? 'bg-orange-100 text-orange-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {test.stopReason.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      </span>
+                    </div>
+                  )}
+
                   {/* Streaming Information */}
                   <div className="pt-2 border-t border-gray-300">
                     <div className="flex items-center space-x-2">

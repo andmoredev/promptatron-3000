@@ -4,7 +4,7 @@
  */
 
 /**
- * Vae a scenario object against the expected schema
+ * Validate a scenario object against the expected schema
  * @param {Object} scenarioData - The scenario data to validate
  * @returns {Object} Validation result with isValid, errors, warnings, and metadata
  */
@@ -26,8 +26,6 @@ export function validateScenario(scenarioData) {
     // Required fields
     if (!scenarioData.id || typeof scenarioData.id !== 'string' || !scenarioData.id.trim()) {
       errors.id = 'Scenario ID is required and must be a non-empty string';
-    } else if (!/^[a-z0-9-]+$/.test(scenarioData.id)) {
-      errors.id = 'Scenario ID must contain only lowercase letters, numbers, and hyphens';
     }
 
     if (!scenarioData.name || typeof scenarioData.name !== 'string' || !scenarioData.name.trim()) {
@@ -169,6 +167,9 @@ export function validateScenario(scenarioData) {
         }
       }
     }
+
+    // Skip guardrails validation - guardrails are optional
+    // Note: Guardrails validation has been removed as requested
 
     // Extract metadata
     const metadata = extractScenarioMetadata(scenarioData);
@@ -403,6 +404,20 @@ function validateExample(example, index) {
   };
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /**
  * Extract metadata from a scenario object
  * @param {Object} scenarioData - The scenario data
@@ -446,6 +461,41 @@ export function extractScenarioMetadata(scenarioData) {
     hasExamples: !!(scenarioData.examples && scenarioData.examples.length > 0),
     exampleCount: scenarioData.examples ? scenarioData.examples.length : 0,
 
+    // Guardrail information
+    hasGuardrails: !!scenarioData.guardrails && (
+      // Check for simplified format
+      !!(scenarioData.guardrails.topicPolicy ||
+        scenarioData.guardrails.contentPolicy ||
+        scenarioData.guardrails.wordPolicy ||
+        scenarioData.guardrails.sensitiveInformationPolicy ||
+        scenarioData.guardrails.contextualGroundingPolicy) ||
+      // Check for AWS format
+      !!(scenarioData.guardrails.contentPolicyConfig ||
+        scenarioData.guardrails.wordPolicyConfig ||
+        scenarioData.guardrails.sensitiveInformationPolicyConfig ||
+        scenarioData.guardrails.topicPolicyConfig ||
+        scenarioData.guardrails.contextualGroundingPolicyConfig)
+    ),
+    guardrailsEnabled: scenarioData.guardrails?.enabled !== false,
+    guardrailName: scenarioData.guardrails?.name || null,
+    guardrailDescription: scenarioData.guardrails?.description || null,
+
+    // Policy type detection (works for both simplified and AWS formats)
+    hasContentPolicyGuardrails: !!(scenarioData.guardrails?.contentPolicy || scenarioData.guardrails?.contentPolicyConfig),
+    hasWordPolicyGuardrails: !!(scenarioData.guardrails?.wordPolicy || scenarioData.guardrails?.wordPolicyConfig),
+    hasPiiGuardrails: !!(scenarioData.guardrails?.sensitiveInformationPolicy || scenarioData.guardrails?.sensitiveInformationPolicyConfig),
+    hasTopicGuardrails: !!(scenarioData.guardrails?.topicPolicy || scenarioData.guardrails?.topicPolicyConfig),
+    hasContextualGroundingGuardrails: !!(scenarioData.guardrails?.contextualGroundingPolicy || scenarioData.guardrails?.contextualGroundingPolicyConfig),
+
+    // Format detection
+    guardrailsFormat: scenarioData.guardrails ? (
+      !!(scenarioData.guardrails.topicPolicy ||
+        scenarioData.guardrails.contentPolicy ||
+        scenarioData.guardrails.wordPolicy ||
+        scenarioData.guardrails.sensitiveInformationPolicy ||
+        scenarioData.guardrails.contextualGroundingPolicy) ? 'simplified' : 'aws'
+    ) : null,
+
     // Seed data information (only scenarios with explicit seed data configuration can be refreshed)
     hasSeedData: !!(
       scenarioData.seedData ||
@@ -477,6 +527,7 @@ function calculateComplexity(scenarioData) {
   if (scenarioData.tools && scenarioData.tools.length > 0) score += 2;
   if (scenarioData.configuration) score += 1;
   if (scenarioData.examples && scenarioData.examples.length > 0) score += 1;
+  if (scenarioData.guardrails && scenarioData.guardrails.configs && scenarioData.guardrails.configs.length > 0) score += 1;
 
   // Additional complexity factors
   if (scenarioData.datasets && scenarioData.datasets.length > 3) score += 1;
@@ -484,6 +535,7 @@ function calculateComplexity(scenarioData) {
   if (scenarioData.tools && scenarioData.tools.some(tool => tool.handler)) score += 1;
   if (scenarioData.systemPrompts && scenarioData.systemPrompts.length > 3) score += 1;
   if (scenarioData.userPrompts && scenarioData.userPrompts.length > 3) score += 1;
+  if (scenarioData.guardrails && scenarioData.guardrails.configs && scenarioData.guardrails.configs.length > 2) score += 1;
 
   if (score <= 3) return 'simple';
   if (score <= 6) return 'moderate';
@@ -513,7 +565,11 @@ export function createDefaultScenario(id, name, description) {
       maxIterations: 10,
       recommendedModels: []
     },
-    examples: []
+    examples: [],
+    guardrails: {
+      enabled: false,
+      configs: []
+    }
   };
 }
 
@@ -622,9 +678,234 @@ export function createScenarioSchema() {
             expectedOutcome: { type: 'string' }
           }
         }
+      },
+      guardrails: {
+        type: 'object',
+        properties: {
+          enabled: { type: 'boolean' },
+          configs: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['name'],
+              properties: {
+                name: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 50,
+                  pattern: '^[a-zA-Z0-9_-]+$'
+                },
+                description: { type: 'string', maxLength: 200 },
+                blockedInputMessaging: { type: 'string', maxLength: 500 },
+                blockedOutputsMessaging: { type: 'string', maxLength: 500 },
+                contentPolicyConfig: {
+                  type: 'object',
+                  properties: {
+                    filtersConfig: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        required: ['type', 'inputStrength', 'outputStrength'],
+                        properties: {
+                          type: {
+                            type: 'string',
+                            enum: ['SEXUAL', 'VIOLENCE', 'HATE', 'INSULTS', 'MISCONDUCT', 'PROMPT_ATTACK']
+                          },
+                          inputStrength: {
+                            type: 'string',
+                            enum: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+                          },
+                          outputStrength: {
+                            type: 'string',
+                            enum: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                wordPolicyConfig: {
+                  type: 'object',
+                  properties: {
+                    wordsConfig: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          text: { type: 'string' }
+                        }
+                      }
+                    },
+                    managedWordListsConfig: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          type: { type: 'string', enum: ['PROFANITY'] }
+                        }
+                      }
+                    }
+                  }
+                },
+                sensitiveInformationPolicyConfig: {
+                  type: 'object',
+                  properties: {
+                    piiEntitiesConfig: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          type: { type: 'string' },
+                          action: { type: 'string', enum: ['BLOCK', 'ANONYMIZE'] }
+                        }
+                      }
+                    },
+                    regexesConfig: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          name: { type: 'string' },
+                          description: { type: 'string' },
+                          pattern: { type: 'string' },
+                          action: { type: 'string', enum: ['BLOCK', 'ANONYMIZE'] }
+                        }
+                      }
+                    }
+                  }
+                },
+                topicPolicyConfig: {
+                  type: 'object',
+                  properties: {
+                    topicsConfig: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          name: { type: 'string' },
+                          definition: { type: 'string' },
+                          examples: {
+                            type: 'array',
+                            items: { type: 'string' }
+                          },
+                          type: { type: 'string', enum: ['DENY'] }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   };
+}
+
+/**
+ * Migrate scenario schema to support guardrails for existing scenarios
+ * @param {Object} scenarioData - The scenario data to migrate
+ * @returns {Object} Migrated scenario data with guardrails support
+ */
+export function migrateScenarioSchema(scenarioData) {
+  if (!scenarioData || typeof scenarioData !== 'object') {
+    return scenarioData;
+  }
+
+  // Create a copy to avoid mutating the original
+  const migratedScenario = { ...scenarioData };
+
+  // Add guardrails property if it doesn't exist
+  if (!migratedScenario.guardrails) {
+    migratedScenario.guardrails = {
+      enabled: false,
+      configs: []
+    };
+    return migratedScenario;
+  }
+
+  // If guardrails is not an object, reset it
+  if (typeof migratedScenario.guardrails !== 'object') {
+    migratedScenario.guardrails = {
+      enabled: false,
+      configs: []
+    };
+    return migratedScenario;
+  }
+
+  // Check if this is using the scenario format (has policy objects directly)
+  const hasScenarioFormat = !!(
+    migratedScenario.guardrails.topicPolicy ||
+    migratedScenario.guardrails.contentPolicy ||
+    migratedScenario.guardrails.wordPolicy ||
+    migratedScenario.guardrails.sensitiveInformationPolicy ||
+    migratedScenario.guardrails.contextualGroundingPolicy
+  );
+
+  // If using scenario format, preserve it and just ensure enabled is set
+  if (hasScenarioFormat) {
+    if (typeof migratedScenario.guardrails.enabled !== 'boolean') {
+      migratedScenario.guardrails.enabled = true; // Default to true for scenario format
+    }
+    return migratedScenario;
+  }
+
+  // For array format, ensure proper structure
+  if (typeof migratedScenario.guardrails.enabled !== 'boolean') {
+    migratedScenario.guardrails.enabled = false;
+  }
+
+  if (!Array.isArray(migratedScenario.guardrails.configs)) {
+    migratedScenario.guardrails.configs = [];
+  }
+
+  return migratedScenario;
+}
+
+/**
+ * Check if a scenario needs schema migration for guardrails support
+ * @param {Object} scenarioData - The scenario data to check
+ * @returns {boolean} True if migration is needed
+ */
+export function needsGuardrailsMigration(scenarioData) {
+  if (!scenarioData || typeof scenarioData !== 'object') {
+    return false;
+  }
+
+  // Check if guardrails property is missing or malformed
+  if (!scenarioData.guardrails) {
+    return true;
+  }
+
+  if (typeof scenarioData.guardrails !== 'object') {
+    return true;
+  }
+
+  // Check if this is using the scenario format (has policy objects directly)
+  const hasScenarioFormat = !!(
+    scenarioData.guardrails.topicPolicy ||
+    scenarioData.guardrails.contentPolicy ||
+    scenarioData.guardrails.wordPolicy ||
+    scenarioData.guardrails.sensitiveInformationPolicy ||
+    scenarioData.guardrails.contextualGroundingPolicy
+  );
+
+  // If using scenario format, no migration needed
+  if (hasScenarioFormat) {
+    return false;
+  }
+
+  // For array format, check if structure is correct
+  if (typeof scenarioData.guardrails.enabled !== 'boolean') {
+    return true;
+  }
+
+  if (!Array.isArray(scenarioData.guardrails.configs)) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -715,4 +996,45 @@ export function createScenarioTemplate(templateType, id, name) {
     default:
       return baseScenario;
   }
+}
+
+/**
+ * Check if a scenario uses the simplified guardrails format
+ * @param {Object} scenarioData - The scenario data to check
+ * @returns {boolean} True if using simplified format
+ */
+export function isSimplifiedGuardrailsFormat(scenarioData) {
+  if (!scenarioData?.guardrails) {
+    return false;
+  }
+
+  return !!(
+    scenarioData.guardrails.topicPolicy ||
+    scenarioData.guardrails.contentPolicy ||
+    scenarioData.guardrails.wordPolicy ||
+    scenarioData.guardrails.sensitiveInformationPolicy ||
+    scenarioData.guardrails.contextualGroundingPolicy ||
+    scenarioData.guardrails.blockedMessages
+  );
+}
+
+/**
+ * Check if a scenario uses the AWS guardrails format
+ * @param {Object} scenarioData - The scenario data to check
+ * @returns {boolean} True if using AWS format
+ */
+export function isAWSGuardrailsFormat(scenarioData) {
+  if (!scenarioData?.guardrails) {
+    return false;
+  }
+
+  return !!(
+    scenarioData.guardrails.contentPolicyConfig ||
+    scenarioData.guardrails.wordPolicyConfig ||
+    scenarioData.guardrails.sensitiveInformationPolicyConfig ||
+    scenarioData.guardrails.topicPolicyConfig ||
+    scenarioData.guardrails.contextualGroundingPolicyConfig ||
+    scenarioData.guardrails.blockedInputMessaging ||
+    scenarioData.guardrails.blockedOutputsMessaging
+  );
 }
