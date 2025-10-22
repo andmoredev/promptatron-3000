@@ -34,23 +34,13 @@ const PromptEditor = ({
   // Determine if we're in legacy single prompt mode
   const isLegacyMode = prompt !== undefined && onPromptChange && !onSystemPromptChange && !onUserPromptChange;
 
-  // Auto-resize textarea function
+  // Auto-resize textarea function (disabled for fixed height scrollable textareas)
   const autoResize = (textarea) => {
-    if (textarea) {
-      textarea.style.height = 'auto';
-      textarea.style.height = Math.max(128, textarea.scrollHeight) + 'px'; // Minimum height of 128px (h-32)
-    }
+    // Disabled - using fixed height with scrolling instead
+    return;
   };
 
-  // Auto-resize system prompt when content changes
-  useEffect(() => {
-    autoResize(systemPromptRef.current);
-  }, [systemPrompt]);
-
-  // Auto-resize user prompt when content changes
-  useEffect(() => {
-    autoResize(userPromptRef.current);
-  }, [userPrompt]);
+  // Auto-resize disabled - using fixed height with scrolling
 
   // Monitor for text wrapping issues in textareas
   useEffect(() => {
@@ -74,15 +64,11 @@ const PromptEditor = ({
   // Handle system prompt change
   const handleSystemPromptChange = (e) => {
     onSystemPromptChange?.(e.target.value);
-    // Small delay to ensure the value is updated before resizing
-    setTimeout(() => autoResize(e.target), 0);
   };
 
   // Handle user prompt change
   const handleUserPromptChange = (e) => {
     onUserPromptChange?.(e.target.value);
-    // Small delay to ensure the value is updated before resizing
-    setTimeout(() => autoResize(e.target), 0);
   };
 
   // Combine scenario-provided and dataset-specific system prompts
@@ -152,16 +138,12 @@ const PromptEditor = ({
   const handleSystemTemplateSelect = (template) => {
     if (onSystemPromptChange && typeof onSystemPromptChange === 'function') {
       onSystemPromptChange(template);
-      // Trigger auto-resize after template is applied
-      setTimeout(() => autoResize(systemPromptRef.current), 0);
     }
   };
 
   const handleUserTemplateSelect = (template) => {
     if (onUserPromptChange && typeof onUserPromptChange === 'function') {
       onUserPromptChange(template);
-      // Trigger auto-resize after template is applied
-      setTimeout(() => autoResize(userPromptRef.current), 0);
     }
   };
 
@@ -174,16 +156,12 @@ const PromptEditor = ({
   const handleClearSystem = () => {
     if (onSystemPromptChange && typeof onSystemPromptChange === 'function') {
       onSystemPromptChange('');
-      // Trigger auto-resize after clearing
-      setTimeout(() => autoResize(systemPromptRef.current), 0);
     }
   };
 
   const handleClearUser = () => {
     if (onUserPromptChange && typeof onUserPromptChange === 'function') {
       onUserPromptChange('');
-      // Trigger auto-resize after clearing
-      setTimeout(() => autoResize(userPromptRef.current), 0);
     }
   };
 
@@ -275,7 +253,7 @@ const PromptEditor = ({
               value={prompt || ''}
               onChange={(e) => onPromptChange && typeof onPromptChange === 'function' && onPromptChange(e.target.value)}
               placeholder="Enter your prompt here. The selected dataset will be automatically appended to your prompt when the test runs."
-              className={`input-field resize-both prompt-editor-textarea ${isExpanded ? 'h-64' : 'h-32'
+              className={`input-field resize-none prompt-editor-textarea overflow-y-auto ${isExpanded ? 'h-32' : 'h-20'
                 } ${validationError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
                 }`}
               style={{ whiteSpace: 'pre-wrap' }}
@@ -523,9 +501,9 @@ const PromptEditor = ({
                 value={systemPrompt}
                 onChange={handleSystemPromptChange}
                 placeholder="Optional: Define the AI's role and expertise. Leave empty for natural responses, or specify like: 'You are an expert data analyst specializing in fraud detection...'"
-                className={`input-field resize-both prompt-editor-textarea ${systemPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-blue-200 focus:border-blue-500 focus:ring-blue-500'
+                className={`input-field resize-none prompt-editor-textarea h-20 overflow-y-auto ${systemPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-blue-200 focus:border-blue-500 focus:ring-blue-500'
                   }`}
-                style={{ minHeight: '128px', whiteSpace: 'pre-wrap' }}
+                style={{ whiteSpace: 'pre-wrap' }}
               />
             </div>
             {systemPromptError && (
@@ -604,9 +582,9 @@ const PromptEditor = ({
                 value={userPrompt}
                 onChange={handleUserPromptChange}
                 placeholder="Enter your specific request or question. For example: 'Please analyze the following data for fraud patterns...'"
-                className={`input-field resize-both prompt-editor-textarea ${userPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-green-200 focus:border-green-500 focus:ring-green-500'
+                className={`input-field resize-none prompt-editor-textarea h-20 overflow-y-auto ${userPromptError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-green-200 focus:border-green-500 focus:ring-green-500'
                   }`}
-                style={{ minHeight: '128px', whiteSpace: 'pre-wrap' }}
+                style={{ whiteSpace: 'pre-wrap' }}
               />
             </div>
             {userPromptError && (
