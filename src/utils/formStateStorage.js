@@ -23,7 +23,8 @@ const DEFAULT_FORM_STATE = {
   determinismEnabled: true,
   streamingEnabled: true,
   useToolsEnabled: false,
-  maxIterations: 10
+  maxIterations: 10,
+  guardrailsEnabled: false
 };
 
 /**
@@ -47,7 +48,8 @@ export const saveFormState = (formState) => {
       determinismEnabled: formState.determinismEnabled !== undefined ? formState.determinismEnabled : true,
       streamingEnabled: formState.streamingEnabled !== undefined ? formState.streamingEnabled : true,
       useToolsEnabled: formState.useToolsEnabled !== undefined ? formState.useToolsEnabled : false,
-      maxIterations: formState.maxIterations || 10
+      maxIterations: formState.maxIterations || 10,
+      guardrailsEnabled: formState.guardrailsEnabled !== undefined ? formState.guardrailsEnabled : false
     };
 
     localStorage.setItem(FORM_STATE_KEY, JSON.stringify(stateToSave));

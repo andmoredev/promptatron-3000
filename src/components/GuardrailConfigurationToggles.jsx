@@ -6,6 +6,7 @@ import HelpTooltip from './HelpTooltip';
 const GuardrailConfigurationToggles = ({
   guardrailId,
   configurations,
+  configurationDetails,
   onToggle,
   isLoading,
   errors,
@@ -196,12 +197,6 @@ const GuardrailConfigurationToggles = ({
                     >
                       {info.name}
                     </h5>
-                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                      isActive ? 'bg-green-400' : 'bg-gray-300'
-                    }`}
-                    aria-hidden="true"
-                    title={isActive ? 'Active' : 'Inactive'}
-                    />
                     <HelpTooltip
                       content={info.description}
                       position="right"
@@ -213,11 +208,12 @@ const GuardrailConfigurationToggles = ({
                   >
                     {info.description}
                   </p>
-                  {config.lastUpdated && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      Last updated: {new Date(config.lastUpdated).toLocaleString()}
+                  {configurationDetails?.[configurationType] && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {configurationDetails[configurationType]}
                     </p>
                   )}
+                  {/* Simplified: omit last updated text */}
                 </div>
 
                 <div className="flex items-center space-x-2 ml-4">
@@ -274,14 +270,7 @@ const GuardrailConfigurationToggles = ({
                 </div>
               )}
 
-              {isActive && !hasError && (
-                <div className="mt-2 flex items-center space-x-1">
-                  <svg className="h-3 w-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span className="text-xs text-green-700 font-medium">Active</span>
-                </div>
-              )}
+              {/* Simplified: omit active/status indicator below each item */}
             </div>
           );
         })}
@@ -309,6 +298,7 @@ GuardrailConfigurationToggles.propTypes = {
     lastUpdated: PropTypes.string,
     hasConfiguration: PropTypes.bool.isRequired
   })),
+  configurationDetails: PropTypes.objectOf(PropTypes.string),
   onToggle: PropTypes.func.isRequired,
   isLoading: PropTypes.bool,
   errors: PropTypes.objectOf(PropTypes.string),
@@ -318,6 +308,7 @@ GuardrailConfigurationToggles.propTypes = {
 GuardrailConfigurationToggles.defaultProps = {
   guardrailId: null,
   configurations: {},
+  configurationDetails: {},
   isLoading: false,
   errors: {},
   loadingStates: {}

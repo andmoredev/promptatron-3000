@@ -1,0 +1,11 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "promptatron"
+resolve_s3 = true
+s3_prefix = "promptatron"
+region = "us-east-1"
+profile = "sandbox"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "CORSOrigin=\"*\""
+image_repositories = []

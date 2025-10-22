@@ -1,4 +1,6 @@
 import { guardrailService } from './guardrailService.js';
+import { scenarioService } from './scenarioService.js';
+import { GuardrailSchemaTranslator } from './guardrailSchemaTranslator.js';
 import { UpdateGuardrailCommand } from "@aws-sdk/client-bedrock";
 
 /**
@@ -25,6 +27,93 @@ export class GuardrailConfigurationManager {
   }
 
   /**
+   * Normalize a GetGuardrail response into UpdateGuardrail input shape.
+   * Ensures ...Config keys exist and map inner arrays to *Config names.
+   * @param {Object} cfg - Guardrail config from GetGuardrail
+   * @returns {Object} Normalized config suitable for UpdateGuardrailCommand
+   */
+  normalizeForUpdate(cfg) {
+    const out = JSON.parse(JSON.stringify(cfg || {}));
+
+    // Content policy
+    if (!out.contentPolicyConfig && out.contentPolicy) {
+      const src = out.contentPolicy;
+      out.contentPolicyConfig = {
+        ...(src.tierConfig ? { tierConfig: src.tierConfig } : (src.tier ? { tierConfig: src.tier } : {})),
+        filtersConfig: (src.filters || []).map(f => ({
+          type: f.type,
+          inputStrength: f.inputStrength,
+          outputStrength: f.outputStrength,
+          inputModalities: f.inputModalities,
+          outputModalities: f.outputModalities,
+          inputAction: f.inputAction,
+          outputAction: f.outputAction,
+          inputEnabled: f.inputEnabled,
+          outputEnabled: f.outputEnabled
+        }))
+      };
+    }
+
+    // Topic policy
+    if (!out.topicPolicyConfig && out.topicPolicy) {
+      const src = out.topicPolicy;
+      out.topicPolicyConfig = {
+        ...(src.tierConfig ? { tierConfig: src.tierConfig } : (src.tier ? { tierConfig: src.tier } : {})),
+        topicsConfig: (src.topics || []).map(t => ({
+          name: t.name,
+          definition: t.definition,
+          examples: t.examples,
+          type: t.type,
+          inputAction: t.inputAction,
+          outputAction: t.outputAction,
+          inputEnabled: t.inputEnabled,
+          outputEnabled: t.outputEnabled
+        }))
+      };
+    }
+
+    // Word policy
+    if (!out.wordPolicyConfig && out.wordPolicy) {
+      const src = out.wordPolicy;
+      const wordsConfig = src.words || [];
+      const managedWordListsConfig = src.managedWordLists || [];
+      const wp = {};
+      if (Array.isArray(wordsConfig) && wordsConfig.length > 0) wp.wordsConfig = wordsConfig;
+      if (Array.isArray(managedWordListsConfig) && managedWordListsConfig.length > 0) wp.managedWordListsConfig = managedWordListsConfig;
+      if (Object.keys(wp).length > 0) {
+        out.wordPolicyConfig = wp;
+      }
+    }
+
+    // Sensitive information policy
+    if (!out.sensitiveInformationPolicyConfig && out.sensitiveInformationPolicy) {
+      const src = out.sensitiveInformationPolicy;
+      const piiEntitiesConfig = src.piiEntities || [];
+      const regexesConfig = src.regexes || [];
+      const sp = {};
+      if (Array.isArray(piiEntitiesConfig) && piiEntitiesConfig.length > 0) sp.piiEntitiesConfig = piiEntitiesConfig;
+      if (Array.isArray(regexesConfig) && regexesConfig.length > 0) sp.regexesConfig = regexesConfig;
+      if (Object.keys(sp).length > 0) {
+        out.sensitiveInformationPolicyConfig = sp;
+      }
+    }
+
+    // Contextual grounding policy
+    if (!out.contextualGroundingPolicyConfig && out.contextualGroundingPolicy) {
+      const src = out.contextualGroundingPolicy;
+      out.contextualGroundingPolicyConfig = {
+        filtersConfig: (src.filters || []).map(fl => ({
+          type: fl.type,
+          threshold: fl.threshold,
+          action: fl.action,
+          enabled: fl.enabled
+        }))
+      };
+    }
+
+    return out;
+  }
+  /**
    * Toggle a specific configuration type for a guardrail
    * @param {string} guardrailId - The guardrail ID
    * @param {string} configurationType - The configuration type to toggle
@@ -42,27 +131,58 @@ export class GuardrailConfigurationManager {
     }
 
     try {
-      // Get current guardrail configuration
+      // Get current guardrail configuration and normalize it for UpdateGuardrail
       const currentConfig = await this.guardrailService.getGuardrail(guardrailId);
+      const normalizedConfig = this.normalizeForUpdate(currentConfig);
 
       // Update configuration state
-      const updatedConfig = this.updateConfigurationState(currentConfig, configurationType, isActive);
+      const updatedConfig = this.updateConfigurationState(normalizedConfig, configurationType, isActive);
 
-      // Call AWS UpdateGuardrailCommand to persist the change
-      const updateCommand = new UpdateGuardrailCommand({
+      // Build update payload including all remaining policies, removing only the unchecked one
+      const updatePayload = {
         guardrailIdentifier: guardrailId,
         name: updatedConfig.name,
         description: updatedConfig.description,
         blockedInputMessaging: updatedConfig.blockedInputMessaging,
-        blockedOutputsMessaging: updatedConfig.blockedOutputsMessaging,
-        ...(updatedConfig.contentPolicyConfig && { contentPolicyConfig: updatedConfig.contentPolicyConfig }),
-        ...(updatedConfig.wordPolicyConfig && { wordPolicyConfig: updatedConfig.wordPolicyConfig }),
-        ...(updatedConfig.sensitiveInformationPolicyConfig && { sensitiveInformationPolicyConfig: updatedConfig.sensitiveInformationPolicyConfig }),
-        ...(updatedConfig.topicPolicyConfig && { topicPolicyConfig: updatedConfig.topicPolicyConfig }),
-        ...(updatedConfig.contextualGroundingPolicyConfig && { contextualGroundingPolicyConfig: updatedConfig.contextualGroundingPolicyConfig }),
-        ...(updatedConfig.automatedReasoningPolicyConfig && { automatedReasoningPolicyConfig: updatedConfig.automatedReasoningPolicyConfig })
-      });
+        blockedOutputsMessaging: updatedConfig.blockedOutputsMessaging
+      };
 
+      if (updatedConfig.contentPolicyConfig?.filtersConfig?.length) {
+        // prune empty arrays if any sneaked in
+        const cp = JSON.parse(JSON.stringify(updatedConfig.contentPolicyConfig));
+        if (Array.isArray(cp.filtersConfig) && cp.filtersConfig.length === 0) delete cp.filtersConfig;
+        if (cp.filtersConfig) updatePayload.contentPolicyConfig = cp;
+      }
+
+      if (updatedConfig.wordPolicyConfig) {
+        const wp = JSON.parse(JSON.stringify(updatedConfig.wordPolicyConfig));
+        if (Array.isArray(wp.wordsConfig) && wp.wordsConfig.length === 0) delete wp.wordsConfig;
+        if (Array.isArray(wp.managedWordListsConfig) && wp.managedWordListsConfig.length === 0) delete wp.managedWordListsConfig;
+        if (wp.wordsConfig || wp.managedWordListsConfig) updatePayload.wordPolicyConfig = wp;
+      }
+
+      if (updatedConfig.sensitiveInformationPolicyConfig) {
+        const sp = JSON.parse(JSON.stringify(updatedConfig.sensitiveInformationPolicyConfig));
+        if (Array.isArray(sp.piiEntitiesConfig) && sp.piiEntitiesConfig.length === 0) delete sp.piiEntitiesConfig;
+        if (Array.isArray(sp.regexesConfig) && sp.regexesConfig.length === 0) delete sp.regexesConfig;
+        if (sp.piiEntitiesConfig || sp.regexesConfig) updatePayload.sensitiveInformationPolicyConfig = sp;
+      }
+
+      if (updatedConfig.topicPolicyConfig?.topicsConfig?.length) {
+        const tp = JSON.parse(JSON.stringify(updatedConfig.topicPolicyConfig));
+        if (Array.isArray(tp.topicsConfig) && tp.topicsConfig.length === 0) delete tp.topicsConfig;
+        if (tp.topicsConfig) updatePayload.topicPolicyConfig = tp;
+      }
+
+      if (updatedConfig.contextualGroundingPolicyConfig?.filtersConfig?.length) {
+        const gp = JSON.parse(JSON.stringify(updatedConfig.contextualGroundingPolicyConfig));
+        if (Array.isArray(gp.filtersConfig) && gp.filtersConfig.length === 0) delete gp.filtersConfig;
+        if (gp.filtersConfig) updatePayload.contextualGroundingPolicyConfig = gp;
+      }
+      if (updatedConfig.automatedReasoningPolicyConfig) updatePayload.automatedReasoningPolicyConfig = updatedConfig.automatedReasoningPolicyConfig;
+
+      // Persist the change
+      const updateCommand = new UpdateGuardrailCommand(updatePayload);
       const updateResponse = await this.guardrailService.managementClient.send(updateCommand);
 
       // Update in-memory state with the actual response
@@ -175,28 +295,42 @@ export class GuardrailConfigurationManager {
 
     switch (type) {
       case 'TOPIC_POLICY':
-        return config.topics && config.topics.length > 0 &&
-          config.topics.some(topic => topic.inputEnabled || topic.outputEnabled);
+        return (config.topics && config.topics.length > 0 &&
+          config.topics.some(topic => topic.inputEnabled || topic.outputEnabled)) ||
+          (config.topicsConfig && config.topicsConfig.length > 0 &&
+            config.topicsConfig.some(topic => topic.inputEnabled || topic.outputEnabled));
 
       case 'CONTENT_POLICY':
-        return config.filters && config.filters.length > 0 &&
-          config.filters.some(filter => filter.inputEnabled || filter.outputEnabled);
+        return (config.filters && config.filters.length > 0 &&
+          config.filters.some(filter => filter.inputEnabled || filter.outputEnabled)) ||
+          (config.filtersConfig && config.filtersConfig.length > 0 &&
+            config.filtersConfig.some(filter => filter.inputEnabled || filter.outputEnabled));
 
       case 'WORD_POLICY':
         return (config.words && config.words.length > 0 &&
           config.words.some(word => word.inputEnabled || word.outputEnabled)) ||
           (config.managedWordLists && config.managedWordLists.length > 0 &&
-            config.managedWordLists.some(list => list.inputEnabled || list.outputEnabled));
+            config.managedWordLists.some(list => list.inputEnabled || list.outputEnabled)) ||
+          (config.wordsConfig && config.wordsConfig.length > 0 &&
+            config.wordsConfig.some(word => word.inputEnabled || word.outputEnabled)) ||
+          (config.managedWordListsConfig && config.managedWordListsConfig.length > 0 &&
+            config.managedWordListsConfig.some(list => list.inputEnabled || list.outputEnabled));
 
       case 'SENSITIVE_INFORMATION':
         return (config.piiEntities && config.piiEntities.length > 0 &&
           config.piiEntities.some(entity => entity.inputEnabled || entity.outputEnabled)) ||
           (config.regexes && config.regexes.length > 0 &&
-            config.regexes.some(regex => regex.inputEnabled || regex.outputEnabled));
+            config.regexes.some(regex => regex.inputEnabled || regex.outputEnabled)) ||
+          (config.piiEntitiesConfig && config.piiEntitiesConfig.length > 0 &&
+            config.piiEntitiesConfig.some(entity => entity.inputEnabled || entity.outputEnabled)) ||
+          (config.regexesConfig && config.regexesConfig.length > 0 &&
+            config.regexesConfig.some(regex => regex.inputEnabled || regex.outputEnabled));
 
       case 'CONTEXTUAL_GROUNDING':
-        return config.filters && config.filters.length > 0 &&
-          config.filters.some(filter => filter.enabled);
+        return (config.filters && config.filters.length > 0 &&
+          config.filters.some(filter => filter.enabled)) ||
+          (config.filtersConfig && config.filtersConfig.length > 0 &&
+            config.filtersConfig.some(filter => filter.enabled));
 
       case 'AUTOMATED_REASONING':
         return config && config.policies && config.policies.length > 0;
@@ -217,19 +351,35 @@ export class GuardrailConfigurationManager {
     const configKey = this.configurationTypes[configurationType];
     const updatedConfig = JSON.parse(JSON.stringify(currentConfig)); // Deep clone
 
-    if (!updatedConfig[configKey]) {
-      // If configuration doesn't exist and we're trying to activate, skip
+    if (!updatedConfig[configKey] && !updatedConfig[`${configKey}Config`]) {
       if (isActive) {
-        throw new Error(`Cannot activate ${configurationType}: configuration not found`);
+        const rebuilt = this.rebuildPolicyFromScenario(updatedConfig, configurationType);
+        if (!rebuilt) {
+          throw new Error(`Cannot activate ${configurationType}: configuration template not found in scenario`);
+        }
+      } else {
+        return updatedConfig;
       }
+    }
+
+    // If deactivating, remove this configuration from the payload entirely
+    if (!isActive) {
+      delete updatedConfig[configKey];
+      delete updatedConfig[`${configKey}Config`];
       return updatedConfig;
     }
 
     // Update the enabled state based on configuration type
     switch (configurationType) {
       case 'TOPIC_POLICY':
-        if (updatedConfig[configKey].topics) {
+        if (updatedConfig[configKey]?.topics) {
           for (const topic of updatedConfig[configKey].topics) {
+            topic.inputEnabled = isActive;
+            topic.outputEnabled = isActive;
+          }
+        }
+        if (updatedConfig[`${configKey}Config`]?.topicsConfig) {
+          for (const topic of updatedConfig[`${configKey}Config`].topicsConfig) {
             topic.inputEnabled = isActive;
             topic.outputEnabled = isActive;
           }
@@ -237,8 +387,14 @@ export class GuardrailConfigurationManager {
         break;
 
       case 'CONTENT_POLICY':
-        if (updatedConfig[configKey].filters) {
+        if (updatedConfig[configKey]?.filters) {
           for (const filter of updatedConfig[configKey].filters) {
+            filter.inputEnabled = isActive;
+            filter.outputEnabled = isActive;
+          }
+        }
+        if (updatedConfig[`${configKey}Config`]?.filtersConfig) {
+          for (const filter of updatedConfig[`${configKey}Config`].filtersConfig) {
             filter.inputEnabled = isActive;
             filter.outputEnabled = isActive;
           }
@@ -246,53 +402,127 @@ export class GuardrailConfigurationManager {
         break;
 
       case 'WORD_POLICY':
-        if (updatedConfig[configKey].words) {
+        if (updatedConfig[configKey]?.words) {
           for (const word of updatedConfig[configKey].words) {
             word.inputEnabled = isActive;
             word.outputEnabled = isActive;
           }
         }
-        if (updatedConfig[configKey].managedWordLists) {
+        if (updatedConfig[configKey]?.managedWordLists) {
           for (const list of updatedConfig[configKey].managedWordLists) {
             list.inputEnabled = isActive;
             list.outputEnabled = isActive;
           }
         }
+        if (updatedConfig[`${configKey}Config`]?.managedWordListsConfig) {
+          for (const list of updatedConfig[`${configKey}Config`].managedWordListsConfig) {
+            list.inputEnabled = isActive;
+            list.outputEnabled = isActive;
+          }
+        }
+        if (updatedConfig[`${configKey}Config`]?.wordsConfig) {
+          for (const word of updatedConfig[`${configKey}Config`].wordsConfig) {
+            word.inputEnabled = isActive;
+            word.outputEnabled = isActive;
+          }
+        }
         break;
 
       case 'SENSITIVE_INFORMATION':
-        if (updatedConfig[configKey].piiEntities) {
+        if (updatedConfig[configKey]?.piiEntities) {
           for (const entity of updatedConfig[configKey].piiEntities) {
             entity.inputEnabled = isActive;
             entity.outputEnabled = isActive;
           }
         }
-        if (updatedConfig[configKey].regexes) {
+        if (updatedConfig[configKey]?.regexes) {
           for (const regex of updatedConfig[configKey].regexes) {
             regex.inputEnabled = isActive;
             regex.outputEnabled = isActive;
           }
         }
+        if (updatedConfig[`${configKey}Config`]?.regexesConfig) {
+          for (const regex of updatedConfig[`${configKey}Config`].regexesConfig) {
+            regex.inputEnabled = isActive;
+            regex.outputEnabled = isActive;
+          }
+        }
+        if (updatedConfig[`${configKey}Config`]?.piiEntitiesConfig) {
+          for (const entity of updatedConfig[`${configKey}Config`].piiEntitiesConfig) {
+            entity.inputEnabled = isActive;
+            entity.outputEnabled = isActive;
+          }
+        }
         break;
 
       case 'CONTEXTUAL_GROUNDING':
-        if (updatedConfig[configKey].filters) {
+        if (updatedConfig[configKey]?.filters) {
           for (const filter of updatedConfig[configKey].filters) {
+            filter.enabled = isActive;
+          }
+        }
+        if (updatedConfig[`${configKey}Config`]?.filtersConfig) {
+          for (const filter of updatedConfig[`${configKey}Config`].filtersConfig) {
             filter.enabled = isActive;
           }
         }
         break;
 
       case 'AUTOMATED_REASONING':
-        // For automated reasoning, we can't easily toggle without removing policies
-        // This might need special handling based on requirements
-        if (!isActive && updatedConfig[configKey].policies) {
-          updatedConfig[configKey] = { policies: [] };
-        }
+        // Keep as-is for activation; removal handled by early return
         break;
     }
 
     return updatedConfig;
+  }
+
+  /**
+   * Rebuild a missing policy from the scenario's simplified guardrail config
+   * and attach it to the provided normalized guardrail config.
+   * @param {Object} normalizedConfig - The current normalized guardrail config (includes name)
+   * @param {string} configurationType - One of configurationTypes keys
+   * @returns {boolean} true if rebuilt and attached, false otherwise
+   */
+  rebuildPolicyFromScenario(normalizedConfig, configurationType) {
+    try {
+      const guardrailName = normalizedConfig.name || '';
+      const scenarioId = guardrailName.endsWith('-guardrail')
+        ? guardrailName.slice(0, -'-guardrail'.length)
+        : guardrailName;
+
+      const scenario = scenarioService.getScenario(scenarioId);
+      if (!scenario || !scenario.guardrails) {
+        return false;
+      }
+
+      // Build AWS-format config from simplified scenario guardrails
+      const awsFromScenario = GuardrailSchemaTranslator.translateToAWSFormat(
+        scenario.guardrails,
+        scenarioId
+      );
+
+      const typeToKey = {
+        TOPIC_POLICY: 'topicPolicyConfig',
+        CONTENT_POLICY: 'contentPolicyConfig',
+        WORD_POLICY: 'wordPolicyConfig',
+        SENSITIVE_INFORMATION: 'sensitiveInformationPolicyConfig',
+        CONTEXTUAL_GROUNDING: 'contextualGroundingPolicyConfig',
+        AUTOMATED_REASONING: 'automatedReasoningPolicyConfig'
+      };
+
+      const key = typeToKey[configurationType];
+      const rebuiltPolicy = awsFromScenario[key];
+      if (!rebuiltPolicy) {
+        return false;
+      }
+
+      // Attach rebuilt policy into normalized config using *Config keys
+      normalizedConfig[key] = rebuiltPolicy;
+      return true;
+    } catch (e) {
+      console.warn('Failed to rebuild policy from scenario:', e);
+      return false;
+    }
   }
 
   /**

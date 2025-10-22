@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import HelpTooltip from "./HelpTooltip";
 import GuardrailConfigurationToggles from "./GuardrailConfigurationToggles";
+import GuardrailEditModal from "./GuardrailEditModal";
 import LoadingSpinner from "./LoadingSpinner";
 import { guardrailConfigurationManager } from "../services/guardrailConfigurationManager.js";
 
@@ -17,10 +18,15 @@ const GuardrailsSection = ({
 }) => {
   // State for individual configuration toggles
   const [configurationStates, setConfigurationStates] = useState(null);
+  const [configurationDetails, setConfigurationDetails] = useState(null);
   const [isLoadingConfigurations, setIsLoadingConfigurations] = useState(false);
   const [configurationErrors, setConfigurationErrors] = useState({});
   const [loadingStates, setLoadingStates] = useState({});
   const [guardrailId, setGuardrailId] = useState(null);
+
+  // State for edit modal
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editModalGuardrailId, setEditModalGuardrailId] = useState(null);
 
   // Extract guardrail ID from the scenario guardrail map (real AWS guardrail)
   useEffect(() => {
@@ -67,6 +73,15 @@ const GuardrailsSection = ({
         : await guardrailConfigurationManager.getConfigurationStates(guardrailId);
 
       setConfigurationStates(states);
+
+      // Also fetch detailed config to summarize policy specifics
+      try {
+        const detailed = await guardrailConfigurationManager.guardrailService.getGuardrail(guardrailId);
+        setConfigurationDetails(extractConfigurationDetails(detailed));
+      } catch (e) {
+        // If details fail to load, keep UI functional with states only
+        setConfigurationDetails(null);
+      }
     } catch (error) {
       console.error("Failed to load configuration states:", error);
       setConfigurationErrors({
@@ -77,8 +92,89 @@ const GuardrailsSection = ({
     }
   };
 
+  // Build concise summaries for each configuration from guardrail details
+  const extractConfigurationDetails = (cfg) => {
+    if (!cfg) return null;
+
+    const pick = (obj, keyBase) => obj?.[`${keyBase}Config`] || obj?.[keyBase] || null;
+
+    const asArray = (v) => (Array.isArray(v) ? v : []);
+    const countEnabled = (arr, pred) => asArray(arr).filter(pred).length;
+
+    const content = pick(cfg, 'contentPolicy');
+    const topic = pick(cfg, 'topicPolicy');
+    const word = pick(cfg, 'wordPolicy');
+    const sensitive = pick(cfg, 'sensitiveInformationPolicy');
+    const grounding = pick(cfg, 'contextualGroundingPolicy');
+    const reasoning = pick(cfg, 'automatedReasoningPolicy');
+
+    const contentFilters = content?.filtersConfig || content?.filters || [];
+    const contentTypes = [...new Set(asArray(contentFilters).map(f => f.type).filter(Boolean))];
+    const contentInputEnabled = countEnabled(contentFilters, f => !!(f.inputEnabled || f.inputStrength || f.inputAction));
+    const contentOutputEnabled = countEnabled(contentFilters, f => !!(f.outputEnabled || f.outputStrength || f.outputAction));
+
+    const topics = topic?.topicsConfig || topic?.topics || [];
+    const topicsEnabled = countEnabled(topics, t => !!(t.inputEnabled || t.outputEnabled));
+
+    const words = word?.wordsConfig || word?.words || [];
+    const managedLists = word?.managedWordListsConfig || word?.managedWordLists || [];
+    const wordsEnabled = countEnabled(words, w => !!(w.inputEnabled || w.outputEnabled));
+    const listsEnabled = countEnabled(managedLists, l => !!(l.inputEnabled || l.outputEnabled));
+
+    const piiEntities = sensitive?.piiEntitiesConfig || sensitive?.piiEntities || [];
+    const regexes = sensitive?.regexesConfig || sensitive?.regexes || [];
+    const piiEnabled = countEnabled(piiEntities, e => !!(e.inputEnabled || e.outputEnabled));
+    const regexEnabled = countEnabled(regexes, r => !!(r.inputEnabled || r.outputEnabled));
+
+    const groundingFilters = grounding?.filtersConfig || grounding?.filters || [];
+    const groundingEnabled = countEnabled(groundingFilters, g => !!g.enabled);
+
+    const reasoningPolicies = reasoning?.policies || [];
+
+    return {
+      CONTENT_POLICY: contentFilters.length
+        ? `Filters: ${contentTypes.slice(0, 3).join(', ')}${contentTypes.length > 3 ? ` +${contentTypes.length - 3}` : ''}. Input ${contentInputEnabled}, Output ${contentOutputEnabled}.`
+        : null,
+      TOPIC_POLICY: topics.length
+        ? `Topics: ${topicsEnabled} enabled of ${topics.length}.`
+        : null,
+      WORD_POLICY: (words.length || managedLists.length)
+        ? `Words: ${wordsEnabled}/${words.length}; Managed lists: ${listsEnabled}/${managedLists.length}.`
+        : null,
+      SENSITIVE_INFORMATION: (piiEntities.length || regexes.length)
+        ? `PII entities: ${piiEnabled}/${piiEntities.length}; Regexes: ${regexEnabled}/${regexes.length}.`
+        : null,
+      CONTEXTUAL_GROUNDING: groundingFilters.length
+        ? `Grounding filters: ${groundingEnabled}/${groundingFilters.length} enabled.`
+        : null,
+      AUTOMATED_REASONING: reasoningPolicies.length
+        ? `Policies: ${reasoningPolicies.length}.`
+        : null
+    };
+  };
+
   const handleRefreshStates = () => {
     loadConfigurationStates(true);
+  };
+
+  const handleEditGuardrail = () => {
+    if (guardrailId) {
+      setEditModalGuardrailId(guardrailId);
+      setIsEditModalOpen(true);
+    }
+  };
+
+  const handleCloseEditModal = () => {
+    setIsEditModalOpen(false);
+    setEditModalGuardrailId(null);
+  };
+
+  const handleSaveEditModal = (updatedData) => {
+    // Refresh configuration states after successful save
+    loadConfigurationStates(true);
+
+    // Close the modal
+    handleCloseEditModal();
   };
 
   const handleConfigurationToggle = async (configurationType, isActive) => {
@@ -218,7 +314,7 @@ const GuardrailsSection = ({
     return { count: 0, types: [] };
   };
 
-  const { count: guardrailCount, types: guardrailTypes } = getGuardrailInfo();
+  const { count: guardrailCount } = getGuardrailInfo();
   const enabledGuardrails = isEnabled ? guardrailCount : 0;
 
   return (
@@ -385,48 +481,6 @@ const GuardrailsSection = ({
           {/* Guardrails Configuration Display */}
           {guardrailCount > 0 && (
             <div className="space-y-3">
-              {/* Guardrails Summary */}
-              <div className="bg-white border border-gray-200 rounded-lg p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-sm font-medium text-gray-900">
-                    {guardrailCount} guardrail{guardrailCount !== 1 ? "s" : ""}{" "}
-                    configured
-                  </h4>
-                  <div className="text-xs text-gray-500">
-                    {guardrailTypes.join(", ")} filtering
-                  </div>
-                </div>
-
-                {/* Summary View */}
-                <div className="grid grid-cols-2 gap-2">
-                  {guardrails.configs
-                    ? // Array format
-                      guardrails.configs.map((config, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center space-x-2"
-                        >
-                          <div className="w-1.5 h-1.5 bg-primary-500 rounded-full"></div>
-                          <span className="text-xs text-gray-700 truncate">
-                            {config.name || `Guardrail ${index + 1}`}
-                          </span>
-                        </div>
-                      ))
-                    : // Scenario format
-                      guardrailTypes.map((type, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center space-x-2"
-                        >
-                          <div className="w-1.5 h-1.5 bg-primary-500 rounded-full"></div>
-                          <span className="text-xs text-gray-700 truncate">
-                            {type} Policy
-                          </span>
-                        </div>
-                      ))}
-                </div>
-              </div>
-
               {/* Individual Configuration Toggles */}
               {isEnabled && (
                 <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -502,6 +556,17 @@ const GuardrailsSection = ({
                         </div>
                         <div className="flex items-center space-x-2">
                           <button
+                            onClick={handleEditGuardrail}
+                            disabled={isLoadingConfigurations}
+                            className="inline-flex items-center text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                            title="Edit guardrail settings"
+                            aria-label="Edit guardrail settings"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
                             onClick={handleRefreshStates}
                             disabled={isLoadingConfigurations}
                             className="text-xs text-gray-500 hover:text-gray-700 font-medium disabled:opacity-50"
@@ -516,6 +581,7 @@ const GuardrailsSection = ({
                       <GuardrailConfigurationToggles
                         guardrailId={guardrailId}
                         configurations={configurationStates.configurations}
+                        configurationDetails={configurationDetails}
                         onToggle={handleConfigurationToggle}
                         isLoading={isLoadingConfigurations}
                         errors={configurationErrors}
@@ -535,6 +601,14 @@ const GuardrailsSection = ({
           )}
         </div>
       </div>
+
+      {/* Edit Modal */}
+      <GuardrailEditModal
+        isOpen={isEditModalOpen}
+        guardrailId={editModalGuardrailId}
+        onClose={handleCloseEditModal}
+        onSave={handleSaveEditModal}
+      />
     </div>
   );
 };

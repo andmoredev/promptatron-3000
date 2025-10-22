@@ -186,7 +186,7 @@ function App() {
   const [selectedUserPromptId, setSelectedUserPromptId] = useState('');
 
   // Guardrail state
-  const [guardrailsEnabled, setGuardrailsEnabled] = useState(false);
+  const [guardrailsEnabled, setGuardrailsEnabled] = useState(savedFormState.guardrailsEnabled);
   const [guardrailsInitialized, setGuardrailsInitialized] = useState(false);
   const [guardrailsError, setGuardrailsError] = useState(null);
   const [scenarioGuardrailMap, setScenarioGuardrailMap] = useState(new Map());
@@ -948,6 +948,7 @@ function App() {
       streamingEnabled,
       useToolsEnabled,
       maxIterations,
+      guardrailsEnabled,
     };
 
     // Only save if we have some meaningful data (avoid saving empty initial state)
@@ -964,6 +965,7 @@ function App() {
     streamingEnabled,
     useToolsEnabled,
     maxIterations,
+    guardrailsEnabled,
     debouncedSave,
   ]);
 
