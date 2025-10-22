@@ -2602,6 +2602,7 @@ function App() {
                           onToggleCollapse={() => toggleSectionCollapse('guardrails')}
                           validationErrors={validationErrors.guardrails ? [validationErrors.guardrails] : []}
                           scenarioName={selectedScenario}
+                          scenarioGuardrailMap={scenarioGuardrailMap}
                         />
                       )}
 

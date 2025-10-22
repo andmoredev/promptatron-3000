@@ -7,3 +7,5 @@ export { toolExecutionService, ToolExecutionService } from './toolExecutionServi
 export { workflowTrackingService, WorkflowTrackingService } from './workflowTrackingService.js';
 export { workflowDataPersistenceService, WorkflowDataPersistenceService } from './workflowDataPersistenceService.js';
 export { scenarioService, ScenarioService } from './scenarioService.js';
+export { guardrailService, GuardrailService } from './guardrailService.js';
+export { guardrailConfigurationManager, GuardrailConfigurationManager } from './guardrailConfigurationManager.js';
