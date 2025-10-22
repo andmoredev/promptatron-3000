@@ -1,0 +1,314 @@
+openapi: 3.0.0
+info:
+  title: Promptatron 3000 API
+  version: 1.0.0
+
+x-amazon-apigateway-request-validators:
+  Validate All:
+    validateRequestParameters: true
+    validateRequestBody: true
+x-amazon-apigateway-gateway-responses:
+  BAD_REQUEST_BODY:
+    statusCode: 400
+    responseTemplates:
+      application/json: '{ "message": "$context.error.validationErrorString" }'
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Origin:
+        Fn::Sub: "'${CORSOrigin}'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+  DEFAULT_4XX:
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Origin:
+        Fn::Sub: "'${CORSOrigin}'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+  DEFAULT_5XX:
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Origin:
+        Fn::Sub: "'${CORSOrigin}'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+
+tags:
+  - name: Scenarios
+  - name: Prompts
+paths:
+  /scenarios:
+    get:
+      summary: List scenarios
+      tags: [Scenarios]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/NextToken'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScenarioSummary'
+                  count:
+                    type: integer
+                  nextToken:
+                    type: string
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListScenariosFunction.Arn}/invocations
+        httpMethod: POST
+        type: aws_proxy
+    post:
+      summary: Create a scenario
+      tags: [Scenarios]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScenarioCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scenario'
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateScenarioFunction.Arn}/invocations
+        httpMethod: POST
+        type: aws_proxy
+  /scenarios/{scenarioId}:
+    parameters:
+      - $ref: '#/components/parameters/ScenarioId'
+    get:
+      summary: Get scenario by id
+      tags: [Scenarios]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scenario'
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetScenarioFunction.Arn}/invocations
+        httpMethod: POST
+        type: aws_proxy
+
+    delete:
+      summary: Delete scenario by id
+      tags: [Scenarios]
+      responses:
+        '204':
+          description: No Content
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DeleteScenarioFunction.Arn}/invocations
+        httpMethod: POST
+        type: aws_proxy
+
+  /scenarios/{scenarioId}/prompts:
+    parameters:
+      - $ref: '#/components/parameters/ScenarioId'
+    get:
+      summary: List prompts for a scenario
+      tags: [Prompts]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/NextToken'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PromptItem'
+                  count:
+                    type: integer
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListPromptsFunction.Arn}/invocations
+        httpMethod: POST
+        type: aws_proxy
+    post:
+      summary: Create a prompt for a scenario
+      tags: [Prompts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdResponse'
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreatePromptFunction.Arn}/invocations
+        httpMethod: POST
+        type: aws_proxy
+
+  /scenarios/{scenarioId}/prompts/{promptId}:
+    parameters:
+      - $ref: '#/components/parameters/ScenarioId'
+      - in: path
+        name: promptId
+        required: true
+        schema:
+          type: string
+    delete:
+      summary: Delete a prompt
+      tags: [Prompts]
+      responses:
+        '204':
+          description: No Content
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DeletePromptFunction.Arn}/invocations
+        httpMethod: POST
+        type: aws_proxy
+    put:
+      summary: Update a prompt
+      tags: [Prompts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptUpdateRequest'
+      responses:
+        '204':
+          description: No Content
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UpdatePromptFunction.Arn}/invocations
+        httpMethod: POST
+        type: aws_proxy
+
+components:
+  schemas:
+    ScenarioSummary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+    Scenario:
+      allOf:
+        - $ref: '#/components/schemas/ScenarioSummary'
+        - type: object
+          properties:
+            prompts:
+              type: array
+              items:
+                $ref: '#/components/schemas/Prompt'
+    ScenarioCreateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        prompts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromptInput'
+          maxItems: 20
+    ScenarioUpdateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        prompts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromptInput'
+          maxItems: 20
+    Prompt:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [SYSTEM, USER]
+        name: { type: string }
+        content: { type: string }
+      required: [type, name, content]
+      additionalProperties: false
+    PromptInput:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [SYSTEM, USER]
+        name: { type: string }
+        content: { type: string }
+      required: [type, name, content]
+      additionalProperties: false
+    PromptItem:
+      allOf:
+        - $ref: '#/components/schemas/Prompt'
+        - type: object
+          properties:
+            id: { type: string }
+          required: [id]
+    PromptUpdateRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [SYSTEM, USER]
+        name: { type: string }
+        content: { type: string }
+      additionalProperties: false
+    IdResponse:
+      type: object
+      properties:
+        id: { type: string }
+      required: [id]
+  parameters:
+    ScenarioId:
+      in: path
+      name: scenarioId
+      schema:
+        type: string
+      required: true
+    Limit:
+      in: query
+      name: limit
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 20
+      description: Page size (1-20)
+    NextToken:
+      in: query
+      name: nextToken
+      schema:
+        type: string
+      description: Pagination token

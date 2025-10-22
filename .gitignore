@@ -1,3 +1,5 @@
+samconfig.toml
+.aws-sam/
 # Dependencies
 node_modules/
 npm-debug.log*

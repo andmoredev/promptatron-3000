@@ -2,26 +2,6 @@
   "id": "shipping-logistics",
   "name": "Shipping Logistics",
   "description": "Enterprise-grade shipping logistics triage system for handling delivery exceptions and optimizing customer service. Implements safety-first decision framework with proper escalation paths and audit trails.",
-  "workflow": {
-    "decision_framework": "Safety → Compliance → SLA → Cost optimization",
-    "tool_usage_order": [
-      "1. Overview (optional): listOrders to identify orders needing attention",
-      "2. Information Gathering: getCarrierStatus, getPackageContents, getCustomerTier, getSLA",
-      "3. Cost Analysis: getExpediteQuote (if considering expedited shipping)",
-      "4. Action Execution: expediteShipment, holdForPickup, escalateToManager, or noActionRequired"
-    ],
-    "safety_rules": [
-      "Never expedite hazardous materials - always use holdForPickup",
-      "Perishable goods with temperature control issues require immediate action",
-      "VIP customers receive priority handling but safety rules still apply"
-    ],
-    "best_practices": [
-      "Gather only the information needed for decision making",
-      "Always explain reasoning step-by-step",
-      "Use idempotency keys to prevent duplicate operations",
-      "Document decisions with clear justification"
-    ]
-  },
   "datasets": [],
   "toolConf": {
     "enabled": true,
