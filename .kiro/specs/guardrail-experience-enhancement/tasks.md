@@ -1,6 +1,7 @@
 # Implementation Plan
 
 - [x] 1. Enhance GuardrailsSection with Individual Configuration Toggles
+
   - Extend existing GuardrailsSection component to display individual configuration types
   - Add toggle switches for each guardrail configuration (Topic Policy, Content Policy, Word Policy, Sensitive Information, Contextual Grounding, Automated Reasoning)
   - Integrate with existing GuardrailConfigurationManager service for toggle operations
@@ -8,7 +9,8 @@
   - Add loading indicators during API operations
   - _Requirements: 1.1, 1.2, 1.3, 1.7, 1.8_
 
-- [ ] 2. Create GuardrailConfigurationToggles Component
+- [x] 2. Create GuardrailConfigurationToggles Component
+
   - Build dedicated component for rendering individual configuration toggle controls
   - Implement proper ARIA labels and accessibility features for toggle switches
   - Add visual states for active/inactive configurations with clear indicators
