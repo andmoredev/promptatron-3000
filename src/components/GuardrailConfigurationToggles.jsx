@@ -77,10 +77,10 @@ const GuardrailConfigurationToggles = ({
     }
   };
 
-  console.log('[GuardrailConfigurationToggles] Received configurations:', configurations);
+
 
   if (!configurations) {
-    console.log('[GuardrailConfigurationToggles] No configurations provided');
+
     return (
       <div className="text-center py-4 text-gray-500">
         <p className="text-sm">No guardrail configurations available</p>
@@ -106,15 +106,10 @@ const GuardrailConfigurationToggles = ({
           const isActive = localStates[configurationType] ?? config.isActive;
           const hasConfiguration = config.hasConfiguration;
 
-          console.log(`[GuardrailConfigurationToggles] Processing ${configurationType}:`, {
-            info: !!info,
-            hasConfiguration,
-            config,
-            willRender: !!(info && hasConfiguration)
-          });
+
 
           if (!info || !hasConfiguration) {
-            console.log(`[GuardrailConfigurationToggles] Skipping ${configurationType} - info: ${!!info}, hasConfiguration: ${hasConfiguration}`);
+
             return null;
           }
 

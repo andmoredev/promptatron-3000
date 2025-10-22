@@ -14,12 +14,12 @@ export class GuardrailConfigurationManager {
 
     // Configuration type mappings
     this.configurationTypes = {
-      TOPIC_POLICY: 'topicPolicyConfig',
-      CONTENT_POLICY: 'contentPolicyConfig',
-      WORD_POLICY: 'wordPolicyConfig',
-      SENSITIVE_INFORMATION: 'sensitiveInformationPolicyConfig',
-      CONTEXTUAL_GROUNDING: 'contextualGroundingPolicyConfig',
-      AUTOMATED_REASONING: 'automatedReasoningPolicyConfig'
+      TOPIC_POLICY: 'topicPolicy',
+      CONTENT_POLICY: 'contentPolicy',
+      WORD_POLICY: 'wordPolicy',
+      SENSITIVE_INFORMATION: 'sensitiveInformationPolicy',
+      CONTEXTUAL_GROUNDING: 'contextualGroundingPolicy',
+      AUTOMATED_REASONING: 'automatedReasoningPolicy'
     };
   }
 
@@ -117,8 +117,6 @@ export class GuardrailConfigurationManager {
    * @returns {Object} Configuration states
    */
   extractConfigurationStates(guardrailConfig) {
-    console.log('[GuardrailConfigurationManager] Extracting states from guardrail config:', guardrailConfig);
-
     const states = {
       guardrailId: guardrailConfig.guardrailId,
       configurations: {},
@@ -128,15 +126,14 @@ export class GuardrailConfigurationManager {
     // Check each configuration type
     Object.entries(this.configurationTypes).forEach(([type, configKey]) => {
       const config = guardrailConfig[configKey];
-      console.log(`[GuardrailConfigurationManager] Checking ${type} (${configKey}):`, config);
+      const isActive = this.isConfigurationActive(config, type);
+      const hasConfiguration = !!config;
 
       states.configurations[type] = {
-        isActive: this.isConfigurationActive(config, type),
+        isActive: isActive,
         lastUpdated: guardrailConfig.updatedAt || new Date().toISOString(),
-        hasConfiguration: !!config
+        hasConfiguration: hasConfiguration
       };
-
-      console.log(`[GuardrailConfigurationManager] ${type} result:`, states.configurations[type]);
     });
 
     return states;
@@ -153,31 +150,31 @@ export class GuardrailConfigurationManager {
 
     switch (type) {
       case 'TOPIC_POLICY':
-        return config.topicsConfig && config.topicsConfig.length > 0 &&
-          config.topicsConfig.some(topic => topic.inputEnabled || topic.outputEnabled);
+        return config.topics && config.topics.length > 0 &&
+          config.topics.some(topic => topic.inputEnabled || topic.outputEnabled);
 
       case 'CONTENT_POLICY':
-        return config.filtersConfig && config.filtersConfig.length > 0 &&
-          config.filtersConfig.some(filter => filter.inputEnabled || filter.outputEnabled);
+        return config.filters && config.filters.length > 0 &&
+          config.filters.some(filter => filter.inputEnabled || filter.outputEnabled);
 
       case 'WORD_POLICY':
-        return (config.wordsConfig && config.wordsConfig.length > 0 &&
-          config.wordsConfig.some(word => word.inputEnabled || word.outputEnabled)) ||
-          (config.managedWordListsConfig && config.managedWordListsConfig.length > 0 &&
-            config.managedWordListsConfig.some(list => list.inputEnabled || list.outputEnabled));
+        return (config.words && config.words.length > 0 &&
+          config.words.some(word => word.inputEnabled || word.outputEnabled)) ||
+          (config.managedWordLists && config.managedWordLists.length > 0 &&
+            config.managedWordLists.some(list => list.inputEnabled || list.outputEnabled));
 
       case 'SENSITIVE_INFORMATION':
-        return (config.piiEntitiesConfig && config.piiEntitiesConfig.length > 0 &&
-          config.piiEntitiesConfig.some(entity => entity.inputEnabled || entity.outputEnabled)) ||
-          (config.regexesConfig && config.regexesConfig.length > 0 &&
-            config.regexesConfig.some(regex => regex.inputEnabled || regex.outputEnabled));
+        return (config.piiEntities && config.piiEntities.length > 0 &&
+          config.piiEntities.some(entity => entity.inputEnabled || entity.outputEnabled)) ||
+          (config.regexes && config.regexes.length > 0 &&
+            config.regexes.some(regex => regex.inputEnabled || regex.outputEnabled));
 
       case 'CONTEXTUAL_GROUNDING':
-        return config.filtersConfig && config.filtersConfig.length > 0 &&
-          config.filtersConfig.some(filter => filter.enabled);
+        return config.filters && config.filters.length > 0 &&
+          config.filters.some(filter => filter.enabled);
 
       case 'AUTOMATED_REASONING':
-        return config.policies && config.policies.length > 0;
+        return config && config.policies && config.policies.length > 0;
 
       default:
         return false;

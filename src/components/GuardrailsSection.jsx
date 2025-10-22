@@ -24,61 +24,42 @@ const GuardrailsSection = ({
 
   // Extract guardrail ID from the scenario guardrail map (real AWS guardrail)
   useEffect(() => {
-    console.log("[GuardrailsSection] Checking for guardrail ID:", {
-      scenarioGuardrailMap: scenarioGuardrailMap,
-      scenarioName: scenarioName,
-      mapSize: scenarioGuardrailMap?.size,
-    });
+
 
     if (scenarioGuardrailMap && scenarioName) {
       const guardrailInfo = scenarioGuardrailMap.get(scenarioName);
-      console.log(
-        "[GuardrailsSection] Guardrail info for scenario:",
-        guardrailInfo
-      );
+
 
       if (guardrailInfo && guardrailInfo.id) {
-        console.log(
-          "[GuardrailsSection] Setting guardrail ID:",
-          guardrailInfo.id
-        );
+
         setGuardrailId(guardrailInfo.id);
       } else {
-        console.log("[GuardrailsSection] No guardrail ID found for scenario");
+
         setGuardrailId(null);
       }
     } else {
-      console.log("[GuardrailsSection] No guardrail map or scenario name");
+
       setGuardrailId(null);
     }
   }, [scenarioGuardrailMap, scenarioName]);
 
   // Load configuration states when guardrail ID is available
   useEffect(() => {
-    console.log("[GuardrailsSection] Configuration loading check:", {
-      guardrailId,
-      isEnabled,
-      isCollapsed,
-    });
+
 
     if (guardrailId && isEnabled && !isCollapsed) {
-      console.log("[GuardrailsSection] Loading configuration states...");
+
       loadConfigurationStates();
     }
   }, [guardrailId, isEnabled, isCollapsed]);
 
   const loadConfigurationStates = async () => {
     if (!guardrailId) {
-      console.log(
-        "[GuardrailsSection] No guardrail ID available for loading states"
-      );
+
       return;
     }
 
-    console.log(
-      "[GuardrailsSection] Starting to load configuration states for ID:",
-      guardrailId
-    );
+
     setIsLoadingConfigurations(true);
     setConfigurationErrors({});
 
@@ -86,7 +67,7 @@ const GuardrailsSection = ({
       const states = await guardrailConfigurationManager.getConfigurationStates(
         guardrailId
       );
-      console.log("[GuardrailsSection] Loaded configuration states:", states);
+
       setConfigurationStates(states);
     } catch (error) {
       console.error("Failed to load configuration states:", error);
