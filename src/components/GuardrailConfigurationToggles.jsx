@@ -153,13 +153,6 @@ const GuardrailConfigurationToggles = ({
 
   return (
     <section className="space-y-3" aria-label="Guardrail configuration toggles">
-      <div className="flex items-center justify-between mb-4">
-        <h4 className="text-sm font-medium text-gray-900">Configuration Controls</h4>
-        <HelpTooltip
-          content="Toggle individual guardrail configurations on or off. Changes are applied immediately to your guardrail."
-          position="left"
-        />
-      </div>
 
       <div className="grid grid-cols-1 gap-3">
         {Object.entries(configurations).map(([configurationType, config]) => {

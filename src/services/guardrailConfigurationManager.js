@@ -1,4 +1,5 @@
 import { guardrailService } from './guardrailService.js';
+import { UpdateGuardrailCommand } from "@aws-sdk/client-bedrock";
 
 /**
  * GuardrailConfigurationManager service class for managing individual guardrail configuration toggles
@@ -44,23 +45,43 @@ export class GuardrailConfigurationManager {
       // Get current guardrail configuration
       const currentConfig = await this.guardrailService.getGuardrail(guardrailId);
 
-      // For now, we'll simulate the update since the actual UpdateGuardrailCommand
-      // would require more complex implementation. In a real scenario, this would
-      // call the AWS UpdateGuardrailCommand and use the updated configuration:
-      // const updatedConfig = this.updateConfigurationState(currentConfig, configurationType, isActive);
+      // Update configuration state
+      const updatedConfig = this.updateConfigurationState(currentConfig, configurationType, isActive);
 
-      // Update in-memory state
+      // Call AWS UpdateGuardrailCommand to persist the change
+      const updateCommand = new UpdateGuardrailCommand({
+        guardrailIdentifier: guardrailId,
+        name: updatedConfig.name,
+        description: updatedConfig.description,
+        blockedInputMessaging: updatedConfig.blockedInputMessaging,
+        blockedOutputsMessaging: updatedConfig.blockedOutputsMessaging,
+        ...(updatedConfig.contentPolicyConfig && { contentPolicyConfig: updatedConfig.contentPolicyConfig }),
+        ...(updatedConfig.wordPolicyConfig && { wordPolicyConfig: updatedConfig.wordPolicyConfig }),
+        ...(updatedConfig.sensitiveInformationPolicyConfig && { sensitiveInformationPolicyConfig: updatedConfig.sensitiveInformationPolicyConfig }),
+        ...(updatedConfig.topicPolicyConfig && { topicPolicyConfig: updatedConfig.topicPolicyConfig }),
+        ...(updatedConfig.contextualGroundingPolicyConfig && { contextualGroundingPolicyConfig: updatedConfig.contextualGroundingPolicyConfig }),
+        ...(updatedConfig.automatedReasoningPolicyConfig && { automatedReasoningPolicyConfig: updatedConfig.automatedReasoningPolicyConfig })
+      });
+
+      const updateResponse = await this.guardrailService.managementClient.send(updateCommand);
+
+      // Update in-memory state with the actual response
       this.updateInMemoryState(guardrailId, configurationType, isActive);
+
+      // Sync configuration states to ensure consistency
+      await this.syncConfigurationStates(guardrailId);
 
       return {
         success: true,
         guardrailId,
         configurationType,
         isActive,
-        version: currentConfig.version,
-        updatedAt: new Date().toISOString()
+        version: updateResponse.version,
+        updatedAt: updateResponse.updatedAt || new Date().toISOString()
       };
     } catch (error) {
+      // Revert optimistic update on error
+      this.updateInMemoryState(guardrailId, configurationType, !isActive);
       throw new Error(`Failed to toggle ${configurationType} configuration: ${error.message}`);
     }
   }
@@ -92,21 +113,25 @@ export class GuardrailConfigurationManager {
   }
 
   /**
-   * Sync configuration states with AWS
+   * Sync configuration states with AWS using GetGuardrailCommand
    * @param {string} guardrailId - The guardrail ID
    * @returns {Promise<Object>} Synced configuration states
    */
   async syncConfigurationStates(guardrailId) {
     try {
+      // Use GetGuardrailCommand to get the latest configuration
       const guardrailConfig = await this.guardrailService.getGuardrail(guardrailId);
       const states = this.extractConfigurationStates(guardrailConfig);
 
-      // Update cache
+      // Update cache with fresh data
       this.configurationStates.set(guardrailId, states);
       this.lastSyncTime.set(guardrailId, new Date().toISOString());
 
+      console.log(`Configuration states synced for guardrail ${guardrailId}:`, states);
+
       return states;
     } catch (error) {
+      console.error(`Failed to sync configuration states for ${guardrailId}:`, error);
       throw new Error(`Failed to sync configuration states: ${error.message}`);
     }
   }
@@ -190,7 +215,7 @@ export class GuardrailConfigurationManager {
    */
   updateConfigurationState(currentConfig, configurationType, isActive) {
     const configKey = this.configurationTypes[configurationType];
-    const updatedConfig = { ...currentConfig };
+    const updatedConfig = JSON.parse(JSON.stringify(currentConfig)); // Deep clone
 
     if (!updatedConfig[configKey]) {
       // If configuration doesn't exist and we're trying to activate, skip
@@ -203,65 +228,65 @@ export class GuardrailConfigurationManager {
     // Update the enabled state based on configuration type
     switch (configurationType) {
       case 'TOPIC_POLICY':
-        if (updatedConfig[configKey].topicsConfig) {
-          updatedConfig[configKey].topicsConfig.forEach(topic => {
+        if (updatedConfig[configKey].topics) {
+          for (const topic of updatedConfig[configKey].topics) {
             topic.inputEnabled = isActive;
             topic.outputEnabled = isActive;
-          });
+          }
         }
         break;
 
       case 'CONTENT_POLICY':
-        if (updatedConfig[configKey].filtersConfig) {
-          updatedConfig[configKey].filtersConfig.forEach(filter => {
+        if (updatedConfig[configKey].filters) {
+          for (const filter of updatedConfig[configKey].filters) {
             filter.inputEnabled = isActive;
             filter.outputEnabled = isActive;
-          });
+          }
         }
         break;
 
       case 'WORD_POLICY':
-        if (updatedConfig[configKey].wordsConfig) {
-          updatedConfig[configKey].wordsConfig.forEach(word => {
+        if (updatedConfig[configKey].words) {
+          for (const word of updatedConfig[configKey].words) {
             word.inputEnabled = isActive;
             word.outputEnabled = isActive;
-          });
+          }
         }
-        if (updatedConfig[configKey].managedWordListsConfig) {
-          updatedConfig[configKey].managedWordListsConfig.forEach(list => {
+        if (updatedConfig[configKey].managedWordLists) {
+          for (const list of updatedConfig[configKey].managedWordLists) {
             list.inputEnabled = isActive;
             list.outputEnabled = isActive;
-          });
+          }
         }
         break;
 
       case 'SENSITIVE_INFORMATION':
-        if (updatedConfig[configKey].piiEntitiesConfig) {
-          updatedConfig[configKey].piiEntitiesConfig.forEach(entity => {
+        if (updatedConfig[configKey].piiEntities) {
+          for (const entity of updatedConfig[configKey].piiEntities) {
             entity.inputEnabled = isActive;
             entity.outputEnabled = isActive;
-          });
+          }
         }
-        if (updatedConfig[configKey].regexesConfig) {
-          updatedConfig[configKey].regexesConfig.forEach(regex => {
+        if (updatedConfig[configKey].regexes) {
+          for (const regex of updatedConfig[configKey].regexes) {
             regex.inputEnabled = isActive;
             regex.outputEnabled = isActive;
-          });
+          }
         }
         break;
 
       case 'CONTEXTUAL_GROUNDING':
-        if (updatedConfig[configKey].filtersConfig) {
-          updatedConfig[configKey].filtersConfig.forEach(filter => {
+        if (updatedConfig[configKey].filters) {
+          for (const filter of updatedConfig[configKey].filters) {
             filter.enabled = isActive;
-          });
+          }
         }
         break;
 
       case 'AUTOMATED_REASONING':
         // For automated reasoning, we can't easily toggle without removing policies
         // This might need special handling based on requirements
-        if (!isActive) {
+        if (!isActive && updatedConfig[configKey].policies) {
           updatedConfig[configKey] = { policies: [] };
         }
         break;
@@ -318,6 +343,19 @@ export class GuardrailConfigurationManager {
   clearAllCache() {
     this.configurationStates.clear();
     this.lastSyncTime.clear();
+  }
+
+  /**
+   * Force refresh configuration states from AWS, bypassing cache
+   * @param {string} guardrailId - The guardrail ID
+   * @returns {Promise<Object>} Fresh configuration states
+   */
+  async refreshConfigurationStates(guardrailId) {
+    // Clear cache for this guardrail to force fresh fetch
+    this.clearCache(guardrailId);
+
+    // Fetch fresh states
+    return await this.syncConfigurationStates(guardrailId);
   }
 }
 

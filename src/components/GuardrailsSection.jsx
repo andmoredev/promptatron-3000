@@ -53,20 +53,18 @@ const GuardrailsSection = ({
     }
   }, [guardrailId, isEnabled, isCollapsed]);
 
-  const loadConfigurationStates = async () => {
+  const loadConfigurationStates = async (forceRefresh = false) => {
     if (!guardrailId) {
-
       return;
     }
-
 
     setIsLoadingConfigurations(true);
     setConfigurationErrors({});
 
     try {
-      const states = await guardrailConfigurationManager.getConfigurationStates(
-        guardrailId
-      );
+      const states = forceRefresh
+        ? await guardrailConfigurationManager.refreshConfigurationStates(guardrailId)
+        : await guardrailConfigurationManager.getConfigurationStates(guardrailId);
 
       setConfigurationStates(states);
     } catch (error) {
@@ -77,6 +75,10 @@ const GuardrailsSection = ({
     } finally {
       setIsLoadingConfigurations(false);
     }
+  };
+
+  const handleRefreshStates = () => {
+    loadConfigurationStates(true);
   };
 
   const handleConfigurationToggle = async (configurationType, isActive) => {
@@ -95,6 +97,27 @@ const GuardrailsSection = ({
       return newErrors;
     });
 
+    // Store current state for potential reversion
+    const currentState = configurationStates?.configurations?.[configurationType]?.isActive;
+
+    // Optimistic UI update - immediately update the UI
+    setConfigurationStates((prev) => {
+      if (!prev) return prev;
+
+      return {
+        ...prev,
+        configurations: {
+          ...prev.configurations,
+          [configurationType]: {
+            ...prev.configurations[configurationType],
+            isActive: isActive,
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+        lastSyncTime: new Date().toISOString(),
+      };
+    });
+
     // Set loading state for this specific toggle
     setLoadingStates((prev) => ({
       ...prev,
@@ -109,7 +132,7 @@ const GuardrailsSection = ({
       );
 
       if (result.success) {
-        // Update local state to reflect the change
+        // Update local state with the actual response data
         setConfigurationStates((prev) => {
           if (!prev) return prev;
 
@@ -129,6 +152,25 @@ const GuardrailsSection = ({
       }
     } catch (error) {
       console.error(`Failed to toggle ${configurationType}:`, error);
+
+      // Revert optimistic update on error
+      setConfigurationStates((prev) => {
+        if (!prev) return prev;
+
+        return {
+          ...prev,
+          configurations: {
+            ...prev.configurations,
+            [configurationType]: {
+              ...prev.configurations[configurationType],
+              isActive: currentState, // Revert to original state
+              lastUpdated: prev.configurations[configurationType]?.lastUpdated,
+            },
+          },
+          lastSyncTime: new Date().toISOString(),
+        };
+      });
+
       setConfigurationErrors((prev) => ({
         ...prev,
         [configurationType]: error.message,
@@ -433,22 +475,53 @@ const GuardrailsSection = ({
                           {configurationErrors.general}
                         </span>
                       </div>
-                      <button
-                        onClick={loadConfigurationStates}
-                        className="mt-2 text-sm text-red-600 hover:text-red-700 font-medium"
-                      >
-                        Retry
-                      </button>
+                      <div className="mt-2 flex space-x-2">
+                        <button
+                          onClick={() => loadConfigurationStates(false)}
+                          className="text-sm text-red-600 hover:text-red-700 font-medium"
+                        >
+                          Retry
+                        </button>
+                        <button
+                          onClick={handleRefreshStates}
+                          className="text-sm text-red-600 hover:text-red-700 font-medium"
+                        >
+                          Force Refresh
+                        </button>
+                      </div>
                     </div>
                   ) : configurationStates ? (
-                    <GuardrailConfigurationToggles
-                      guardrailId={guardrailId}
-                      configurations={configurationStates.configurations}
-                      onToggle={handleConfigurationToggle}
-                      isLoading={isLoadingConfigurations}
-                      errors={configurationErrors}
-                      loadingStates={loadingStates}
-                    />
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-2">
+                          <h4 className="text-sm font-medium text-gray-900">Configuration Controls</h4>
+                          <HelpTooltip
+                            content="Toggle individual guardrail configurations on or off. Changes are applied immediately to your guardrail."
+                            position="right"
+                          />
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={handleRefreshStates}
+                            disabled={isLoadingConfigurations}
+                            className="text-xs text-gray-500 hover:text-gray-700 font-medium disabled:opacity-50"
+                            title="Refresh configuration states from AWS"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      <GuardrailConfigurationToggles
+                        guardrailId={guardrailId}
+                        configurations={configurationStates.configurations}
+                        onToggle={handleConfigurationToggle}
+                        isLoading={isLoadingConfigurations}
+                        errors={configurationErrors}
+                        loadingStates={loadingStates}
+                      />
+                    </div>
                   ) : (
                     <div className="text-center py-4 text-gray-500">
                       <p className="text-sm">
