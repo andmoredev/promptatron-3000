@@ -183,12 +183,12 @@ const GuardrailConfigurationToggles = ({
           return (
             <div
               key={configurationType}
-              className={`border rounded-lg p-3 transition-all duration-200 ${borderColor} ${backgroundColor}`}
+              className={`guardrail-config-card ${isActive ? 'active' : 'inactive'} ${hasError ? 'error' : ''}`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2">
-                    <div className={`flex-shrink-0 ${isActive ? 'text-primary-600' : 'text-gray-400'}`}>
+                    <div className={`guardrail-icon ${isActive ? 'active' : 'inactive'}`}>
                       {info.icon}
                     </div>
                     <h5
@@ -209,11 +209,10 @@ const GuardrailConfigurationToggles = ({
                     {info.description}
                   </p>
                   {configurationDetails?.[configurationType] && (
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">
                       {configurationDetails[configurationType]}
                     </p>
                   )}
-                  {/* Simplified: omit last updated text */}
                 </div>
 
                 <div className="flex items-center space-x-2 ml-4">
@@ -224,9 +223,7 @@ const GuardrailConfigurationToggles = ({
                   <button
                     onClick={() => handleToggle(configurationType)}
                     disabled={isLoading || isToggleLoading}
-                    className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-                      isActive ? 'bg-primary-600' : 'bg-gray-200'
-                    }`}
+                    className={`guardrail-toggle-switch ${isActive ? 'active' : 'inactive'}`}
                     role="switch"
                     aria-checked={isActive}
                     aria-label={getToggleAriaLabel(configurationType, isActive)}
@@ -236,18 +233,16 @@ const GuardrailConfigurationToggles = ({
                       {getToggleAriaLabel(configurationType, isActive)}
                     </span>
                     <span
-                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                        isActive ? 'translate-x-4' : 'translate-x-0'
-                      }`}
+                      className={`guardrail-toggle-thumb ${isActive ? 'active' : 'inactive'}`}
                     />
                   </button>
                 </div>
               </div>
 
               {hasError && (
-                <div className="mt-3 p-3 bg-red-100 border border-red-200 rounded-md">
+                <div className="mt-3 p-3 bg-red-100 border border-red-200 rounded-md transition-all duration-200 animate-fade-in">
                   <div className="flex items-start space-x-2">
-                    <svg className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                    <svg className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0 transition-colors duration-200" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                     </svg>
                     <div className="flex-1">
@@ -262,7 +257,7 @@ const GuardrailConfigurationToggles = ({
                     <button
                       onClick={() => handleRetry(configurationType)}
                       disabled={isToggleLoading}
-                      className="text-xs text-red-600 hover:text-red-700 font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 rounded px-2 py-1 disabled:opacity-50"
+                      className="guardrail-retry-button disabled:opacity-50"
                     >
                       Retry
                     </button>

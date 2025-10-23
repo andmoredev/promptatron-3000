@@ -403,6 +403,100 @@ function App() {
     }
   };
 
+  // Capture guardrail state snapshot for history storage
+  const captureGuardrailStateSnapshot = async (scenarioName, guardrailConfig) => {
+    console.log('[App] Capturing guardrail state snapshot for scenario:', scenarioName);
+
+    try {
+      // Get the guardrail ID from the scenario guardrail map
+      const guardrailInfo = scenarioGuardrailMap.get(scenarioName);
+      if (!guardrailInfo || !guardrailInfo.id) {
+        console.warn('[App] No guardrail ID found for scenario:', scenarioName);
+        return {
+          scenarioName,
+          guardrailId: null,
+          guardrailArn: guardrailConfig?.guardrailIdentifier || null,
+          guardrailVersion: guardrailConfig?.guardrailVersion || null,
+          activeConfigurations: [],
+          configurationStates: {},
+          capturedAt: new Date().toISOString(),
+          captureError: 'No guardrail ID available'
+        };
+      }
+
+      // Import the guardrail configuration manager to get current states
+      const { guardrailConfigurationManager } = await import('./services/guardrailConfigurationManager.js');
+
+      // Get current configuration states
+      let configurationStates = {};
+      let activeConfigurations = [];
+
+      try {
+        const states = await guardrailConfigurationManager.getConfigurationStates(guardrailInfo.id);
+        console.log('[App] Retrieved configuration states:', states);
+
+        if (states && states.configurations) {
+          configurationStates = states.configurations;
+
+          // Build active configurations list
+          activeConfigurations = Object.entries(states.configurations)
+            .filter(([_, config]) => config.isActive)
+            .map(([type, config]) => ({
+              type: type,
+              name: getConfigurationDisplayName(type),
+              isActive: config.isActive,
+              details: config.details || null
+            }));
+        }
+      } catch (stateError) {
+        console.warn('[App] Failed to get configuration states:', stateError);
+        // Continue with empty states rather than failing completely
+      }
+
+      const snapshot = {
+        scenarioName,
+        guardrailId: guardrailInfo.id,
+        guardrailArn: guardrailConfig?.guardrailIdentifier || guardrailInfo.arn,
+        guardrailVersion: guardrailConfig?.guardrailVersion || guardrailInfo.version || 'DRAFT',
+        guardrailName: guardrailInfo.name,
+        activeConfigurations,
+        configurationStates,
+        capturedAt: new Date().toISOString()
+      };
+
+      console.log('[App] Created guardrail state snapshot:', snapshot);
+      return snapshot;
+
+    } catch (error) {
+      console.error('[App] Failed to capture guardrail state snapshot:', error);
+
+      // Return a minimal snapshot with error information
+      return {
+        scenarioName,
+        guardrailId: null,
+        guardrailArn: guardrailConfig?.guardrailIdentifier || null,
+        guardrailVersion: guardrailConfig?.guardrailVersion || null,
+        activeConfigurations: [],
+        configurationStates: {},
+        capturedAt: new Date().toISOString(),
+        captureError: error.message
+      };
+    }
+  };
+
+  // Helper function to get display names for configuration types
+  const getConfigurationDisplayName = (type) => {
+    const displayNames = {
+      'CONTENT_POLICY': 'Content Policy',
+      'TOPIC_POLICY': 'Topic Policy',
+      'WORD_POLICY': 'Word Policy',
+      'SENSITIVE_INFORMATION': 'Sensitive Information',
+      'CONTEXTUAL_GROUNDING': 'Contextual Grounding',
+      'AUTOMATED_REASONING': 'Automated Reasoning'
+    };
+    return displayNames[type] || type;
+  };
+
   // Helper function to generate user-friendly validation messages
   const getValidationGuidance = (errors) => {
     const guidance = [];
@@ -1405,12 +1499,17 @@ function App() {
 
           // Get guardrail configuration for this test
           let guardrailConfig = null;
+          let guardrailSnapshot = null;
           if (guardrailsEnabled && selectedScenario) {
             try {
               setProgressStatus("Configuring guardrails...");
               guardrailConfig = await getGuardrailConfigForTest();
               if (guardrailConfig) {
                 console.log('[App] Using guardrail configuration:', guardrailConfig);
+
+                // Capture guardrail state snapshot for history
+                guardrailSnapshot = await captureGuardrailStateSnapshot(selectedScenario, guardrailConfig);
+                console.log('[App] Captured guardrail state snapshot:', guardrailSnapshot);
               } else {
                 console.log('[App] No guardrail configuration returned');
               }
@@ -1580,6 +1679,7 @@ function App() {
                 // Add guardrail results if available
                 guardrailResults: workflowResult.results.guardrailResults,
                 guardrailsEnabled: !!guardrailConfig, // True if guardrails were configured for this test
+                guardrailSnapshot: guardrailSnapshot, // Include guardrail state snapshot for history display
                 stopReason: workflowResult.results.stopReason, // Include stop reason from tool execution
               };
 
@@ -1888,6 +1988,7 @@ function App() {
             guardrailResults: response.guardrailResults || null, // Include guardrail evaluation results
             guardrailConfig: guardrailConfig, // Include guardrail configuration used
             guardrailsEnabled: guardrailsEnabled, // Flag to indicate if guardrails were enabled
+            guardrailSnapshot: guardrailSnapshot, // Include guardrail state snapshot for history display
             timestamp: new Date().toISOString(),
           };
         },

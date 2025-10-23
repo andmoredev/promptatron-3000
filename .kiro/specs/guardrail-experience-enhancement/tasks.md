@@ -69,7 +69,12 @@
   - Handle modal data refresh after successful saves
   - _Requirements: 3.1, 3.2_
 
-- [ ] 7. Enhance History Component with Guardrail Information Display
+- [x] 7. Enhance History Component with Guardrail Information Display
+
+
+
+
+
 
   - Extend existing History component to show detailed guardrail information
   - Add collapsible section under each history entry for guardrail details
@@ -78,7 +83,12 @@
   - Implement visual indicators (icons/status tags) to distinguish active vs triggered guardrails
   - _Requirements: 2.4, 2.5, 2.6, 2.7_
 
-- [ ] 8. Create GuardrailHistoryDisplay Component
+- [x] 8. Create GuardrailHistoryDisplay Component
+
+
+
+
+
 
   - Build dedicated component for rendering guardrail information in history entries
   - Implement expandable/collapsible interface for detailed guardrail information
@@ -87,7 +97,12 @@
   - Show intervention details with clear categorization and descriptions
   - _Requirements: 2.4, 2.5, 2.6, 2.7_
 
-- [ ] 9. Implement Guardrail State Capture in Test Execution
+- [x] 9. Implement Guardrail State Capture in Test Execution
+
+
+
+
+
 
   - Extend test execution flow to capture active guardrail configuration states
   - Store guardrail configuration snapshot alongside test results in history
@@ -95,7 +110,12 @@
   - Maintain backward compatibility with existing history data structure
   - _Requirements: 2.1, 2.2, 2.3, 2.8_
 
-- [ ] 10. Add Visual Enhancements and Polish
+- [x] 10. Add Visual Enhancements and Polish
+
+
+
+
+
 
   - Implement consistent visual design following existing UI patterns
   - Add proper loading states and progress indicators for all async operations

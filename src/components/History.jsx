@@ -1,5 +1,6 @@
 import React, { useState, useRef } from "react";
 import { useHistory } from "../hooks/useHistory.js";
+import GuardrailHistoryDisplay from "./GuardrailHistoryDisplay.jsx";
 
 const History = ({
   onLoadFromHistory,
@@ -26,6 +27,7 @@ const History = ({
   const [rerunDialog, setRerunDialog] = useState(null);
   const [comparisonMode, setComparisonMode] = useState(false);
   const [determinismModal, setDeterminismModal] = useState(null);
+  const [expandedGuardrails, setExpandedGuardrails] = useState(new Set());
   const fileInputRef = useRef(null);
 
   // Ensure unique IDs and clean up history data
@@ -212,6 +214,18 @@ const History = ({
         grade: item.determinismGrade,
       });
     }
+  };
+
+  const handleToggleGuardrailExpansion = (itemId) => {
+    setExpandedGuardrails(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
   };
 
   const stats = getHistoryStats();
@@ -741,13 +755,27 @@ const History = ({
                   )}
                   {/* Guardrail indicator */}
                   {(item.guardrailResults || item.stopReason === 'guardrail_intervened') && (
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                      (item.guardrailResults?.hasViolations || item.guardrailResults?.action === 'INTERVENED' || item.stopReason === 'guardrail_intervened')
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-green-100 text-green-800'
-                    }`}>
+                    <button
+                      onClick={() => handleToggleGuardrailExpansion(item.id)}
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium transition-colors hover:opacity-80 ${
+                        (item.guardrailResults?.hasViolations || item.guardrailResults?.action === 'INTERVENED' || item.stopReason === 'guardrail_intervened')
+                          ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                          : 'bg-green-100 text-green-800 hover:bg-green-200'
+                      }`}
+                      title="Click to view guardrail details"
+                    >
                       🛡️ {(item.guardrailResults?.hasViolations || item.guardrailResults?.action === 'INTERVENED' || item.stopReason === 'guardrail_intervened') ? 'Blocked' : 'Passed'}
-                    </span>
+                      {item.guardrailResults?.violations?.length > 0 && (
+                        <span className="ml-1 px-1 py-0.5 bg-red-200 text-red-900 rounded-full text-xs">
+                          {item.guardrailResults.violations.length}
+                        </span>
+                      )}
+                      {item.guardrailSnapshot?.activeConfigurations?.length > 0 && (
+                        <span className="ml-1 text-xs opacity-75">
+                          ({item.guardrailSnapshot.activeConfigurations.filter(c => c.isActive).length} active)
+                        </span>
+                      )}
+                    </button>
                   )}
                   <span className="text-sm text-gray-500">
                     {formatTimestamp(item.timestamp)}
@@ -798,6 +826,17 @@ const History = ({
                     </div>
                   </div>
                 </div>
+
+                {/* Guardrail Information Display (Always Visible) */}
+                {(item.guardrailResults || item.stopReason === 'guardrail_intervened') &&
+                 expandedGuardrails.has(item.id) && (
+                  <GuardrailHistoryDisplay
+                    guardrailResults={item.guardrailResults}
+                    activeConfigurations={item.guardrailSnapshot?.activeConfigurations}
+                    isExpanded={true}
+                    onToggleExpanded={() => handleToggleGuardrailExpansion(item.id)}
+                  />
+                )}
 
                 {selectedItem?.id === item.id && (
                   <div className="mt-4 space-y-3">
@@ -1059,6 +1098,8 @@ const History = ({
                         )}
                       </div>
                     </div>
+
+
                   </div>
                 )}
               </div>

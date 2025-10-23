@@ -483,39 +483,41 @@ const GuardrailsSection = ({
             <div className="space-y-3">
               {/* Individual Configuration Toggles */}
               {isEnabled && (
-                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="bg-white border border-gray-200 rounded-lg p-4 transition-all duration-200 hover:shadow-sm">
                   {!guardrailId ? (
-                    <div className="text-center py-6 text-gray-500">
-                      <svg
-                        className="mx-auto h-8 w-8 text-gray-400 mb-2"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"
-                        />
-                      </svg>
-                      <p className="text-sm font-medium">No guardrail found</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        A guardrail needs to be created for this scenario first
-                      </p>
+                    <div className="guardrail-loading-overlay">
+                      <div className="text-center text-gray-500">
+                        <svg
+                          className="mx-auto h-8 w-8 text-gray-400 mb-2 transition-colors duration-200"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"
+                          />
+                        </svg>
+                        <p className="text-sm font-medium">No guardrail found</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          A guardrail needs to be created for this scenario first
+                        </p>
+                      </div>
                     </div>
                   ) : isLoadingConfigurations ? (
-                    <div className="flex items-center justify-center py-8">
+                    <div className="guardrail-loading-overlay">
                       <LoadingSpinner
                         size="md"
                         text="Loading configuration states..."
                       />
                     </div>
                   ) : configurationErrors.general ? (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <div className="guardrail-error-card">
                       <div className="flex items-center space-x-2">
                         <svg
-                          className="h-5 w-5 text-red-400"
+                          className="h-5 w-5 text-red-400 transition-colors duration-200"
                           viewBox="0 0 20 20"
                           fill="currentColor"
                         >
@@ -532,20 +534,20 @@ const GuardrailsSection = ({
                       <div className="mt-2 flex space-x-2">
                         <button
                           onClick={() => loadConfigurationStates(false)}
-                          className="text-sm text-red-600 hover:text-red-700 font-medium"
+                          className="guardrail-retry-button"
                         >
                           Retry
                         </button>
                         <button
                           onClick={handleRefreshStates}
-                          className="text-sm text-red-600 hover:text-red-700 font-medium"
+                          className="guardrail-retry-button"
                         >
                           Force Refresh
                         </button>
                       </div>
                     </div>
                   ) : configurationStates ? (
-                    <div>
+                    <div className="animate-fade-in">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center space-x-2">
                           <h4 className="text-sm font-medium text-gray-900">Configuration Controls</h4>
@@ -558,7 +560,7 @@ const GuardrailsSection = ({
                           <button
                             onClick={handleEditGuardrail}
                             disabled={isLoadingConfigurations}
-                            className="inline-flex items-center text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                            className="guardrail-edit-button"
                             title="Edit guardrail settings"
                             aria-label="Edit guardrail settings"
                           >
@@ -569,7 +571,7 @@ const GuardrailsSection = ({
                           <button
                             onClick={handleRefreshStates}
                             disabled={isLoadingConfigurations}
-                            className="text-xs text-gray-500 hover:text-gray-700 font-medium disabled:opacity-50"
+                            className="guardrail-refresh-button"
                             title="Refresh configuration states from AWS"
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
