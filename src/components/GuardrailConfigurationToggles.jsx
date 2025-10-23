@@ -19,7 +19,7 @@ const GuardrailConfigurationToggles = ({
   const configurationInfo = {
     TOPIC_POLICY: {
       name: 'Topic Policy',
-      description: 'Filters content based on predefined topics and themes',
+      description: 'Prevents discussion of specific subjects you define (e.g., "financial advice", "medical diagnosis", "legal counsel"). Blocks both user questions and AI responses about these restricted topics.',
       icon: (
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
@@ -28,7 +28,7 @@ const GuardrailConfigurationToggles = ({
     },
     CONTENT_POLICY: {
       name: 'Content Policy',
-      description: 'Blocks harmful content including hate speech, violence, and inappropriate material',
+      description: 'Automatically detects and blocks harmful content categories: sexual content, violence, hate speech, insults, misconduct, and prompt injection attacks. Uses AI to analyze content meaning, not just keywords.',
       icon: (
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -37,7 +37,7 @@ const GuardrailConfigurationToggles = ({
     },
     WORD_POLICY: {
       name: 'Word Policy',
-      description: 'Filters specific words and phrases from custom and managed word lists',
+      description: 'Blocks exact words and phrases you specify, plus AWS managed lists (like PROFANITY). Unlike content policy, this does exact text matching rather than meaning analysis. Useful for brand-specific terms or compliance requirements.',
       icon: (
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
@@ -46,7 +46,7 @@ const GuardrailConfigurationToggles = ({
     },
     SENSITIVE_INFORMATION: {
       name: 'Sensitive Information',
-      description: 'Detects and filters personally identifiable information (PII) and sensitive data',
+      description: 'Automatically detects personally identifiable information like social security numbers, email addresses, phone numbers, credit cards, and names. Can either block the content entirely or anonymize it (replace with [EMAIL], [SSN], etc.).',
       icon: (
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
@@ -55,7 +55,7 @@ const GuardrailConfigurationToggles = ({
     },
     CONTEXTUAL_GROUNDING: {
       name: 'Contextual Grounding',
-      description: 'Ensures responses are grounded in provided context and factual information',
+      description: 'Ensures AI responses are based on your provided documents/context rather than general knowledge. Blocks responses that drift off-topic (relevance) or aren\'t supported by your source material (grounding). Essential for customer service and documentation use cases.',
       icon: (
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -64,7 +64,7 @@ const GuardrailConfigurationToggles = ({
     },
     AUTOMATED_REASONING: {
       name: 'Automated Reasoning',
-      description: 'Applies automated reasoning policies for complex content evaluation',
+      description: 'Advanced policy type that applies logical reasoning and consistency checks to content. Evaluates whether responses make logical sense, are internally consistent, and follow proper reasoning patterns. Useful for complex analytical or decision-making applications.',
       icon: (
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />

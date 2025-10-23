@@ -274,6 +274,9 @@ andaloneTest = false,
                             {detail.name && (
                               <div>Name: <span className="font-medium">{detail.name}</span></div>
                             )}
+                            {detail.listType && (
+                              <div>List Type: <span className="font-medium">{detail.listType}</span></div>
+                            )}
                             {detail.action && (
                               <div>Action: <span className="font-medium">{detail.action}</span></div>
                             )}

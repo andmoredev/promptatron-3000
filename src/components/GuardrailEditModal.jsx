@@ -776,7 +776,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                         Description
                       </label>
                       <HelpTooltip
-                        content="A detailed description of what this guardrail is designed to protect against and its intended use case."
+                        content="Describe what harmful content or behaviors this guardrail prevents. For example: 'Blocks inappropriate content and PII in customer service conversations' or 'Prevents discussion of sensitive financial information in public forums.'"
                         position="right"
                       />
                     </div>
@@ -814,7 +814,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                         Blocked Input Message
                       </label>
                       <HelpTooltip
-                        content="Message shown to users when their input is blocked by the guardrail. Keep it helpful and informative."
+                        content="Custom message displayed when user input violates guardrail policies. Example: 'Your message contains content that cannot be processed. Please rephrase without sensitive information.' If left empty, AWS provides a default message."
                         position="right"
                       />
                     </div>
@@ -834,7 +834,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                         Blocked Output Message
                       </label>
                       <HelpTooltip
-                        content="Message shown when the AI's response is blocked by the guardrail. Should explain why the response was filtered."
+                        content="Custom message shown when the AI's generated response is blocked before reaching the user. Example: 'I cannot provide that information as it may contain sensitive data.' This helps maintain conversation flow when content is filtered."
                         position="right"
                       />
                     </div>
@@ -864,7 +864,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                         Relevance Threshold: {formData.relevanceThreshold.toFixed(2)}
                       </label>
                       <HelpTooltip
-                        content="Controls how relevant content must be to trigger contextual grounding policies. Lower values are more sensitive."
+                        content="Contextual grounding ensures AI responses are based on provided context/documents rather than general knowledge. Relevance threshold (0.0-1.0) controls how closely the response must relate to your source material. Lower values (0.3) are stricter, higher values (0.8) are more permissive."
                         position="right"
                       />
                     </div>
@@ -904,7 +904,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                         Confidence Threshold: {formData.confidenceThreshold.toFixed(2)}
                       </label>
                       <HelpTooltip
-                        content="Sets the confidence level required for guardrail interventions. Higher values require more certainty before blocking content."
+                        content="Grounding confidence threshold (0.0-1.0) determines how certain the AI must be that its response is properly grounded in your source documents. Higher values (0.8) allow more responses through but may miss some ungrounded content. Lower values (0.3) are more restrictive."
                         position="right"
                       />
                     </div>
@@ -948,7 +948,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                       <span>Active Configurations</span>
                     </h4>
                     <HelpTooltip
-                      content="Enable or disable specific guardrail policies. Changes will be applied when you save the guardrail."
+                      content="Toggle different types of content protection: Content Policy (harmful content like violence/hate), Topic Policy (restricted subjects), Word Policy (blocked words/phrases), Sensitive Information (PII detection), Contextual Grounding (fact-checking against sources), and Automated Reasoning (logical consistency)."
                       position="right"
                     />
                   </div>
@@ -1006,7 +1006,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                         </svg>
                         <span>Content Policy Filters</span>
                         <HelpTooltip
-                          content="Configure content filters with separate input/output strengths and actions."
+                          content="Content filters detect harmful content categories (sexual, violence, hate, insults, misconduct, prompt attacks). Input strength controls how strictly user messages are filtered. Output strength controls AI response filtering. Actions determine what happens when content is detected (BLOCK stops it, NONE allows it through)."
                           position="right"
                         />
                       </h4>
@@ -1107,7 +1107,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M3 12h18M3 17h18" />
                       </svg>
                       <span>Topic Policy Actions</span>
-                      <HelpTooltip content="Set input/output actions for all topics." position="right" />
+                      <HelpTooltip content="Topic policies prevent discussion of specific subjects you define (e.g., 'financial advice', 'medical diagnosis'). Input action controls user messages about these topics, output action controls AI responses. BLOCK prevents the content, NONE allows it." position="right" />
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
@@ -1209,7 +1209,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16h8M8 12h8M8 8h8" />
                       </svg>
                       <span>Word Policy Actions</span>
-                      <HelpTooltip content="Set input/output actions for all word filters and managed lists." position="right" />
+                      <HelpTooltip content="Word policies block specific words, phrases, or use AWS managed lists (like PROFANITY). Custom words are exact matches you define. Managed lists are pre-built categories maintained by AWS. Input action affects user messages, output action affects AI responses." position="right" />
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
@@ -1274,7 +1274,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c0-1.657-1.79-3-4-3S4 9.343 4 11s1.79 3 4 3 4-1.343 4-3zM12 11c0 1.657 1.79 3 4 3s4-1.343 4-3-1.79-3-4-3-4 1.343-4 3z" />
                       </svg>
                       <span>Sensitive Information Actions</span>
-                      <HelpTooltip content="Set actions for PII entities and custom regexes." position="right" />
+                      <HelpTooltip content="Sensitive information policies protect personally identifiable information (PII) like social security numbers, emails, addresses. PII entities are predefined types AWS can detect. Custom regexes let you define your own patterns. BLOCK prevents the content, ANONYMIZE replaces it with placeholders like [EMAIL] or [SSN]." position="right" />
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
@@ -1329,7 +1329,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                         <div className="flex items-center space-x-2">
                           <span className="text-sm font-medium text-gray-900">PII Entities</span>
                           <span className="text-xs text-gray-500">{formData.piiEntities.length} selected</span>
-                          <HelpTooltip content="Select PII types to detect and protect." position="right" />
+                          <HelpTooltip content="Choose which types of personal information to detect and protect. Common types include EMAIL (email addresses), PHONE (phone numbers), SSN (social security numbers), ADDRESS (physical addresses), CREDIT_DEBIT_CARD_NUMBER (payment cards), and NAME (person names). Select only what you need to avoid over-filtering." position="right" />
                         </div>
                         <svg className={`h-4 w-4 text-gray-500 transform transition-transform ${piiExpanded ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
                           <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clipRule="evenodd" />
@@ -1435,7 +1435,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                             <div className="flex items-center justify-between">
                               <div className="flex items-center space-x-2">
                                 <span className="text-sm font-medium text-gray-900">Grounding Filter</span>
-                                <HelpTooltip content="Controls grounding confidence threshold and action." position="right" />
+                                <HelpTooltip content="Grounding filter ensures AI responses are based on your provided documents/context rather than general knowledge. When enabled, responses that aren't sufficiently grounded in your source material will be blocked. Useful for customer service, documentation, or fact-based applications." position="right" />
                               </div>
                               <label className="inline-flex items-center space-x-2 text-sm">
                                 <input type="checkbox" className="rounded border-gray-300" checked={cg.GROUNDING?.enabled}
@@ -1463,7 +1463,7 @@ function GuardrailEditModal({ isOpen, guardrailId, onClose, onSave }) {
                             <div className="flex items-center justify-between">
                               <div className="flex items-center space-x-2">
                                 <span className="text-sm font-medium text-gray-900">Relevance Filter</span>
-                                <HelpTooltip content="Controls relevance threshold and action." position="right" />
+                                <HelpTooltip content="Relevance filter ensures AI responses directly address the user's question and stay on-topic relative to your provided context. When enabled, responses that drift off-topic or don't relate to the source material will be blocked. Helps maintain focused, relevant conversations." position="right" />
                               </div>
                               <label className="inline-flex items-center space-x-2 text-sm">
                                 <input type="checkbox" className="rounded border-gray-300" checked={cg.RELEVANCE?.enabled}

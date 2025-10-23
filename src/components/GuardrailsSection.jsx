@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import HelpTooltip from "./HelpTooltip";
-import GuardrailConfigurationToggles from "./GuardrailConfigurationToggles";
+import GuardrailPolicyList from "./GuardrailPolicyList";
 import GuardrailEditModal from "./GuardrailEditModal";
 import LoadingSpinner from "./LoadingSpinner";
 import { guardrailConfigurationManager } from "../services/guardrailConfigurationManager.js";
@@ -21,7 +21,6 @@ const GuardrailsSection = ({
   const [configurationDetails, setConfigurationDetails] = useState(null);
   const [isLoadingConfigurations, setIsLoadingConfigurations] = useState(false);
   const [configurationErrors, setConfigurationErrors] = useState({});
-  const [loadingStates, setLoadingStates] = useState({});
   const [guardrailId, setGuardrailId] = useState(null);
 
   // State for edit modal
@@ -74,13 +73,18 @@ const GuardrailsSection = ({
 
       setConfigurationStates(states);
 
-      // Also fetch detailed config to summarize policy specifics
-      try {
-        const detailed = await guardrailConfigurationManager.guardrailService.getGuardrail(guardrailId);
-        setConfigurationDetails(extractConfigurationDetails(detailed));
-      } catch (e) {
-        // If details fail to load, keep UI functional with states only
-        setConfigurationDetails(null);
+      // Store the full guardrail configuration for detailed parsing
+      if (states.guardrailData) {
+        setConfigurationDetails(states.guardrailData);
+      } else {
+        // Fallback: fetch detailed config separately if not included in states
+        try {
+          const detailed = await guardrailConfigurationManager.guardrailService.getGuardrail(guardrailId);
+          setConfigurationDetails(detailed);
+        } catch (e) {
+          // If details fail to load, keep UI functional with states only
+          setConfigurationDetails(null);
+        }
       }
     } catch (error) {
       console.error("Failed to load configuration states:", error);
@@ -177,109 +181,7 @@ const GuardrailsSection = ({
     handleCloseEditModal();
   };
 
-  const handleConfigurationToggle = async (configurationType, isActive) => {
-    if (!guardrailId) {
-      setConfigurationErrors({
-        ...configurationErrors,
-        [configurationType]: "Guardrail ID not available",
-      });
-      return;
-    }
 
-    // Clear previous error for this configuration
-    setConfigurationErrors((prev) => {
-      const newErrors = { ...prev };
-      delete newErrors[configurationType];
-      return newErrors;
-    });
-
-    // Store current state for potential reversion
-    const currentState = configurationStates?.configurations?.[configurationType]?.isActive;
-
-    // Optimistic UI update - immediately update the UI
-    setConfigurationStates((prev) => {
-      if (!prev) return prev;
-
-      return {
-        ...prev,
-        configurations: {
-          ...prev.configurations,
-          [configurationType]: {
-            ...prev.configurations[configurationType],
-            isActive: isActive,
-            lastUpdated: new Date().toISOString(),
-          },
-        },
-        lastSyncTime: new Date().toISOString(),
-      };
-    });
-
-    // Set loading state for this specific toggle
-    setLoadingStates((prev) => ({
-      ...prev,
-      [configurationType]: true,
-    }));
-
-    try {
-      const result = await guardrailConfigurationManager.toggleConfiguration(
-        guardrailId,
-        configurationType,
-        isActive
-      );
-
-      if (result.success) {
-        // Update local state with the actual response data
-        setConfigurationStates((prev) => {
-          if (!prev) return prev;
-
-          return {
-            ...prev,
-            configurations: {
-              ...prev.configurations,
-              [configurationType]: {
-                ...prev.configurations[configurationType],
-                isActive: isActive,
-                lastUpdated: result.updatedAt,
-              },
-            },
-            lastSyncTime: new Date().toISOString(),
-          };
-        });
-      }
-    } catch (error) {
-      console.error(`Failed to toggle ${configurationType}:`, error);
-
-      // Revert optimistic update on error
-      setConfigurationStates((prev) => {
-        if (!prev) return prev;
-
-        return {
-          ...prev,
-          configurations: {
-            ...prev.configurations,
-            [configurationType]: {
-              ...prev.configurations[configurationType],
-              isActive: currentState, // Revert to original state
-              lastUpdated: prev.configurations[configurationType]?.lastUpdated,
-            },
-          },
-          lastSyncTime: new Date().toISOString(),
-        };
-      });
-
-      setConfigurationErrors((prev) => ({
-        ...prev,
-        [configurationType]: error.message,
-      }));
-    } finally {
-      // Clear loading state for this specific toggle
-      setLoadingStates((prev) => {
-        const newStates = { ...prev };
-        delete newStates[configurationType];
-        return newStates;
-      });
-    }
-  };
 
   // Calculate guardrail summary - handle both formats
   const getGuardrailInfo = () => {
@@ -359,7 +261,7 @@ const GuardrailsSection = ({
           </button>
           {!isCollapsed && (
             <HelpTooltip
-              content="Configure content filtering and safety controls for your AI model interactions. Guardrails can detect harmful content, PII, and enforce topic restrictions."
+              content="Guardrails are AWS Bedrock's content filtering system that automatically screens both user inputs and AI responses. They can block harmful content (violence, hate speech), protect sensitive information (SSN, emails), restrict discussion topics, filter specific words, and ensure responses stay grounded in your source documents."
               position="right"
             />
           )}
@@ -550,9 +452,9 @@ const GuardrailsSection = ({
                     <div className="animate-fade-in">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center space-x-2">
-                          <h4 className="text-sm font-medium text-gray-900">Configuration Controls</h4>
+                          <h4 className="text-sm font-medium text-gray-900">Policy Overview</h4>
                           <HelpTooltip
-                            content="Toggle individual guardrail configurations on or off. Changes are applied immediately to your guardrail."
+                            content="Shows which guardrail policies are currently active and their configuration details. Each policy type protects against different risks: Content (harmful material), Topic (restricted subjects), Word (blocked terms), PII (personal information), Grounding (fact-checking), and Reasoning (logical consistency)."
                             position="right"
                           />
                         </div>
@@ -580,14 +482,11 @@ const GuardrailsSection = ({
                           </button>
                         </div>
                       </div>
-                      <GuardrailConfigurationToggles
+                      <GuardrailPolicyList
                         guardrailId={guardrailId}
                         configurations={configurationStates.configurations}
-                        configurationDetails={configurationDetails}
-                        onToggle={handleConfigurationToggle}
+                        configurationDetails={configurationStates.guardrailData}
                         isLoading={isLoadingConfigurations}
-                        errors={configurationErrors}
-                        loadingStates={loadingStates}
                       />
                     </div>
                   ) : (

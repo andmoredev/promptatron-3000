@@ -265,6 +265,7 @@ export class GuardrailConfigurationManager {
     const states = {
       guardrailId: guardrailConfig.guardrailId,
       configurations: {},
+      guardrailData: guardrailConfig, // Include full guardrail data for detailed parsing
       lastSyncTime: new Date().toISOString()
     };
 
