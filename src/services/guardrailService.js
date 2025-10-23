@@ -321,9 +321,9 @@ export class GuardrailService {
 
         if (GuardrailSchemaTranslator.isSimplifiedFormat(guardrailConfig)) {
           // Translate simplified format to AWS format
-          console.log(`[GuardrailService] Translating simplified guardrail config for scenario: ${scenarioName}`);
+
           createParams = GuardrailSchemaTranslator.translateToAWSFormat(guardrailConfig, scenarioName);
-          console.log(`[GuardrailService] Translation completed. Config has ${Object.keys(createParams).length} properties`);
+
         } else {
           // Already in AWS format, use as-is but ensure required fields
           const guardrailName = `${scenarioName}-guardrail`;
@@ -354,7 +354,7 @@ export class GuardrailService {
           }
         }
 
-        console.log(`[GuardrailService] Creating guardrail with params:`, JSON.stringify(createParams, null, 2));
+
 
         const command = new CreateGuardrailCommand(createParams);
         const response = await this.managementClient.send(command);
@@ -365,7 +365,7 @@ export class GuardrailService {
 
         if (waitForReady) {
           // Poll for guardrail to become ready
-          console.log(`[GuardrailService] Guardrail created with ID: ${response.guardrailId}, polling for ready status...`);
+
           const readyGuardrail = await this.waitForGuardrailReady(response.guardrailId, response.version, {
             maxAttempts: 20,     // Reduce max attempts for faster feedback
             intervalMs: 3000,    // 3 second intervals
@@ -384,7 +384,7 @@ export class GuardrailService {
           };
         } else {
           // Return immediately without polling
-          console.log(`[GuardrailService] Guardrail created with ID: ${response.guardrailId}, skipping polling (will be in DRAFT status)`);
+
           return {
             success: true,
             guardrailId: response.guardrailId,
@@ -499,12 +499,12 @@ export class GuardrailService {
               createdAt: guardrail.createdAt || new Date().toISOString()
             });
 
-            console.log(`[GuardrailService] Found Promptatron guardrail: ${guardrail.name} -> scenario: ${scenarioName}`);
+
           }
         }
       }
 
-      console.log(`[GuardrailService] Discovered ${promptatronGuardrails.length} Promptatron guardrails`);
+
       this.lastSuccessfulCall = new Date().toISOString();
       return promptatronGuardrails;
     } catch (error) {
@@ -679,25 +679,25 @@ export class GuardrailService {
           throw new Error(`Timeout waiting for guardrail ${guardrailId} to become ready after ${timeoutMs}ms`);
         }
 
-        console.log(`[GuardrailService] Polling guardrail ${guardrailId} status (attempt ${attempts}/${maxAttempts})...`);
+
 
         const guardrailDetails = await this.getGuardrail(guardrailId, version);
 
         if (guardrailDetails.status === 'READY') {
-          console.log(`[GuardrailService] Guardrail ${guardrailId} is now READY after ${attempts} attempts`);
+
           return guardrailDetails;
         } else if (guardrailDetails.status === 'FAILED') {
           throw new Error(`Guardrail ${guardrailId} creation failed with status: FAILED`);
         }
 
-        console.log(`[GuardrailService] Guardrail ${guardrailId} status: ${guardrailDetails.status}, waiting ${intervalMs}ms...`);
+
 
         // Wait before next poll
         await new Promise(resolve => setTimeout(resolve, intervalMs));
 
       } catch (error) {
         if (error.name === 'ResourceNotFoundException') {
-          console.log(`[GuardrailService] Guardrail ${guardrailId} not found yet, continuing to poll...`);
+
           await new Promise(resolve => setTimeout(resolve, intervalMs));
           continue;
         }

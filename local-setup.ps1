@@ -1,6 +1,24 @@
-param([string]$Profile)
+#
+# AWS Setup Script for Promptatron 3000 (Bedrock LLM Analyzer) - PowerShell Version
+#
+# Usage: .\local-setup.ps1 [-Profile <profile-name>] [-Force]
+#   -Profile   AWS profile name to use (optional, will prompt if not provided)
+#   -Force     Force new authentication even if already logged in
+#
 
-function Fail($msg) { Write-Error $msg; exit 1 }
+param(
+  [string]$Profile,
+  [switch]$Force
+)
+
+function Fail($msg) {
+  Write-Error $msg
+  exit 1
+}
+
+if ($Force) {
+  Write-Host "Force flag detected - will bypass existing session check"
+}
 
 # --- Resolve profile ---
 if (-not $Profile -and -not $env:AWS_PROFILE) {
@@ -9,24 +27,70 @@ if (-not $Profile -and -not $env:AWS_PROFILE) {
   $Profile = $env:AWS_PROFILE
   Write-Host "Using existing AWS_PROFILE: $Profile"
 }
-if (-not $Profile) { Fail "No AWS profile provided." }
+if (-not $Profile) {
+  Fail "No AWS profile provided."
+}
 $env:AWS_PROFILE = $Profile
 
 # --- Verify login with correct exit-code handling ---
-Write-Host "Checking AWS SSO for profile '$Profile'..."
-$global:LASTEXITCODE = $null
-aws sts get-caller-identity --profile $Profile | Out-Null
-if ($LASTEXITCODE -ne 0) {
-  Write-Host "Not logged in. Starting SSO login for '$Profile'..."
+Write-Host "Checking authentication status for profile '$Profile'..."
+$needsLogin = $false
+
+if ($Force) {
+  Write-Host "Force login requested - skipping existing session check"
+  $needsLogin = $true
+} else {
+  $global:LASTEXITCODE = $null
+  aws sts get-caller-identity --profile $Profile | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "Authentication required for profile '$Profile'"
+    $needsLogin = $true
+  } else {
+    Write-Host "Already authenticated with profile '$Profile'"
+
+    # Test if credentials are actually working by trying to extract them
+    Write-Host "Verifying credential extraction..."
+    $global:LASTEXITCODE = $null
+    $testJson = aws configure export-credentials --profile $Profile --format json 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $testJson -or [string]::IsNullOrWhiteSpace($testJson)) {
+      Write-Host "Existing session appears to have expired credentials"
+      $needsLogin = $true
+    } else {
+      try {
+        $testCreds = $testJson | ConvertFrom-Json
+        if (-not $testCreds.AccessKeyId -or -not $testCreds.SecretAccessKey) {
+          Write-Host "Existing session appears to have expired credentials"
+          $needsLogin = $true
+        } else {
+          Write-Host "Existing credentials are valid"
+        }
+      } catch {
+        Write-Host "Could not parse existing credentials"
+        $needsLogin = $true
+      }
+    }
+  }
+}
+
+# Perform login if needed
+if ($needsLogin) {
+  if ($Force) {
+    Write-Host "Forcing new SSO login for profile '$Profile'..."
+  } else {
+    Write-Host "Starting SSO login for '$Profile'..."
+  }
+
   $global:LASTEXITCODE = $null
   aws sso login --profile $Profile
-  if ($LASTEXITCODE -ne 0) { Fail "AWS SSO login command returned non-zero exit code for '$Profile'." }
+  if ($LASTEXITCODE -ne 0) {
+    Fail "AWS SSO login command returned non-zero exit code for '$Profile'."
+  }
   Start-Sleep -Seconds 1
   $global:LASTEXITCODE = $null
   aws sts get-caller-identity --profile $Profile | Out-Null
-  if ($LASTEXITCODE -ne 0) { Fail "Logged in, but could not call STS for '$Profile'." }
-} else {
-  Write-Host "Already logged in for '$Profile'."
+  if ($LASTEXITCODE -ne 0) {
+    Fail "Logged in, but could not call STS for '$Profile'."
+  }
 }
 
 # --- Export credentials (JSON) with retry (handles race after login) ---
@@ -42,7 +106,9 @@ for ($i = 0; $i -lt 12 -and -not $creds; $i++) {
       $creds = $null
     }
   }
-  if (-not $creds) { Start-Sleep -Milliseconds 800 }
+  if (-not $creds) {
+    Start-Sleep -Milliseconds 800
+  }
 }
 
 # --- Fallback: PowerShell formatter (JOIN to single string!) ---
@@ -50,7 +116,11 @@ if (-not $creds -or -not $creds.AccessKeyId) {
   $global:LASTEXITCODE = $null
   $psLines = aws configure export-credentials --profile $Profile --format powershell 2>$null
   if ($LASTEXITCODE -eq 0 -and $psLines) {
-    $ps = if ($psLines -is [array]) { [string]::Join("`n", $psLines) } else { [string]$psLines }
+    $ps = if ($psLines -is [array]) {
+      [string]::Join("`n", $psLines)
+    } else {
+      [string]$psLines
+    }
     Invoke-Expression $ps
   }
 }
@@ -67,7 +137,11 @@ if (-not $env:AWS_ACCESS_KEY_ID -or -not $env:AWS_SECRET_ACCESS_KEY -or -not $en
 }
 
 # --- Region and VITE_* ---
-$region = if ($env:AWS_DEFAULT_REGION) { $env:AWS_DEFAULT_REGION } else { "us-east-1" }
+$region = if ($env:AWS_DEFAULT_REGION) {
+  $env:AWS_DEFAULT_REGION
+} else {
+  "us-east-1"
+}
 $env:VITE_AWS_ACCESS_KEY_ID     = $env:AWS_ACCESS_KEY_ID
 $env:VITE_AWS_SECRET_ACCESS_KEY = $env:AWS_SECRET_ACCESS_KEY
 $env:VITE_AWS_SESSION_TOKEN     = $env:AWS_SESSION_TOKEN
@@ -88,7 +162,7 @@ if (Test-Path ".env.local") {
 
 # --- Write .env.local (UTF-8) ---
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-$envFile = @"
+$envContent = @"
 # AWS Credentials for Bedrock LLM Analyzer
 # Generated by local-setup.ps1 at $timestamp
 # Profile: $Profile
@@ -101,24 +175,30 @@ VITE_AWS_SESSION_TOKEN=$($env:AWS_SESSION_TOKEN)
 
 # Add preserved Momento configuration if it exists
 if ($existingMomentoKey) {
-  $envFile += "`n`n# Momento Cache Configuration (preserved from previous setup)"
-  $envFile += "`nVITE_MOMENTO_API_KEY=$existingMomentoKey"
+  $envContent += "`n`n# Momento Cache Configuration (preserved from previous setup)"
+  $envContent += "`nVITE_MOMENTO_API_KEY=$existingMomentoKey"
 }
 
 if ($existingCacheName) {
-  $envFile += "`nVITE_CACHE_NAME=$existingCacheName"
+  $envContent += "`nVITE_CACHE_NAME=$existingCacheName"
 }
 
-$envFile += "`n`n# Note: These are temporary SSO credentials that will expire"
+$envContent += "`n`n# Note: These are temporary SSO credentials that will expire"
 
-$envFile | Out-File -FilePath ".env.local" -Encoding utf8 -NoNewline
+$envContent | Out-File -FilePath ".env.local" -Encoding utf8 -NoNewline
 
-Write-Host "`nEnvironment variables set for this PowerShell session."
-Write-Host "Created .env.local file for React app."
+Write-Host ""
+Write-Host "Setup Complete!"
+Write-Host "Environment variables set for this PowerShell session"
+Write-Host "Created .env.local file for React app"
+Write-Host "AWS Profile: $Profile"
+Write-Host "Region: $region"
 if ($existingMomentoKey) {
-  Write-Host "✅ Preserved existing Momento API key configuration"
+  Write-Host "Preserved existing Momento API key configuration"
 }
 if ($existingCacheName) {
-  Write-Host "✅ Preserved existing cache name configuration"
+  Write-Host "Preserved existing cache name configuration"
 }
+Write-Host ""
 Write-Host "You can now run: npm run dev"
+

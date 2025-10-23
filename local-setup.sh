@@ -1,7 +1,31 @@
 #!/bin/zsh
+#
+# AWS Setup Script for Promptatron 3000 (Bedrock LLM Analyzer)
+#
+# Usage: ./local-setup.sh [--force]
+#   --force    Force new authentication even if already logged in
+#
 
 echo "🤖 Promptatron 3000 - AWS Setup Script"
 echo "======================================"
+
+# Parse command line arguments
+FORCE_LOGIN=false
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --force)
+      FORCE_LOGIN=true
+      echo "🔄 Force flag detected - will bypass existing session check"
+      shift
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: $0 [--force]"
+      echo "  --force    Force new authentication even if already logged in"
+      exit 1
+      ;;
+  esac
+done
 
 # Function to list available AWS profiles
 list_profiles() {
@@ -64,9 +88,14 @@ fi
 echo ""
 echo "🔐 Using AWS profile: $AWS_PROFILE"
 
-# Check if you're already logged in
+# Check if you're already logged in (unless --force is used)
 echo "🔍 Checking authentication status..."
-if aws sts get-caller-identity --profile "$AWS_PROFILE" >/dev/null 2>&1; then
+NEEDS_LOGIN=false
+
+if [ "$FORCE_LOGIN" = true ]; then
+  echo "🔄 Force login requested - skipping existing session check"
+  NEEDS_LOGIN=true
+elif aws sts get-caller-identity --profile "$AWS_PROFILE" >/dev/null 2>&1; then
   echo "✅ Already authenticated with profile '$AWS_PROFILE'"
 
   # Show current identity
@@ -74,13 +103,31 @@ if aws sts get-caller-identity --profile "$AWS_PROFILE" >/dev/null 2>&1; then
   if [ -n "$IDENTITY" ]; then
     echo "   Identity: $IDENTITY"
   fi
+
+  # Test if credentials are actually working by trying to extract them
+  echo "🔍 Verifying credential extraction..."
+  eval "$(aws configure export-credentials --profile "$AWS_PROFILE" --format env 2>/dev/null)"
+  if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+    echo "⚠️  Existing session appears to have expired credentials"
+    NEEDS_LOGIN=true
+  else
+    echo "✅ Existing credentials are valid"
+  fi
 else
   echo "🔐 Authentication required for profile '$AWS_PROFILE'"
+  NEEDS_LOGIN=true
+fi
 
+# Perform login if needed
+if [ "$NEEDS_LOGIN" = true ]; then
   # Check if this is an SSO profile
   SSO_START_URL=$(aws configure get sso_start_url --profile "$AWS_PROFILE" 2>/dev/null)
   if [ -n "$SSO_START_URL" ]; then
-    echo "   Detected SSO profile, initiating SSO login..."
+    if [ "$FORCE_LOGIN" = true ]; then
+      echo "🔄 Forcing new SSO login for profile '$AWS_PROFILE'..."
+    else
+      echo "   Detected SSO profile, initiating SSO login..."
+    fi
     aws sso login --profile "$AWS_PROFILE"
   else
     echo "   Using standard AWS credentials for profile '$AWS_PROFILE'"

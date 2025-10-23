@@ -62,8 +62,28 @@ export class BedrockService {
 
   /**
    * Invoke a model with streaming
+   *
+   * @param {string} modelId
+   * @param {string} systemPrompt
+   * @param {string} userPrompt
+   * @param {string} content
+   * @param {Function|null} onToken - called with (token, fullText, metadata)
+   * @param {Function|null} onComplete - called with (finalResult)
+   * @param {Function|null} onError - called with (error)
+   * @param {Object|null} toolConfig - optional Bedrock toolConfig { tools: [...] }
+   * @param {Object|null} guardrailConfig - optional guardrail configuration
    */
-  async invokeModelStream(modelId, systemPrompt, userPrompt, content = '', onToken = null, guardrailConfig = null) {
+  async invokeModelStream(
+    modelId,
+    systemPrompt,
+    userPrompt,
+    content = '',
+    onToken = null,
+    onComplete = null,
+    onError = null,
+    toolConfig = null,
+    guardrailConfig = null
+  ) {
     if (!this.clientManager.isReady()) {
       const initResult = await this.clientManager.initialize();
       if (!initResult.success) {
@@ -98,6 +118,13 @@ export class BedrockService {
         converseParams.system = [{ text: systemPrompt }];
       }
 
+      // Add tool configuration if provided (enables tool-use detection in streaming)
+      if (toolConfig && Array.isArray(toolConfig.tools) && toolConfig.tools.length > 0) {
+        converseParams.toolConfig = {
+          tools: toolConfig.tools
+        };
+      }
+
       // Add guardrail configuration if provided
       if (guardrailConfig) {
         const formattedConfig = this.guardrailManager.formatGuardrailConfigForAPI(guardrailConfig);
@@ -125,6 +152,39 @@ export class BedrockService {
               // Add any metadata here if needed
             });
           }
+        }
+
+        // Basic tool-use detection signals (best-effort; schema varies by event)
+        try {
+          if (onToken) {
+            const metadata = {};
+            if (chunk.contentBlockStart?.start?.toolUse) {
+              metadata.toolUsageDetected = true;
+              metadata.toolUseStarted = {
+                name: chunk.contentBlockStart.start.toolUse.name,
+                toolUseId: chunk.contentBlockStart.start.toolUse.toolUseId
+              };
+              onToken('', fullText, metadata);
+            }
+            if (chunk.contentBlockDelta?.delta?.toolUse) {
+              const tu = chunk.contentBlockDelta.delta.toolUse;
+              metadata.toolUsageDetected = true;
+              metadata.toolUseProgress = {
+                toolUseId: tu.toolUseId,
+                currentInput: tu.input ? JSON.stringify(tu.input) : undefined
+              };
+              onToken('', fullText, metadata);
+            }
+            if (chunk.contentBlockStop?.stop?.toolUse) {
+              metadata.toolUsageDetected = true;
+              metadata.toolUseCompleted = {
+                toolUseId: chunk.contentBlockStop.stop.toolUse.toolUseId
+              };
+              onToken('', fullText, metadata);
+            }
+          }
+        } catch (_) {
+          // Best-effort metadata; ignore if structure not present
         }
 
         // Handle usage information
@@ -174,9 +234,17 @@ export class BedrockService {
         isStreamed: true
       };
 
+      // Notify completion if callback provided
+      if (onComplete) {
+        try { onComplete(result); } catch (_) {}
+      }
+
       return result;
 
     } catch (error) {
+      if (onError) {
+        try { onError(error); } catch (_) {}
+      }
       throw new Error(`Failed to stream model ${modelId}: ${error.message}`);
     }
   }

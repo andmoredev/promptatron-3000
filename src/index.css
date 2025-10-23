@@ -361,6 +361,102 @@
     }
   }
 
+  /* Responsive guardrail enhancements */
+  @media (max-width: 640px) {
+    .guardrail-config-card {
+      @apply p-2;
+    }
+
+    .guardrail-modal-content {
+      @apply max-w-full mx-2 max-h-[90vh];
+    }
+
+    .guardrail-modal-header {
+      @apply p-3 flex-col items-start space-y-2 bg-green-50 border-b border-green-200;
+    }
+
+    .guardrail-modal-header h3 {
+      @apply text-base;
+    }
+
+    .guardrail-modal-header p {
+      @apply text-xs;
+    }
+
+    .guardrail-modal-close-button {
+      @apply absolute top-2 right-2;
+    }
+
+    .guardrail-form-section {
+      @apply p-2;
+    }
+
+    .guardrail-form-section-header {
+      @apply text-sm;
+    }
+
+    .guardrail-toggle-switch {
+      @apply h-4 w-7;
+    }
+
+    .guardrail-toggle-thumb {
+      @apply h-3 w-3;
+    }
+
+    .guardrail-toggle-thumb.active {
+      @apply translate-x-3;
+    }
+
+    .guardrail-history-content {
+      @apply space-y-3;
+    }
+
+    .guardrail-config-summary {
+      @apply p-2;
+    }
+
+    .guardrail-violation-card {
+      @apply flex-col space-x-0 space-y-2 items-start;
+    }
+
+    .guardrail-history-header {
+      @apply flex-col items-start space-y-2;
+    }
+
+    .guardrail-history-toggle {
+      @apply self-end;
+    }
+
+    .guardrail-status-badge {
+      @apply text-xs px-1.5 py-0.5;
+    }
+
+    /* Stack form elements vertically on mobile */
+    .guardrail-threshold-container {
+      @apply flex-col space-y-2;
+    }
+
+    .guardrail-threshold-labels {
+      @apply justify-center;
+    }
+  }
+
+  @media (min-width: 641px) and (max-width: 1024px) {
+    .guardrail-modal-content {
+      @apply max-w-4xl;
+    }
+  }
+
+  @media (min-width: 1025px) {
+    .guardrail-config-card:hover {
+      @apply transform translate-y-[-2px] shadow-lg;
+    }
+
+    .guardrail-form-section:hover {
+      @apply shadow-md;
+    }
+  }
+
   /* Robot state-specific styling */
   .robot-container-thinking {
     @apply animate-pulse;
@@ -475,6 +571,125 @@
       border: 3px solid #000000 !important;
       background: #ffffff !important;
     }
+
+    /* Guardrail high contrast support */
+    .guardrail-toggle-switch.active {
+      background: #000000 !important;
+      border: 2px solid #000000 !important;
+    }
+
+    .guardrail-toggle-switch.inactive {
+      background: #ffffff !important;
+      border: 2px solid #000000 !important;
+    }
+
+    .guardrail-config-card.active {
+      border: 3px solid #000000 !important;
+      background: #ffffff !important;
+    }
+
+    .guardrail-config-card.inactive {
+      border: 2px solid #000000 !important;
+      background: #ffffff !important;
+    }
+
+    .guardrail-config-card.error {
+      border: 3px solid #000000 !important;
+      background: #ffffff !important;
+    }
+
+    .guardrail-status-badge.blocked {
+      background: #000000 !important;
+      color: #ffffff !important;
+      border: 2px solid #000000 !important;
+    }
+
+    .guardrail-status-badge.passed {
+      background: #ffffff !important;
+      color: #000000 !important;
+      border: 2px solid #000000 !important;
+    }
+
+    .guardrail-edit-button,
+    .guardrail-refresh-button,
+    .guardrail-history-toggle,
+    .guardrail-retry-button {
+      border: 2px solid #000000 !important;
+      color: #000000 !important;
+    }
+
+    .guardrail-edit-button:hover,
+    .guardrail-refresh-button:hover,
+    .guardrail-history-toggle:hover,
+    .guardrail-retry-button:hover {
+      background: #000000 !important;
+      color: #ffffff !important;
+    }
+  }
+
+  /* Slider styles for range inputs */
+  .slider {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .slider::-webkit-slider-track {
+    background: #e5e7eb;
+    height: 8px;
+    border-radius: 4px;
+  }
+
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--color-primary-600);
+    height: 20px;
+    width: 20px;
+    border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+  }
+
+  .slider::-webkit-slider-thumb:hover {
+    background: var(--color-primary-700);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  .slider::-moz-range-track {
+    background: #e5e7eb;
+    height: 8px;
+    border-radius: 4px;
+    border: none;
+  }
+
+  .slider::-moz-range-thumb {
+    background: var(--color-primary-600);
+    height: 20px;
+    width: 20px;
+    border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+  }
+
+  .slider::-moz-range-thumb:hover {
+    background: var(--color-primary-700);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  .slider:focus {
+    outline: none;
+  }
+
+  .slider:focus::-webkit-slider-thumb {
+    box-shadow: 0 0 0 2px var(--color-primary-500), 0 0 0 4px rgba(92, 140, 90, 0.1);
+  }
+
+  .slider:focus::-moz-range-thumb {
+    box-shadow: 0 0 0 2px var(--color-primary-500), 0 0 0 4px rgba(92, 140, 90, 0.1);
   }
 
   /* Line clamp utilities for text truncation */
@@ -504,6 +719,291 @@
     -webkit-line-clamp: 6;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  /* Guardrail-specific visual enhancements */
+  .guardrail-toggle-switch {
+    @apply relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent;
+    @apply transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .guardrail-toggle-switch.active {
+    @apply bg-primary-600 shadow-sm;
+  }
+
+  .guardrail-toggle-switch.inactive {
+    @apply bg-gray-200;
+  }
+
+  .guardrail-toggle-switch:hover:not(:disabled).active {
+    @apply bg-primary-700 shadow-md;
+  }
+
+  .guardrail-toggle-switch:hover:not(:disabled).inactive {
+    @apply bg-gray-300;
+  }
+
+  .guardrail-toggle-thumb {
+    @apply pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0;
+    @apply transition-all duration-200 ease-in-out;
+  }
+
+  .guardrail-toggle-thumb.active {
+    @apply translate-x-4 shadow-md;
+  }
+
+  .guardrail-toggle-thumb.inactive {
+    @apply translate-x-0;
+  }
+
+  .guardrail-config-card {
+    @apply border rounded-lg p-3 transition-all duration-200 ease-in-out;
+    @apply hover:shadow-sm focus-within:shadow-sm;
+  }
+
+  .guardrail-config-card.active {
+    @apply border-primary-300 bg-primary-50;
+  }
+
+  .guardrail-config-card.inactive {
+    @apply border-gray-200 bg-white;
+  }
+
+  .guardrail-config-card.error {
+    @apply border-red-300 bg-red-50;
+  }
+
+  .guardrail-config-card:hover:not(.error) {
+    @apply transform translate-y-[-1px] shadow-md;
+  }
+
+  .guardrail-icon {
+    @apply flex-shrink-0 transition-colors duration-200;
+  }
+
+  .guardrail-icon.active {
+    @apply text-primary-600;
+  }
+
+  .guardrail-icon.inactive {
+    @apply text-gray-400;
+  }
+
+  .guardrail-edit-button {
+    @apply inline-flex items-center text-gray-400 hover:text-gray-600 transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 rounded p-1;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .guardrail-edit-button:hover:not(:disabled) {
+    @apply transform scale-110 text-primary-600;
+  }
+
+  .guardrail-refresh-button {
+    @apply text-xs text-gray-500 hover:text-gray-700 font-medium transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 rounded px-2 py-1;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .guardrail-refresh-button:hover:not(:disabled) {
+    @apply transform scale-105 text-primary-600;
+  }
+
+  .guardrail-modal-overlay {
+    @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50;
+    @apply animate-fade-in;
+  }
+
+  .guardrail-modal-content {
+    @apply bg-white rounded-xl shadow-xl max-w-6xl w-full max-h-[95vh] overflow-hidden;
+    @apply animate-scale-in;
+  }
+
+  .guardrail-modal-header {
+    @apply flex items-center justify-between p-4 border-b border-green-200 bg-green-50;
+  }
+
+  .guardrail-modal-close-button {
+    @apply text-gray-400 hover:text-gray-600 transition-colors duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 rounded p-1;
+  }
+
+  .guardrail-modal-close-button:hover {
+    @apply transform scale-110;
+  }
+
+  .guardrail-form-section {
+    @apply space-y-3 bg-gray-50 p-3 rounded-lg border border-gray-200;
+    @apply transition-all duration-200 hover:shadow-sm;
+  }
+
+  .guardrail-form-section-header {
+    @apply text-base font-medium text-gray-900 flex items-center space-x-2;
+  }
+
+  .guardrail-threshold-slider {
+    @apply flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer;
+    @apply transition-all duration-200 focus:outline-none;
+  }
+
+  .guardrail-threshold-slider:focus {
+    @apply ring-2 ring-primary-500 ring-offset-2;
+  }
+
+  .guardrail-history-card {
+    @apply mt-4 border-t border-gray-200 pt-4 transition-all duration-200;
+  }
+
+  .guardrail-history-header {
+    @apply flex items-center justify-between mb-3;
+  }
+
+  .guardrail-history-toggle {
+    @apply text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center space-x-1;
+    @apply transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 rounded px-2 py-1;
+  }
+
+  .guardrail-history-toggle:hover {
+    @apply transform scale-105;
+  }
+
+  .guardrail-history-content {
+    @apply space-y-4 animate-fade-in;
+  }
+
+  .guardrail-status-badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium transition-all duration-200;
+  }
+
+  .guardrail-status-badge.blocked {
+    @apply bg-red-100 text-red-800;
+  }
+
+  .guardrail-status-badge.passed {
+    @apply bg-green-100 text-green-800;
+  }
+
+  .guardrail-violation-card {
+    @apply flex items-start space-x-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg;
+    @apply transition-all duration-200 hover:shadow-sm;
+  }
+
+  .guardrail-config-summary {
+    @apply bg-gray-50 rounded-lg p-3 transition-all duration-200 hover:shadow-sm;
+  }
+
+  .guardrail-loading-overlay {
+    @apply flex items-center justify-center py-8 transition-all duration-200;
+  }
+
+  .guardrail-error-card {
+    @apply bg-red-50 border border-red-200 rounded-lg p-3 transition-all duration-200;
+  }
+
+  .guardrail-retry-button {
+    @apply text-sm text-red-600 hover:text-red-700 font-medium transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 rounded px-2 py-1;
+  }
+
+  .guardrail-retry-button:hover {
+    @apply transform scale-105;
+  }
+
+  /* Additional guardrail animation utilities */
+  .animate-guardrail-toggle {
+    animation: guardrailToggle 0.3s ease-in-out;
+  }
+
+  .animate-guardrail-pulse {
+    animation: guardrailPulse 2s ease-in-out infinite;
+  }
+
+  .animate-guardrail-slide-in {
+    animation: guardrailSlideIn 0.3s ease-out;
+  }
+
+  /* Guardrail loading states */
+  .guardrail-loading-shimmer {
+    @apply bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200;
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  /* Guardrail focus states for better accessibility */
+  .guardrail-focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+  }
+
+  .guardrail-focus-ring-error {
+    @apply focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2;
+  }
+
+  /* Guardrail success states */
+  .guardrail-success-card {
+    @apply bg-green-50 border border-green-200 rounded-lg p-3 transition-all duration-200;
+  }
+
+  .guardrail-success-icon {
+    @apply text-green-500 transition-colors duration-200;
+  }
+
+  /* Guardrail warning states */
+  .guardrail-warning-card {
+    @apply bg-yellow-50 border border-yellow-200 rounded-lg p-3 transition-all duration-200;
+  }
+
+  .guardrail-warning-icon {
+    @apply text-yellow-500 transition-colors duration-200;
+  }
+
+  /* Touch-friendly enhancements */
+  @media (hover: none) and (pointer: coarse) {
+    .guardrail-toggle-switch {
+      @apply min-h-[44px] min-w-[44px] flex items-center justify-center;
+    }
+
+    .guardrail-edit-button,
+    .guardrail-refresh-button,
+    .guardrail-retry-button {
+      @apply min-h-[44px] min-w-[44px] flex items-center justify-center;
+    }
+
+    .guardrail-history-toggle {
+      @apply min-h-[44px] px-4 py-2;
+    }
+
+    .guardrail-config-card {
+      @apply p-4;
+    }
+
+    /* Disable hover effects on touch devices */
+    .guardrail-config-card:hover,
+    .guardrail-form-section:hover,
+    .guardrail-edit-button:hover,
+    .guardrail-refresh-button:hover,
+    .guardrail-retry-button:hover,
+    .guardrail-history-toggle:hover {
+      @apply transform-none shadow-none;
+    }
+
+    /* Enhance focus states for touch navigation */
+    .guardrail-toggle-switch:focus,
+    .guardrail-edit-button:focus,
+    .guardrail-refresh-button:focus,
+    .guardrail-retry-button:focus,
+    .guardrail-history-toggle:focus {
+      @apply ring-4 ring-primary-500 ring-opacity-50;
+    }
   }
 
   /* Performance optimized animations with hardware acceleration */
@@ -747,6 +1247,40 @@
   100% {
     transform: scale(1);
     filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+  }
+}
+
+@keyframes guardrailToggle {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes guardrailPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes guardrailSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 

@@ -25,9 +25,11 @@ export default defineConfig({
     cssMinify: false, // Disable CSS minification to avoid syntax warnings
     rollupOptions: {
       output: {
+        // Name key vendor groups explicitly to avoid giant catch-all chunks
         manualChunks: {
           vendor: ['react', 'react-dom'],
-          aws: ['@aws-sdk/client-bedrock-runtime', '@aws-sdk/client-bedrock']
+          aws: ['@aws-sdk/client-bedrock-runtime', '@aws-sdk/client-bedrock'],
+          momento: ['@gomomento/sdk-web']
         }
       }
     }

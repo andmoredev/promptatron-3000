@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import ModelSelector from "./components/ModelSelector";
 import ScenarioSelector from "./components/ScenarioSelector";
 import ConditionalDatasetSelector from "./components/ConditionalDatasetSelector";
 import ConditionalExecutionSettings from "./components/ConditionalExecutionSettings";
 import PromptEditor from "./components/PromptEditor";
-import TestResults from "./components/TestResults";
-import History from "./components/History";
-import Comparison from "./components/Comparison";
+const TestResults = lazy(() => import('./components/TestResults'));
+// Lazy-loaded sections to reduce initial bundle size
+const History = lazy(() => import('./components/History'));
+const Comparison = lazy(() => import('./components/Comparison'));
 import ErrorBoundary from "./components/ErrorBoundary";
 import BrowserCompatibility from "./components/BrowserCompatibility";
 import UIErrorNotification from "./components/UIErrorNotification";
@@ -15,16 +16,14 @@ import ProgressBar from "./components/ProgressBar";
 import ThemeProvider from "./components/ThemeProvider";
 import { RobotGraphicContainer } from "./components/RobotGraphic";
 import ChadRevealButton from "./components/RobotGraphic/ChadRevealButton";
-import FloatingChad from "./components/RobotGraphic/FloatingChad";
+const FloatingChad = lazy(() => import('./components/RobotGraphic/FloatingChad'));
 import { useChadReveal } from "./components/RobotGraphic/useChadReveal";
-import StreamingPerformanceMonitor from "./components/StreamingPerformanceMonitor";
-import SettingsDialog from "./components/SettingsDialog";
-import ScenarioBuilder from "./components/ScenarioBuilder";
-import CacheManager from "./components/CacheManager";
+const StreamingPerformanceMonitor = lazy(() => import('./components/StreamingPerformanceMonitor'));
+const SettingsDialog = lazy(() => import('./components/SettingsDialog'));
+const ScenarioBuilder = lazy(() => import('./components/ScenarioBuilder'));
 
-import ToolExecutionSettings from "./components/ToolExecutionSettings";
-import ToolExecutionMonitor from "./components/ToolExecutionMonitor";
-import GuardrailsSection from "./components/GuardrailsSection";
+const ToolExecutionMonitor = lazy(() => import('./components/ToolExecutionMonitor'));
+const GuardrailsSection = lazy(() => import('./components/GuardrailsSection'));
 import { bedrockService } from "./services/bedrockService";
 import { datasetToolIntegrationService } from "./services/datasetToolIntegrationService";
 import { scenarioToolIntegrationService } from "./services/scenarioToolIntegrationService";
@@ -186,7 +185,7 @@ function App() {
   const [selectedUserPromptId, setSelectedUserPromptId] = useState('');
 
   // Guardrail state
-  const [guardrailsEnabled, setGuardrailsEnabled] = useState(false);
+  const [guardrailsEnabled, setGuardrailsEnabled] = useState(savedFormState.guardrailsEnabled);
   const [guardrailsInitialized, setGuardrailsInitialized] = useState(false);
   const [guardrailsError, setGuardrailsError] = useState(null);
   const [scenarioGuardrailMap, setScenarioGuardrailMap] = useState(new Map());
@@ -401,6 +400,100 @@ function App() {
       console.warn('[App] Failed to get guardrail config for test:', error);
       return null;
     }
+  };
+
+  // Capture guardrail state snapshot for history storage
+  const captureGuardrailStateSnapshot = async (scenarioName, guardrailConfig) => {
+    console.log('[App] Capturing guardrail state snapshot for scenario:', scenarioName);
+
+    try {
+      // Get the guardrail ID from the scenario guardrail map
+      const guardrailInfo = scenarioGuardrailMap.get(scenarioName);
+      if (!guardrailInfo || !guardrailInfo.id) {
+        console.warn('[App] No guardrail ID found for scenario:', scenarioName);
+        return {
+          scenarioName,
+          guardrailId: null,
+          guardrailArn: guardrailConfig?.guardrailIdentifier || null,
+          guardrailVersion: guardrailConfig?.guardrailVersion || null,
+          activeConfigurations: [],
+          configurationStates: {},
+          capturedAt: new Date().toISOString(),
+          captureError: 'No guardrail ID available'
+        };
+      }
+
+      // Import the guardrail configuration manager to get current states
+      const { guardrailConfigurationManager } = await import('./services/guardrailConfigurationManager.js');
+
+      // Get current configuration states
+      let configurationStates = {};
+      let activeConfigurations = [];
+
+      try {
+        const states = await guardrailConfigurationManager.getConfigurationStates(guardrailInfo.id);
+        console.log('[App] Retrieved configuration states:', states);
+
+        if (states && states.configurations) {
+          configurationStates = states.configurations;
+
+          // Build active configurations list
+          activeConfigurations = Object.entries(states.configurations)
+            .filter(([_, config]) => config.isActive)
+            .map(([type, config]) => ({
+              type: type,
+              name: getConfigurationDisplayName(type),
+              isActive: config.isActive,
+              details: config.details || null
+            }));
+        }
+      } catch (stateError) {
+        console.warn('[App] Failed to get configuration states:', stateError);
+        // Continue with empty states rather than failing completely
+      }
+
+      const snapshot = {
+        scenarioName,
+        guardrailId: guardrailInfo.id,
+        guardrailArn: guardrailConfig?.guardrailIdentifier || guardrailInfo.arn,
+        guardrailVersion: guardrailConfig?.guardrailVersion || guardrailInfo.version || 'DRAFT',
+        guardrailName: guardrailInfo.name,
+        activeConfigurations,
+        configurationStates,
+        capturedAt: new Date().toISOString()
+      };
+
+      console.log('[App] Created guardrail state snapshot:', snapshot);
+      return snapshot;
+
+    } catch (error) {
+      console.error('[App] Failed to capture guardrail state snapshot:', error);
+
+      // Return a minimal snapshot with error information
+      return {
+        scenarioName,
+        guardrailId: null,
+        guardrailArn: guardrailConfig?.guardrailIdentifier || null,
+        guardrailVersion: guardrailConfig?.guardrailVersion || null,
+        activeConfigurations: [],
+        configurationStates: {},
+        capturedAt: new Date().toISOString(),
+        captureError: error.message
+      };
+    }
+  };
+
+  // Helper function to get display names for configuration types
+  const getConfigurationDisplayName = (type) => {
+    const displayNames = {
+      'CONTENT_POLICY': 'Content Policy',
+      'TOPIC_POLICY': 'Topic Policy',
+      'WORD_POLICY': 'Word Policy',
+      'SENSITIVE_INFORMATION': 'Sensitive Information',
+      'CONTEXTUAL_GROUNDING': 'Contextual Grounding',
+      'AUTOMATED_REASONING': 'Automated Reasoning'
+    };
+    return displayNames[type] || type;
   };
 
   // Helper function to generate user-friendly validation messages
@@ -948,6 +1041,7 @@ function App() {
       streamingEnabled,
       useToolsEnabled,
       maxIterations,
+      guardrailsEnabled,
     };
 
     // Only save if we have some meaningful data (avoid saving empty initial state)
@@ -964,6 +1058,7 @@ function App() {
     streamingEnabled,
     useToolsEnabled,
     maxIterations,
+    guardrailsEnabled,
     debouncedSave,
   ]);
 
@@ -1403,12 +1498,17 @@ function App() {
 
           // Get guardrail configuration for this test
           let guardrailConfig = null;
+          let guardrailSnapshot = null;
           if (guardrailsEnabled && selectedScenario) {
             try {
               setProgressStatus("Configuring guardrails...");
               guardrailConfig = await getGuardrailConfigForTest();
               if (guardrailConfig) {
                 console.log('[App] Using guardrail configuration:', guardrailConfig);
+
+                // Capture guardrail state snapshot for history
+                guardrailSnapshot = await captureGuardrailStateSnapshot(selectedScenario, guardrailConfig);
+                console.log('[App] Captured guardrail state snapshot:', guardrailSnapshot);
               } else {
                 console.log('[App] No guardrail configuration returned');
               }
@@ -1578,6 +1678,7 @@ function App() {
                 // Add guardrail results if available
                 guardrailResults: workflowResult.results.guardrailResults,
                 guardrailsEnabled: !!guardrailConfig, // True if guardrails were configured for this test
+                guardrailSnapshot: guardrailSnapshot, // Include guardrail state snapshot for history display
                 stopReason: workflowResult.results.stopReason, // Include stop reason from tool execution
               };
 
@@ -1886,6 +1987,7 @@ function App() {
             guardrailResults: response.guardrailResults || null, // Include guardrail evaluation results
             guardrailConfig: guardrailConfig, // Include guardrail configuration used
             guardrailsEnabled: guardrailsEnabled, // Flag to indicate if guardrails were enabled
+            guardrailSnapshot: guardrailSnapshot, // Include guardrail state snapshot for history display
             timestamp: new Date().toISOString(),
           };
         },
@@ -2587,7 +2689,8 @@ function App() {
                           return false;
                         }
                       })() && (
-                        <GuardrailsSection
+                        <Suspense fallback={<LoadingSpinner message="Loading guardrails..." />}>
+                          <GuardrailsSection
                           guardrails={(() => {
                             try {
                               const scenario = scenarioService.getScenario(selectedScenario);
@@ -2602,7 +2705,9 @@ function App() {
                           onToggleCollapse={() => toggleSectionCollapse('guardrails')}
                           validationErrors={validationErrors.guardrails ? [validationErrors.guardrails] : []}
                           scenarioName={selectedScenario}
-                        />
+                          scenarioGuardrailMap={scenarioGuardrailMap}
+                          />
+                        </Suspense>
                       )}
 
                       {scenarioConfig.showDatasetSelector && (
@@ -2825,7 +2930,8 @@ function App() {
                       {/* Tool Execution Monitor */}
                       {isToolExecuting && (
                         <div className="mb-6">
-                          <ToolExecutionMonitor
+                          <Suspense fallback={<LoadingSpinner message="Loading tool monitor..." />}>
+                            <ToolExecutionMonitor
                             currentIteration={
                               toolExecutionService.isInitialized &&
                               toolExecutionId
@@ -2845,7 +2951,8 @@ function App() {
                             }
                             executionStatus={toolExecutionStatus}
                             onCancel={cancelToolExecution}
-                          />
+                            />
+                          </Suspense>
                         </div>
                       )}
 
@@ -2878,6 +2985,7 @@ function App() {
                       className="animate-slide-up"
                       style={{ animationDelay: "0.1s" }}
                     >
+                      <Suspense fallback={<LoadingSpinner message="Loading results..." />}>
                       <TestResults
                         results={testResults}
                         isLoading={isLoading}
@@ -2926,6 +3034,7 @@ function App() {
                         }
                         isToolExecuting={toolExecutionStatus === "executing"}
                       />
+                      </Suspense>
                     </div>
                   </div>
                 </div>
@@ -2933,21 +3042,25 @@ function App() {
 
               {activeTab === "history" && (
                 <div className="max-w-6xl mx-auto animate-fade-in">
-                  <History
-                    onLoadFromHistory={handleLoadFromHistory}
-                    onCompareTests={handleCompareTests}
-                    selectedForComparison={selectedForComparison}
-                  />
+                  <Suspense fallback={<LoadingSpinner message="Loading history..." />}>
+                    <History
+                      onLoadFromHistory={handleLoadFromHistory}
+                      onCompareTests={handleCompareTests}
+                      selectedForComparison={selectedForComparison}
+                    />
+                  </Suspense>
                 </div>
               )}
 
               {activeTab === "comparison" && (
                 <div className="max-w-6xl mx-auto animate-fade-in">
-                  <Comparison
-                    selectedTests={selectedForComparison}
-                    onRemoveTest={handleRemoveFromComparison}
-                    onClearComparison={handleClearComparison}
-                  />
+                  <Suspense fallback={<LoadingSpinner message="Loading comparison..." />}>
+                    <Comparison
+                      selectedTests={selectedForComparison}
+                      onRemoveTest={handleRemoveFromComparison}
+                      onClearComparison={handleClearComparison}
+                    />
+                  </Suspense>
                 </div>
               )}
 
@@ -3007,10 +3120,12 @@ function App() {
               {/* Streaming Performance Monitor - Debug Mode */}
               {isStreamingDebugEnabled && (
                 <div className="fixed bottom-4 right-4 w-80 z-40">
-                  <StreamingPerformanceMonitor
-                    isVisible={true}
-                    refreshInterval={3000}
-                  />
+                  <Suspense fallback={<LoadingSpinner message="Loading monitor..." />}>
+                    <StreamingPerformanceMonitor
+                      isVisible={true}
+                      refreshInterval={3000}
+                    />
+                  </Suspense>
                 </div>
               )}
             </div>
@@ -3020,6 +3135,7 @@ function App() {
           <UIErrorNotification />
 
           {/* Floating Chad Companion */}
+          <Suspense fallback={null}>
           <FloatingChad
             isVisible={true}
             currentState={
@@ -3034,34 +3150,39 @@ function App() {
             size="lg"
             draggable={true}
           />
+          </Suspense>
 
           {/* Settings Dialog */}
-          <SettingsDialog
-            isOpen={isSettingsOpen}
-            onClose={() => setIsSettingsOpen(false)}
-            onSave={(settings) => {
-              // Settings are automatically saved by the SettingsService
-              // This callback is for any additional actions needed
-            }}
-            // Guardrail props
-            guardrailsEnabled={guardrailsEnabled}
-            onToggleGuardrails={handleToggleGuardrails}
-            onTestGuardrails={() => {
-              // TODO: Implement guardrail testing functionality
-              console.log('Testing guardrails...');
-            }}
-            guardrailsInitialized={guardrailsInitialized}
-            guardrailsError={guardrailsError}
-            scenarioGuardrailMap={scenarioGuardrailMap}
-          />
+          <Suspense fallback={null}>
+            <SettingsDialog
+              isOpen={isSettingsOpen}
+              onClose={() => setIsSettingsOpen(false)}
+              onSave={(settings) => {
+                // Settings are automatically saved by the SettingsService
+                // This callback is for any additional actions needed
+              }}
+              // Guardrail props
+              guardrailsEnabled={guardrailsEnabled}
+              onToggleGuardrails={handleToggleGuardrails}
+              onTestGuardrails={() => {
+                // TODO: Implement guardrail testing functionality
+                console.log('Testing guardrails...');
+              }}
+              guardrailsInitialized={guardrailsInitialized}
+              guardrailsError={guardrailsError}
+              scenarioGuardrailMap={scenarioGuardrailMap}
+            />
+          </Suspense>
 
           {/* Scenario Builder Dialog */}
-          <ScenarioBuilder
-            isOpen={isScenarioBuilderOpen}
-            onClose={handleCloseScenarioBuilder}
-            onSave={handleSaveScenario}
-            editingScenario={editingScenario}
-          />
+          <Suspense fallback={null}>
+            <ScenarioBuilder
+              isOpen={isScenarioBuilderOpen}
+              onClose={handleCloseScenarioBuilder}
+              onSave={handleSaveScenario}
+              editingScenario={editingScenario}
+            />
+          </Suspense>
         </BrowserCompatibility>
       </ThemeProvider>
     </ErrorBoundary>
