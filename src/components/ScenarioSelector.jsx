@@ -491,6 +491,40 @@ const ScenarioSelector = ({ selectedScenario, onScenarioSelect, validationError,
               </div>
             )}
 
+            {/* Meta-Agent Configuration Section */}
+            {scenarioMetadata && !scenarioMetadata.hasError && scenarioMetadata.hasMetaAgents && (
+              <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center space-x-2">
+                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  <span>Meta-Agent Analysis</span>
+                </h4>
+
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-600 mb-3">
+                    Meta-agents analyze and validate baseline LLM responses for quality, safety, and accuracy.
+                  </p>
+
+                  {scenarioMetadata.metaAgentNames && scenarioMetadata.metaAgentNames.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs text-gray-600 font-medium">Available Meta-Agents:</div>
+                      <ul className="text-xs text-gray-700 space-y-1">
+                        {scenarioMetadata.metaAgentNames.map(agentName => (
+                          <li key={agentName} className="flex items-center space-x-2">
+                            <span className="inline-block w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+                            <span className="capitalize">
+                              {agentName.replace(/([A-Z])/g, ' $1').trim()}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Guardrails Section */}
 
           </div>

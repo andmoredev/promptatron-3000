@@ -10,6 +10,7 @@ import ToolUsageDisplay from './ToolUsageDisplay';
 import ToolConfigurationStatus from './ToolConfigurationStatus';
 import WorkflowTimeline from './WorkflowTimeline';
 import GuardrailResults from './GuardrailResults';
+import MetaAgentResults from './MetaAgentResults';
 import { uiErrorRecovery } from '../utils/uiErrorRecovery';
 import { useModelOutput } from '../hooks/useModelOutput';
 import { useDeterminismSettings } from '../hooks/useSettings';
@@ -119,12 +120,19 @@ const TestResults = ({
   // Tool execution props
   toolExecutionEnabled = false,
   workflowData = null,
-  isToolExecuting = false
+  isToolExecuting = false,
+  // Meta-agent props
+  metaAgentsEnabled = false,
+  metaAgentEvaluationStatus = null,
+  isMetaAgentLoading = false,
+  metaAgentError = null,
+  onRetryMetaAgent = null
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [viewMode, setViewMode] = useState('formatted'); // 'formatted', 'raw', 'markdown'
   const [displayError, setDisplayError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [isPromptsExpanded, setIsPromptsExpanded] = useState(false);
 
   // Use model output manager for state persistence and error recovery
   const {
@@ -262,8 +270,8 @@ const TestResults = ({
     }
   }, [displayResults]);
 
-  // Show streaming interface during active streaming or when there's streaming content
-  if (isStreaming || (streamingContent && !results)) {
+  // Show streaming interface only during active streaming
+  if (isStreaming) {
     return (
       <div className="card">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Test Results</h3>
@@ -581,7 +589,7 @@ const TestResults = ({
       </div>
 
       {/* Status Chips */}
-      {(toolExecutionEnabled || displayResults?.guardrailsEnabled || displayResults?.stopReason === 'guardrail_intervened' || displayResults?.guardrailResults?.hasViolations) && (
+      {(toolExecutionEnabled || displayResults?.guardrailsEnabled || displayResults?.stopReason === 'guardrail_intervened' || displayResults?.guardrailResults?.hasViolations || metaAgentsEnabled) && (
         <div className="flex items-center space-x-2 mb-4">
           {toolExecutionEnabled && (
             <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -604,38 +612,87 @@ const TestResults = ({
                 : 'Guardrails Enabled'}
             </span>
           )}
+          {metaAgentsEnabled && (
+            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+              metaAgentEvaluationStatus?.status === 'completed'
+                ? metaAgentEvaluationStatus.result?.overallRecommendation === 'accept'
+                  ? 'bg-green-100 text-green-800'
+                  : metaAgentEvaluationStatus.result?.overallRecommendation === 'reject'
+                    ? 'bg-red-100 text-red-800'
+                    : 'bg-yellow-100 text-yellow-800'
+                : isMetaAgentLoading
+                  ? 'bg-blue-100 text-blue-800'
+                  : metaAgentError
+                    ? 'bg-red-100 text-red-800'
+                    : 'bg-purple-100 text-purple-800'
+            }`}>
+              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              {metaAgentEvaluationStatus?.status === 'completed'
+                ? `Meta-Agents: ${metaAgentEvaluationStatus.result?.overallRecommendation?.toUpperCase()}`
+                : isMetaAgentLoading
+                  ? 'Meta-Agents Running'
+                  : metaAgentError
+                    ? 'Meta-Agents Failed'
+                    : 'Meta-Agents Enabled'}
+            </span>
+          )}
         </div>
       )}
 
 
 
       {/* Prompt Display */}
-      <div className="mb-4">
-
-        {/* System Prompt */}
-        {displayResults.systemPrompt && (
-          <div className="mb-3">
-            <h5 className="text-sm font-medium text-gray-600 mb-1">System Prompt:</h5>
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 gradient-safe">
-              <div className="text-sm text-purple-800 font-mono system-prompt-display text-safe">
-                {displayResults.systemPrompt}
-              </div>
-            </div>
+      {(displayResults.systemPrompt || displayResults.userPrompt) && (
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-medium text-gray-700">Prompts Used:</h4>
+            <button
+              onClick={() => setIsPromptsExpanded(!isPromptsExpanded)}
+              className="text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center space-x-1"
+            >
+              <span>{isPromptsExpanded ? 'Hide' : 'Show'} Prompts</span>
+              <svg
+                className={`w-4 h-4 transform transition-transform ${isPromptsExpanded ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
           </div>
-        )}
 
-        {/* User Prompt */}
-        {displayResults.userPrompt && (
-          <div className="mb-3">
-            <h5 className="text-sm font-medium text-gray-600 mb-1">User Prompt:</h5>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 gradient-safe">
-              <div className="text-sm text-blue-800 font-mono test-results-prompt text-safe">
-                {displayResults.userPrompt}
-              </div>
+          {isPromptsExpanded && (
+            <div className="space-y-3">
+              {/* System Prompt */}
+              {displayResults.systemPrompt && (
+                <div>
+                  <h5 className="text-sm font-medium text-gray-600 mb-1">System Prompt:</h5>
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 gradient-safe">
+                    <div className="text-sm text-purple-800 font-mono system-prompt-display text-safe">
+                      {displayResults.systemPrompt}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* User Prompt */}
+              {displayResults.userPrompt && (
+                <div>
+                  <h5 className="text-sm font-medium text-gray-600 mb-1">User Prompt:</h5>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 gradient-safe">
+                    <div className="text-sm text-blue-800 font-mono test-results-prompt text-safe">
+                      {displayResults.userPrompt}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Response Display */}
       <div>
@@ -910,6 +967,19 @@ const TestResults = ({
         )}
       </div>
 
+      {/* Meta-Agent Analysis Section */}
+      {metaAgentsEnabled && (
+        <div className="mt-4 pt-3 border-t border-gray-200">
+          <h4 className="font-medium text-gray-700 mb-3">Meta-Agent Analysis:</h4>
+          <MetaAgentResults
+            evaluationStatus={metaAgentEvaluationStatus}
+            isLoading={isMetaAgentLoading}
+            error={metaAgentError}
+            onRetry={onRetryMetaAgent}
+          />
+        </div>
+      )}
+
 
 
       {/* Response Stats */}
@@ -1143,7 +1213,41 @@ TestResults.propTypes = {
     metadata: PropTypes.object,
     status: PropTypes.oneOf(['pending', 'in_progress', 'completed', 'error'])
   })),
-  isToolExecuting: PropTypes.bool
+  isToolExecuting: PropTypes.bool,
+  // Meta-agent props
+  metaAgentsEnabled: PropTypes.bool,
+  metaAgentEvaluationStatus: PropTypes.shape({
+    id: PropTypes.string,
+    status: PropTypes.oneOf(['running', 'completed', 'error', 'cancelled']),
+    progress: PropTypes.number,
+    currentPhase: PropTypes.string,
+    agentResults: PropTypes.arrayOf(PropTypes.shape({
+      agentType: PropTypes.string.isRequired,
+      recommendation: PropTypes.oneOf(['accept', 'reject', 'warning']).isRequired,
+      confidence: PropTypes.number.isRequired,
+      analysis: PropTypes.string.isRequired,
+      details: PropTypes.object,
+      timestamp: PropTypes.string,
+      modelId: PropTypes.string,
+      failed: PropTypes.bool
+    })),
+    result: PropTypes.shape({
+      overallRecommendation: PropTypes.oneOf(['accept', 'reject', 'warning']).isRequired,
+      overallConfidence: PropTypes.number.isRequired,
+      summary: PropTypes.string.isRequired,
+      agentCount: PropTypes.number,
+      successfulAgents: PropTypes.number,
+      failedAgents: PropTypes.number,
+      recommendations: PropTypes.shape({
+        accept: PropTypes.number,
+        reject: PropTypes.number,
+        warning: PropTypes.number
+      })
+    })
+  }),
+  isMetaAgentLoading: PropTypes.bool,
+  metaAgentError: PropTypes.string,
+  onRetryMetaAgent: PropTypes.func
 };
 
 TestResults.defaultProps = {
@@ -1157,7 +1261,12 @@ TestResults.defaultProps = {
   streamingError: null,
   toolExecutionEnabled: false,
   workflowData: null,
-  isToolExecuting: false
+  isToolExecuting: false,
+  metaAgentsEnabled: false,
+  metaAgentEvaluationStatus: null,
+  isMetaAgentLoading: false,
+  metaAgentError: null,
+  onRetryMetaAgent: null
 };
 
 export default TestResults;

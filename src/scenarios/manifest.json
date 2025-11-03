@@ -12,12 +12,18 @@
       "folder": "shipping-logistics",
       "configFile": "scenario.json",
       "enabled": true
+    },
+    {
+      "id": "expense-report-validator",
+      "folder": "expense-report-validator",
+      "configFile": "scenario.json",
+      "enabled": true
     }
   ],
   "metadata": {
     "manifestVersion": "1.0.0",
-    "lastUpdated": "2025-10-07T16:00:00Z",
-    "totalScenarios": 2,
+    "lastUpdated": "2025-11-03T12:00:00Z",
+    "totalScenarios": 3,
     "description": "Consolidated scenario structure with all scenario files, datasets, and tools organized under /src/scenarios/"
   }
 }

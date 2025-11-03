@@ -10,11 +10,13 @@ import manifestData from '../scenarios/manifest.json' with { type: 'json' };
 // Import scenario files directly instead of using import.meta.glob
 import fraudDetectionScenario from '../scenarios/fraud-detection/scenario.json' with { type: 'json' };
 import shippingLogisticsScenario from '../scenarios/shipping-logistics/scenario.json' with { type: 'json' };
+import expenseReportValidatorScenario from '../scenarios/expense-report-validator/scenario.json' with { type: 'json' };
 
 // Create a map of scenario modules
 const scenarioJsonModules = {
   '../scenarios/fraud-detection/scenario.json': fraudDetectionScenario,
-  '../scenarios/shipping-logistics/scenario.json': shippingLogisticsScenario
+  '../scenarios/shipping-logistics/scenario.json': shippingLogisticsScenario,
+  '../scenarios/expense-report-validator/scenario.json': expenseReportValidatorScenario
 };
 
 const jsonDatasetModules = import.meta.glob('../scenarios/*/datasets/*.json', { eager: true, import: 'default' });

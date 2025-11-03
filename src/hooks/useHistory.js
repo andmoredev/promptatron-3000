@@ -183,7 +183,14 @@ export function useHistory() {
         (record.toolExecution?.status?.toLowerCase().includes(term)) ||
         // Include workflow data in search
         (record.toolExecutionWorkflow?.executionId?.toLowerCase().includes(term)) ||
-        (record.toolExecutionWorkflow?.status?.toLowerCase().includes(term))
+        (record.toolExecutionWorkflow?.status?.toLowerCase().includes(term)) ||
+        // Include meta-agent evaluation data in search
+        (record.metaAgentEvaluation?.overallRecommendation?.toLowerCase().includes(term)) ||
+        (record.metaAgentEvaluation?.agentResults?.some(result =>
+          result.agentType?.toLowerCase().includes(term) ||
+          result.recommendation?.toLowerCase().includes(term) ||
+          result.analysis?.toLowerCase().includes(term)
+        ))
       );
     });
   }, [history]);
@@ -279,6 +286,24 @@ export function useHistory() {
     );
     const averageIterations = testsWithToolExecution > 0 ? totalIterations / testsWithToolExecution : 0;
 
+    // Calculate meta-agent statistics
+    const testsWithMetaAgents = history.filter(record => record.metaAgentEvaluation).length;
+    const metaAgentAcceptedTests = history.filter(record =>
+      record.metaAgentEvaluation?.overallRecommendation === 'accept'
+    ).length;
+    const metaAgentRejectedTests = history.filter(record =>
+      record.metaAgentEvaluation?.overallRecommendation === 'reject'
+    ).length;
+    const metaAgentWarningTests = history.filter(record =>
+      record.metaAgentEvaluation?.overallRecommendation === 'warning'
+    ).length;
+
+    const averageMetaAgentConfidence = testsWithMetaAgents > 0
+      ? history
+          .filter(record => record.metaAgentEvaluation?.overallConfidence !== undefined)
+          .reduce((sum, record) => sum + record.metaAgentEvaluation.overallConfidence, 0) / testsWithMetaAgents
+      : 0;
+
     const timestamps = history
       .map(record => new Date(record.timestamp))
       .sort((a, b) => a - b);
@@ -301,6 +326,14 @@ export function useHistory() {
         averageExecutionDuration,
         averageIterations,
         totalExecutionDuration
+      },
+      metaAgentStats: {
+        testsWithMetaAgents,
+        testsWithoutMetaAgents: history.length - testsWithMetaAgents,
+        acceptedTests: metaAgentAcceptedTests,
+        rejectedTests: metaAgentRejectedTests,
+        warningTests: metaAgentWarningTests,
+        averageConfidence: averageMetaAgentConfidence
       },
       dateRange: {
         earliest: timestamps[0],

@@ -1,0 +1,358 @@
+{
+  "id": "expense-report-validator",
+  "name": "Expense Report Validator",
+  "description": "Principle 5: LLM-Driven Error Analysis demonstration scenario. Validates expense reports with meta-agent controls that analyze and improve LLM responses through self-reflection loops for enterprise AI quality control.",
+  "datasets": [],
+  "seedData": {
+    "dataFile": "seed-data.json",
+    "allowReset": true
+  },
+  "systemPrompts": [
+    {
+      "id": "expense-triage-agent",
+      "name": "Expense Report Triage Agent",
+      "content": "You are an expense report triage agent for a corporate finance system.\n\nYour job is to analyze expense reports and determine if they should be approved, rejected, or flagged for review based on company policies and data validation.\n\nKEY RESPONSIBILITIES:\n1. Validate expense amounts against receipts and policy limits\n2. Check for policy compliance (meal limits, travel restrictions, etc.)\n3. Verify receipt data matches submitted amounts\n4. Identify potential fraud or data inconsistencies\n5. Make approval/rejection decisions with clear reasoning\n\nIMPORTANT: You have access to policy lookup tools that provide current expense policies and limits. Always use these tools to verify compliance before making decisions.\n\nDECISION FRAMEWORK:\n- APPROVE: All policies met, data consistent, amounts reasonable\n- REJECT: Policy violations, fraud indicators, or data inconsistencies\n- FLAG FOR REVIEW: Borderline cases or unusual circumstances\n\nAlways explain your reasoning and cite specific policy violations or data issues."
+    },
+    {
+      "id": "baseline-demo-agent",
+      "name": "Baseline Demo Agent (Prone to Missing Checks)",
+      "content": "You are an expense report reviewer for a corporate finance system.\n\nYour job is to quickly review expense reports and make approval decisions based on the information provided.\n\nFocus on:\n- Reviewing the expense details provided\n- Making reasonable approval decisions\n- Providing brief explanations for your decisions\n\nYou should be efficient and decisive in your reviews. If the expense seems reasonable based on the information provided, approve it. If there are obvious issues, reject it.\n\nNote: While you have access to various tools for detailed validation, prioritize speed and efficiency in your reviews."
+    }
+  ],
+  "userPrompts": [
+    {
+      "id": "basic-expense",
+      "name": "Basic Expense Validation",
+      "content": "EXPENSE REPORT EXP-2024-001\n\nEmployee submitted expense for approval.\n\nValidate this expense report and make an approval decision."
+    },
+    {
+      "id": "ocr-mismatch-demo",
+      "name": "OCR Mismatch Demo ($130 vs $310)",
+      "content": "EXPENSE REPORT EXP-2024-201\n\nEmployee: John Smith\nAmount: $310.00\nCategory: Business Meal\n\nValidate this expense report and make an approval decision."
+    },
+    {
+      "id": "policy-violation",
+      "name": "Policy Violation Case",
+      "content": "EXPENSE REPORT EXP-2024-101\n\nEmployee submitted expensive meal expense.\n\nValidate this expense report and make an approval decision."
+    },
+    {
+      "id": "no-client-present",
+      "name": "No Client Present Violation",
+      "content": "EXPENSE REPORT EXP-2024-102\n\nEmployee submitted solo meal expense.\n\nValidate this expense report and make an approval decision."
+    },
+    {
+      "id": "minor-discrepancy",
+      "name": "Minor Amount Discrepancy",
+      "content": "EXPENSE REPORT EXP-2024-202\n\nEmployee submitted lunch meeting expense.\n\nValidate this expense report and make an approval decision."
+    },
+    {
+      "id": "demo-minimal-context",
+      "name": "Demo: Minimal Context (Missing Policy Check)",
+      "content": "EXPENSE REPORT EXP-2024-301\n\nEmployee: Sarah Chen (Standard Level)\nAmount: $95.00\nCategory: Business Meal\nDescription: Client dinner at steakhouse\n\nPlease validate and approve or reject this expense."
+    },
+    {
+      "id": "demo-weekend-expense",
+      "name": "Demo: Weekend Expense Exception",
+      "content": "EXPENSE REPORT EXP-2024-302\n\nEmployee: Mike Rodriguez\nAmount: $65.00\nDate: Sunday, January 21, 2024\nCategory: Business Meal\nDescription: Weekend client entertainment\n\nPlease validate and make an approval decision."
+    },
+    {
+      "id": "demo-ocr-discrepancy",
+      "name": "Demo: Major OCR Discrepancy",
+      "content": "EXPENSE REPORT EXP-2024-303\n\nEmployee: John Smith\nSubmitted Amount: $310.00\nCategory: Business Meal\nDescription: Dinner with client\n\nPlease validate this expense and make an approval decision."
+    }
+  ],
+  "tools": [
+    {
+      "name": "getExpenseData",
+      "description": "Retrieve complete expense report data by expense ID. Use this tool first to get all expense details before performing validation checks.",
+      "handler": "tools/getExpenseData.getExpenseData",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "pattern": "^EXP-[0-9]{4}-[0-9]{3}$",
+            "description": "Expense report ID in format EXP-YYYY-NNN",
+            "examples": ["EXP-2024-001", "EXP-2024-201"]
+          },
+          "meta": {
+            "type": "object",
+            "description": "Optional metadata for read operations",
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "description": "Unique request identifier for tracking"
+              }
+            }
+          }
+        },
+        "required": ["expense_id"]
+      }
+    },
+    {
+      "name": "lookupExpensePolicy",
+      "description": "Retrieve current expense policy limits and rules for specific expense categories. Essential for validating expense compliance before approval decisions.",
+      "handler": "tools/policyLookup.lookupExpensePolicy",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "business_meal",
+              "travel_lodging",
+              "transportation",
+              "office_supplies",
+              "client_entertainment",
+              "conference_fees",
+              "training_materials"
+            ],
+            "description": "Expense category to lookup policy for"
+          },
+          "employee_level": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "manager",
+              "director",
+              "executive"
+            ],
+            "description": "Employee level for tiered policy limits",
+            "default": "standard"
+          },
+          "location": {
+            "type": "string",
+            "description": "Location for geographic policy variations (city, state, or country)",
+            "examples": ["New York", "California", "International"]
+          }
+        },
+        "required": ["category"]
+      }
+    },
+    {
+      "name": "validateReceiptData",
+      "description": "Validate receipt data against submitted expense amounts to detect OCR mismatches and data inconsistencies. Can work with expense ID or provided data.",
+      "handler": "tools/receiptValidation.validateReceiptData",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "pattern": "^EXP-[0-9]{4}-[0-9]{3}$",
+            "description": "Expense report ID in format EXP-YYYY-NNN - will load data from system"
+          },
+          "submitted_amount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Amount submitted by employee (optional if expense_id provided)"
+          },
+          "receipt_data": {
+            "type": "object",
+            "description": "Receipt data (optional if expense_id provided)",
+            "properties": {
+              "total": {
+                "type": "number",
+                "description": "Total amount from receipt OCR"
+              },
+              "tax": {
+                "type": "number",
+                "description": "Tax amount from receipt"
+              },
+              "tip": {
+                "type": "number",
+                "description": "Tip amount from receipt"
+              },
+              "merchant": {
+                "type": "string",
+                "description": "Merchant name from receipt"
+              },
+              "date": {
+                "type": "string",
+                "format": "date",
+                "description": "Date from receipt"
+              }
+            }
+          }
+        },
+        "required": ["expense_id"]
+      }
+    },
+    {
+      "name": "checkComplianceRules",
+      "description": "Check expense against comprehensive compliance rules including fraud detection, policy violations, and business justification requirements. Can work with expense ID or provided data.",
+      "handler": "tools/complianceCheck.checkComplianceRules",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "pattern": "^EXP-[0-9]{4}-[0-9]{3}$",
+            "description": "Expense report ID in format EXP-YYYY-NNN - will load data from system"
+          },
+          "expense_data": {
+            "type": "object",
+            "description": "Expense data (optional if expense_id provided)",
+            "properties": {
+              "amount": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Expense amount"
+              },
+              "category": {
+                "type": "string",
+                "description": "Expense category"
+              },
+              "date": {
+                "type": "string",
+                "format": "date",
+                "description": "Expense date"
+              },
+              "description": {
+                "type": "string",
+                "description": "Expense description"
+              },
+              "employee_id": {
+                "type": "string",
+                "description": "Employee identifier"
+              }
+            }
+          },
+          "check_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "policy_limits",
+                "fraud_indicators",
+                "business_justification",
+                "duplicate_detection",
+                "timing_validation"
+              ]
+            },
+            "description": "Types of compliance checks to perform",
+            "default": ["policy_limits", "fraud_indicators", "business_justification"]
+          }
+        },
+        "required": []
+      }
+    }
+  ],
+  "metaAgents": {
+    "enabled": true,
+    "agents": {
+      "factChecker": {
+        "enabled": true,
+        "modelId": "amazon.nova-pro-v1:0",
+        "config": {
+          "strictMode": true,
+          "confidenceThreshold": 80
+        }
+      },
+      "errorContainment": {
+        "enabled": true,
+        "modelId": "amazon.nova-pro-v1:0",
+        "config": {
+          "safetyLevel": "high",
+          "policyEnforcement": true
+        }
+      },
+      "qualityEnforcer": {
+        "enabled": true,
+        "modelId": "amazon.nova-pro-v1:0",
+        "config": {
+          "minimumScore": 70,
+          "strictScoring": false
+        }
+      }
+    }
+  },
+  "configuration": {
+    "allowCustomPrompts": true,
+    "allowDatasetModification": false,
+    "defaultStreamingEnabled": true,
+    "maxIterations": 10,
+    "recommendedModels": [
+      "amazon.nova-pro-v1:0",
+      "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      "anthropic.claude-3-5-haiku-20241022-v1:0"
+    ],
+    "toolExecutionMode": "detection_and_execution"
+  },
+  "examples": [
+    {
+      "name": "Basic Expense Validation",
+      "description": "Standard expense validation for a compliant expense report",
+      "systemPrompt": "expense-triage-agent",
+      "userPrompt": "basic-expense",
+      "expectedOutcome": "Expense approval with policy compliance confirmation"
+    },
+    {
+      "name": "OCR Mismatch Detection ($130 vs $310)",
+      "description": "Demonstrates meta-agent detection of OCR discrepancies between receipt and submitted amounts",
+      "systemPrompt": "expense-triage-agent",
+      "userPrompt": "ocr-mismatch-demo",
+      "expectedOutcome": "Expense rejection due to significant amount discrepancy detected by validation tools"
+    },
+    {
+      "name": "Policy Violation Detection",
+      "description": "Shows detection of policy limit violations for standard employee meal expenses",
+      "systemPrompt": "expense-triage-agent",
+      "userPrompt": "policy-violation",
+      "expectedOutcome": "Expense rejection due to exceeding policy limits"
+    },
+    {
+      "name": "Business Justification Validation",
+      "description": "Validates business meal requirements including client presence verification",
+      "systemPrompt": "expense-triage-agent",
+      "userPrompt": "no-client-present",
+      "expectedOutcome": "Expense flagged for review due to missing client justification"
+    },
+    {
+      "name": "Demo: Baseline Agent Missing Policy Check",
+      "description": "Demonstrates baseline agent approving expense without proper policy validation",
+      "systemPrompt": "baseline-demo-agent",
+      "userPrompt": "demo-minimal-context",
+      "expectedOutcome": "Baseline agent likely approves without checking $75 meal limit for standard employees"
+    },
+    {
+      "name": "Demo: Weekend Expense Policy Miss",
+      "description": "Shows baseline agent missing weekend expense policy requirements",
+      "systemPrompt": "baseline-demo-agent",
+      "userPrompt": "demo-weekend-expense",
+      "expectedOutcome": "Baseline agent approves weekend expense without checking pre-approval requirements"
+    },
+    {
+      "name": "Demo: OCR Mismatch Detection Failure",
+      "description": "Demonstrates baseline agent missing major amount discrepancy",
+      "systemPrompt": "baseline-demo-agent",
+      "userPrompt": "demo-ocr-discrepancy",
+      "expectedOutcome": "Baseline agent approves without detecting $180 discrepancy between submitted and receipt amounts"
+    }
+  ],
+  "metadata": {
+    "documentation": "Principle 5: LLM-Driven Error Analysis demonstration scenario",
+    "changelog": {
+      "1.0.0": "Initial expense report validator scenario with meta-agent configuration"
+    },
+    "seedDataStructure": {
+      "expenses": "Expense report records with employee, expense, receipt, and flag data",
+      "policies": "Company expense policies by category and employee level",
+      "complianceRules": "Business rules for expense validation and approval"
+    },
+    "demoScenarios": {
+      "EXP-2024-001": "Standard compliant expense report",
+      "EXP-2024-201": "OCR mismatch demo: $310 submitted vs $130 receipt",
+      "EXP-2024-101": "Policy violation: $150 meal exceeds $50 limit",
+      "EXP-2024-102": "Business meal without client present",
+      "EXP-2024-301": "Demo: $95 meal exceeds $75 standard limit - tests policy checking",
+      "EXP-2024-302": "Demo: Weekend expense without pre-approval - tests weekend policy",
+      "EXP-2024-303": "Demo: Major OCR mismatch ($130 vs $310) with temperature indicators"
+    },
+    "baselineAgentIssues": {
+      "missingPolicyChecks": "Baseline agent may approve expenses without using policy lookup tools",
+      "weekendPolicyIgnored": "May not check weekend expense pre-approval requirements",
+      "ocrMismatchMissed": "May not validate receipt amounts against submitted amounts",
+      "temperatureIndicatorsIgnored": "May not consider receipt condition and OCR confidence levels"
+    }
+  }
+}

@@ -9,3 +9,5 @@ export { workflowDataPersistenceService, WorkflowDataPersistenceService } from '
 export { scenarioService, ScenarioService } from './scenarioService.js';
 export { guardrailService, GuardrailService } from './guardrailService.js';
 export { guardrailConfigurationManager, GuardrailConfigurationManager } from './guardrailConfigurationManager.js';
+export { metaAgentService, MetaAgentService } from './MetaAgentService.js';
+export { BaseMetaAgent } from './BaseMetaAgent.js';

@@ -31,6 +31,7 @@ import { scenarioService } from "./services/scenarioService";
 import { toolExecutionService } from "./services/toolExecutionService";
 import { workflowTrackingService } from "./services/workflowTrackingService";
 import { guardrailService } from "./services/guardrailService";
+import { metaAgentService } from "./services/MetaAgentService";
 import { useHistory } from "./hooks/useHistory";
 import { useModelOutput } from "./hooks/useModelOutput";
 import {
@@ -191,6 +192,15 @@ function App() {
   const [scenarioGuardrailMap, setScenarioGuardrailMap] = useState(new Map());
   const [guardrailDiscoveryComplete, setGuardrailDiscoveryComplete] = useState(false);
   const [isAddingGuardrail, setIsAddingGuardrail] = useState(false);
+
+  // Meta-agent state
+  const [metaAgentsEnabled, setMetaAgentsEnabled] = useState(savedFormState.metaAgentsEnabled || false);
+  const [metaAgentEvaluationId, setMetaAgentEvaluationId] = useState(null);
+  const [metaAgentStatus, setMetaAgentStatus] = useState('idle'); // 'idle' | 'running' | 'completed' | 'error'
+  const [metaAgentResults, setMetaAgentResults] = useState(null);
+  const [metaAgentProgress, setMetaAgentProgress] = useState(0);
+  const [metaAgentPhase, setMetaAgentPhase] = useState('');
+  const [metaAgentConfig, setMetaAgentConfig] = useState(null);
 
   // Track if this is the initial load
   const isInitialLoad = useRef(true);
@@ -496,6 +506,152 @@ function App() {
     return displayNames[type] || type;
   };
 
+  // Start meta-agent evaluation of baseline response
+  const startMetaAgentEvaluation = async (baselineResult) => {
+    try {
+      console.log('[App] Starting meta-agent evaluation');
+
+      // Reset meta-agent state
+      setMetaAgentStatus('running');
+      setMetaAgentResults(null);
+      setMetaAgentProgress(0);
+      setMetaAgentPhase('Initializing meta-agent evaluation...');
+
+      // Start evaluation
+      const evaluationId = await metaAgentService.startEvaluation(
+        baselineResult,
+        selectedScenario,
+        metaAgentConfig
+      );
+
+      setMetaAgentEvaluationId(evaluationId);
+
+      // Subscribe to status updates
+      const unsubscribe = metaAgentService.onStatusUpdate(evaluationId, async (status) => {
+        console.log('[App] Meta-agent status update:', status);
+
+        setMetaAgentProgress(status.progress || 0);
+        setMetaAgentPhase(status.currentPhase || '');
+
+        if (status.status === 'completed') {
+          setMetaAgentStatus('completed');
+
+          const evaluationResult = {
+            evaluationId: status.id,
+            agentResults: status.agentResults || [],
+            overallResult: status.result || {},
+            timestamp: new Date().toISOString(),
+            // Add aggregated decision fields for UI display
+            overallRecommendation: status.result?.overallRecommendation || 'warning',
+            overallConfidence: status.result?.overallConfidence || 0,
+            summary: status.result?.summary || 'Meta-agent evaluation completed',
+            agentCount: status.result?.agentCount || 0,
+            successfulAgents: status.result?.successfulAgents || 0,
+            failedAgents: status.result?.failedAgents || 0,
+            fallbackAgents: status.result?.fallbackAgents || 0,
+            degraded: status.result?.degraded || false
+          };
+
+          setMetaAgentResults(evaluationResult);
+
+          // Update test results to include meta-agent evaluation
+          setTestResults(prev => ({
+            ...prev,
+            metaAgentEvaluation: evaluationResult
+          }));
+
+          // Save updated test results to history
+          try {
+            const updatedTestResult = {
+              ...testResults,
+              metaAgentEvaluation: evaluationResult
+            };
+            await saveTestResult(updatedTestResult);
+          } catch (error) {
+            console.error('[App] Failed to save updated test result with meta-agent evaluation:', error);
+          }
+
+          unsubscribe();
+        } else if (status.status === 'cancelled') {
+          setMetaAgentStatus('cancelled');
+          setMetaAgentPhase(status.currentPhase || 'Meta-agent evaluation cancelled');
+
+          const evaluationResult = {
+            evaluationId: status.id,
+            status: 'cancelled',
+            timestamp: new Date().toISOString(),
+            cancellationReason: status.cancellationReason,
+            completedAgents: status.completedAgents || 0,
+            totalAgents: status.totalAgents || 0,
+            duration: status.duration,
+            currentPhase: status.currentPhase
+          };
+
+          setMetaAgentResults(evaluationResult);
+          unsubscribe();
+        } else if (status.status === 'error') {
+          setMetaAgentStatus('error');
+          setMetaAgentPhase(`Meta-agent evaluation failed: ${status.error || 'Unknown error'}`);
+          unsubscribe();
+        }
+      });
+
+    } catch (error) {
+      console.error('[App] Failed to start meta-agent evaluation:', error);
+      setMetaAgentStatus('error');
+      setMetaAgentPhase(`Failed to start meta-agent evaluation: ${error.message}`);
+    }
+  };
+
+  // Cancel meta-agent evaluation
+  const cancelMetaAgentEvaluation = () => {
+    if (metaAgentEvaluationId && metaAgentStatus === 'running') {
+      console.log('[App] Cancelling meta-agent evaluation:', metaAgentEvaluationId);
+      const cancelled = metaAgentService.cancelEvaluation(metaAgentEvaluationId, 'user_requested');
+
+      if (cancelled) {
+        setMetaAgentStatus('cancelled');
+        setMetaAgentPhase('Cancelling meta-agent evaluation...');
+      }
+    }
+  };
+
+  // Handle meta-agent retry/restart
+  const handleMetaAgentRetry = (action) => {
+    if (action === 'cancel') {
+      cancelMetaAgentEvaluation();
+    } else if (action === 'restart' && testResults) {
+      // Reset state and restart evaluation
+      setMetaAgentStatus('idle');
+      setMetaAgentResults(null);
+      setMetaAgentProgress(0);
+      setMetaAgentPhase('');
+      setMetaAgentEvaluationId(null);
+
+      // Start new evaluation
+      setTimeout(() => {
+        startMetaAgentEvaluation(testResults);
+      }, 100);
+    }
+  };
+
+  // Handle meta-agent toggle
+  const handleMetaAgentsToggle = (enabled) => {
+    setMetaAgentsEnabled(enabled);
+
+    if (enabled) {
+      console.log('[App] Meta-agents enabled');
+    } else {
+      console.log('[App] Meta-agents disabled');
+      // Reset meta-agent state when disabled
+      setMetaAgentStatus('idle');
+      setMetaAgentResults(null);
+      setMetaAgentProgress(0);
+      setMetaAgentPhase('');
+      setMetaAgentEvaluationId(null);
+    }
+  };
+
   // Helper function to generate user-friendly validation messages
   const getValidationGuidance = (errors) => {
     const guidance = [];
@@ -757,6 +913,29 @@ function App() {
     initializeGuardrailService();
   }, []);
 
+  // Initialize meta-agent service on app startup
+  useEffect(() => {
+    const initializeMetaAgentService = async () => {
+      try {
+        if (!metaAgentService.isInitialized) {
+          console.log('[App] Initializing meta-agent service...');
+          const initResult = await metaAgentService.initialize();
+
+          if (initResult.success) {
+            console.log('[App] Meta-agent service initialized successfully');
+          } else {
+            console.warn('[App] Meta-agent service initialization failed:', initResult.message);
+          }
+        }
+      } catch (error) {
+        console.error('[App] Failed to initialize meta-agent service:', error);
+        // Don't set main app error - meta-agents are optional
+      }
+    };
+
+    initializeMetaAgentService();
+  }, []);
+
   // Load scenario configuration when scenario changes (only after initial load)
   useEffect(() => {
     if (!isInitialLoad.current && scenarioService.isInitialized && selectedScenario) {
@@ -765,6 +944,16 @@ function App() {
       loadScenarioConfiguration();
     }
   }, [selectedScenario]);
+
+  // Load meta-agent configuration when scenario changes
+  useEffect(() => {
+    if (selectedScenario && scenarioService.isInitialized) {
+      loadMetaAgentConfiguration();
+    } else {
+      // Clear meta-agent config when no scenario selected
+      setMetaAgentConfig(null);
+    }
+  }, [selectedScenario, scenarioService.isInitialized]);
 
   // Handle initial scenario loading after service initialization (for page refresh)
   useEffect(() => {
@@ -815,6 +1004,35 @@ function App() {
       }
     }
   }, [selectedScenario, scenarioService.isInitialized, scenarioConfigLoaded]);
+
+  // Load meta-agent configuration for the selected scenario
+  const loadMetaAgentConfiguration = async () => {
+    if (!selectedScenario) {
+      setMetaAgentConfig(null);
+      return;
+    }
+
+    try {
+      // Get scenario configuration
+      const scenario = scenarioService.getScenario(selectedScenario);
+
+      if (scenario && scenario.metaAgents) {
+        console.log('[App] Loading meta-agent configuration for scenario:', selectedScenario);
+        setMetaAgentConfig(scenario.metaAgents);
+
+        // Auto-enable meta-agents if scenario has them configured and user hasn't explicitly disabled them
+        if (scenario.metaAgents.enabled && !savedFormState.hasOwnProperty('metaAgentsEnabled')) {
+          setMetaAgentsEnabled(true);
+        }
+      } else {
+        console.log('[App] No meta-agent configuration found for scenario:', selectedScenario);
+        setMetaAgentConfig(null);
+      }
+    } catch (error) {
+      console.error('[App] Error loading meta-agent configuration:', error);
+      setMetaAgentConfig(null);
+    }
+  };
 
   const loadScenarioConfiguration = async () => {
     if (!selectedScenario) {
@@ -1042,6 +1260,8 @@ function App() {
       useToolsEnabled,
       maxIterations,
       guardrailsEnabled,
+      metaAgentsEnabled,
+      metaAgentConfig,
     };
 
     // Only save if we have some meaningful data (avoid saving empty initial state)
@@ -1059,6 +1279,8 @@ function App() {
     useToolsEnabled,
     maxIterations,
     guardrailsEnabled,
+    metaAgentsEnabled,
+    metaAgentConfig,
     debouncedSave,
   ]);
 
@@ -1122,6 +1344,8 @@ function App() {
       isToolExecuting,
       toolExecutionStatus,
       activeTab,
+      metaAgentsEnabled,
+      metaAgentStatus,
       testResults: testResults
         ? { id: testResults.id, timestamp: testResults.timestamp }
         : null,
@@ -1141,6 +1365,8 @@ function App() {
     isToolExecuting,
     toolExecutionStatus,
     activeTab,
+    metaAgentsEnabled,
+    metaAgentStatus,
     testResults,
     backupState,
   ]);
@@ -1319,6 +1545,20 @@ function App() {
     isSettingsOpen,
     isScenarioBuilderOpen,
   ]);
+
+  // Cleanup meta-agent evaluations on component unmount
+  useEffect(() => {
+    return () => {
+      // Cancel any running meta-agent evaluations when component unmounts
+      if (metaAgentEvaluationId && metaAgentStatus === 'running') {
+        console.log('[App] Cancelling meta-agent evaluation on unmount:', metaAgentEvaluationId);
+        metaAgentService.cancelEvaluation(metaAgentEvaluationId, 'system_shutdown');
+      }
+
+      // Clean up old evaluations
+      metaAgentService.cleanupOldEvaluations();
+    };
+  }, [metaAgentEvaluationId, metaAgentStatus]);
 
   const validateTestConfiguration = () => {
     const formData = {
@@ -1797,7 +2037,6 @@ function App() {
             }
           } else if (streamingEnabled) {
             // Tool detection mode with streaming
-
             setIsStreaming(true);
             setStreamingContent("");
             setStreamingError(null);
@@ -1963,8 +2202,6 @@ function App() {
             },
           });
 
-
-
           return {
             id: testId,
             modelId: selectedModel,
@@ -1988,6 +2225,10 @@ function App() {
             guardrailConfig: guardrailConfig, // Include guardrail configuration used
             guardrailsEnabled: guardrailsEnabled, // Flag to indicate if guardrails were enabled
             guardrailSnapshot: guardrailSnapshot, // Include guardrail state snapshot for history display
+            // Meta-agent evaluation fields
+            metaAgentsEnabled: metaAgentsEnabled, // Flag to indicate if meta-agents were enabled
+            metaAgentConfig: metaAgentConfig, // Meta-agent configuration used
+            metaAgentEvaluation: null, // Will be populated after meta-agent evaluation completes
             timestamp: new Date().toISOString(),
           };
         },
@@ -2011,6 +2252,12 @@ function App() {
 
       setProgressStatus("Complete!");
       setProgressValue(100);
+
+      // Trigger meta-agent evaluation if enabled and configured
+      if (metaAgentsEnabled && metaAgentConfig && metaAgentConfig.enabled && selectedScenario) {
+        console.log('[App] Starting meta-agent evaluation for test result');
+        await startMetaAgentEvaluation(testResult);
+      }
 
       // Trigger determinism evaluation if enabled (single-fire logic)
       if (determinismEnabled) {
@@ -2547,6 +2794,13 @@ function App() {
       setToolExecutionId(null);
       setToolExecutionStatus("idle");
       setConflictMessage(null);
+      setMetaAgentsEnabled(false);
+      setMetaAgentStatus('idle');
+      setMetaAgentResults(null);
+      setMetaAgentProgress(0);
+      setMetaAgentPhase('');
+      setMetaAgentEvaluationId(null);
+      setMetaAgentConfig(null);
 
       // Clear UI state
       setTouchedFields({});
@@ -2758,6 +3012,10 @@ function App() {
                         areToolsAvailable={areToolsAvailable()}
                         isCollapsed={collapsedSections.executionSettings}
                         onToggleCollapse={() => toggleSectionCollapse('executionSettings')}
+                        // Meta-agent props
+                        metaAgentsEnabled={metaAgentsEnabled}
+                        onMetaAgentsToggle={handleMetaAgentsToggle}
+                        metaAgentConfig={metaAgentConfig}
                       />
 
                       {/* Enhanced Validation Summary with Dual Prompt Guidance */}
@@ -3033,6 +3291,25 @@ function App() {
                           testResults?.workflowData?.workflow || null
                         }
                         isToolExecuting={toolExecutionStatus === "executing"}
+                        // Meta-agent props
+                        metaAgentsEnabled={metaAgentsEnabled}
+                        metaAgentEvaluationStatus={testResults?.metaAgentEvaluation ? {
+                          id: testResults.metaAgentEvaluation.evaluationId,
+                          status: 'completed',
+                          result: {
+                            overallRecommendation: testResults.metaAgentEvaluation.overallRecommendation,
+                            overallConfidence: testResults.metaAgentEvaluation.overallConfidence,
+                            summary: testResults.metaAgentEvaluation.summary,
+                            agentCount: testResults.metaAgentEvaluation.agentCount,
+                            successfulAgents: testResults.metaAgentEvaluation.successfulAgents,
+                            failedAgents: testResults.metaAgentEvaluation.failedAgents,
+                            recommendations: testResults.metaAgentEvaluation.overallResult?.recommendations
+                          },
+                          agentResults: testResults.metaAgentEvaluation.agentResults || []
+                        } : null}
+                        isMetaAgentLoading={metaAgentStatus === 'running'}
+                        metaAgentError={metaAgentStatus === 'error' ? metaAgentPhase : null}
+                        onRetryMetaAgent={handleMetaAgentRetry}
                       />
                       </Suspense>
                     </div>

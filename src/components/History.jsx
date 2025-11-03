@@ -461,6 +461,50 @@ const History = ({
                   })()}
                 </div>
               )}
+
+              {/* Meta-Agent Stats */}
+              {stats.metaAgentStats && (
+                <div className="border-t border-gray-200 pt-3">
+                  <h5 className="font-medium text-gray-800 mb-2">
+                    Meta-Agent Statistics
+                  </h5>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                    <div>
+                      <span className="text-gray-600">Tests with Meta-Agents:</span>
+                      <span className="ml-2 font-medium text-purple-600">
+                        {stats.metaAgentStats.testsWithMetaAgents}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Accepted Tests:</span>
+                      <span className="ml-2 font-medium text-green-600">
+                        {stats.metaAgentStats.acceptedTests}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Rejected Tests:</span>
+                      <span className="ml-2 font-medium text-red-600">
+                        {stats.metaAgentStats.rejectedTests}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Warning Tests:</span>
+                      <span className="ml-2 font-medium text-yellow-600">
+                        {stats.metaAgentStats.warningTests}
+                      </span>
+                    </div>
+                  </div>
+
+                  {stats.metaAgentStats.testsWithMetaAgents > 0 && (
+                    <div className="text-sm">
+                      <span className="text-gray-600">Average Confidence:</span>
+                      <span className="ml-2 font-medium text-purple-600">
+                        {stats.metaAgentStats.averageConfidence.toFixed(1)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -776,6 +820,28 @@ const History = ({
                         </span>
                       )}
                     </button>
+                  )}
+                  {/* Meta-agent indicator */}
+                  {item.metaAgentEvaluation && (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      item.metaAgentEvaluation.overallRecommendation === 'accept'
+                        ? 'bg-green-100 text-green-800'
+                        : item.metaAgentEvaluation.overallRecommendation === 'reject'
+                        ? 'bg-red-100 text-red-800'
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      🤖 {item.metaAgentEvaluation.overallRecommendation === 'accept' ? 'Accepted' :
+                           item.metaAgentEvaluation.overallRecommendation === 'reject' ? 'Rejected' : 'Warning'}
+                      <span className="ml-1 text-xs opacity-75">
+                        ({item.metaAgentEvaluation.overallConfidence}%)
+                      </span>
+                    </span>
+                  )}
+                  {/* Show indicator when meta-agents were enabled but failed */}
+                  {item.metaAgentsEnabled && !item.metaAgentEvaluation && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                      🤖 Failed/Cancelled
+                    </span>
                   )}
                   <span className="text-sm text-gray-500">
                     {formatTimestamp(item.timestamp)}
@@ -1099,6 +1165,154 @@ const History = ({
                       </div>
                     </div>
 
+                    {/* Meta-Agent Evaluation Section */}
+                    {item.metaAgentEvaluation && (
+                      <div>
+                        <h5 className="font-medium text-gray-700 mb-1">
+                          Meta-Agent Evaluation:
+                        </h5>
+                        <div className="bg-purple-50 border border-purple-200 rounded p-3">
+                          <div className="space-y-3">
+                            {/* Overall Recommendation */}
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-purple-800">
+                                Overall Recommendation:
+                              </span>
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                item.metaAgentEvaluation.overallRecommendation === 'accept'
+                                  ? 'bg-green-100 text-green-800'
+                                  : item.metaAgentEvaluation.overallRecommendation === 'reject'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                {item.metaAgentEvaluation.overallRecommendation.toUpperCase()}
+                                <span className="ml-1">
+                                  ({item.metaAgentEvaluation.overallConfidence}% confidence)
+                                </span>
+                              </span>
+                            </div>
+
+                            {/* Individual Agent Results */}
+                            {item.metaAgentEvaluation.agentResults?.map((agentResult, index) => (
+                              <div
+                                key={`agent-${item.id || index}-${index}-${agentResult.agentType}`}
+                                className="border border-purple-300 rounded p-2 bg-white"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-medium text-purple-900 capitalize">
+                                    {agentResult.agentType.replace('-', ' ')}
+                                  </span>
+                                  <div className="flex items-center space-x-2">
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                      agentResult.recommendation === 'accept'
+                                        ? 'bg-green-100 text-green-800'
+                                        : agentResult.recommendation === 'reject'
+                                        ? 'bg-red-100 text-red-800'
+                                        : 'bg-yellow-100 text-yellow-800'
+                                    }`}>
+                                      {agentResult.recommendation}
+                                    </span>
+                                    <span className="text-xs text-purple-600">
+                                      {agentResult.confidence}%
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {agentResult.analysis && (
+                                  <div className="text-xs text-gray-700 mb-2">
+                                    <div className="font-medium mb-1">Analysis:</div>
+                                    <div className="bg-gray-50 p-2 rounded text-xs">
+                                      {agentResult.analysis}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Agent-specific details */}
+                                {agentResult.details && (
+                                  <div className="text-xs text-gray-700">
+                                    {agentResult.details.findings && (
+                                      <div className="mb-1">
+                                        <span className="font-medium">Findings:</span>
+                                        <ul className="list-disc list-inside ml-2 mt-1">
+                                          {agentResult.details.findings.map((finding, findingIndex) => (
+                                            <li key={findingIndex} className="text-xs">{finding}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+
+                                    {agentResult.details.safetyIssues && (
+                                      <div className="mb-1">
+                                        <span className="font-medium">Safety Issues:</span>
+                                        <ul className="list-disc list-inside ml-2 mt-1">
+                                          {agentResult.details.safetyIssues.map((issue, issueIndex) => (
+                                            <li key={issueIndex} className="text-xs text-red-700">{issue}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+
+                                    {agentResult.details.qualityScore && (
+                                      <div className="mb-1">
+                                        <span className="font-medium">Quality Score:</span>
+                                        <span className="ml-1">{agentResult.details.qualityScore}/100</span>
+                                        {agentResult.details.breakdown && (
+                                          <div className="mt-1 grid grid-cols-2 gap-1 text-xs">
+                                            <div>Reasoning: {agentResult.details.breakdown.reasoning}/25</div>
+                                            <div>Completeness: {agentResult.details.breakdown.completeness}/25</div>
+                                            <div>Tool Usage: {agentResult.details.breakdown.toolUsage}/25</div>
+                                            <div>Communication: {agentResult.details.breakdown.communication}/25</div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {agentResult.timestamp && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    {new Date(agentResult.timestamp).toLocaleTimeString()}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+
+                            {/* Evaluation Metadata */}
+                            {item.metaAgentEvaluation.metadata && (
+                              <div className="text-xs text-purple-600 border-t border-purple-200 pt-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  {item.metaAgentEvaluation.metadata.scenarioId && (
+                                    <div>
+                                      <span className="font-medium">Scenario:</span> {item.metaAgentEvaluation.metadata.scenarioId}
+                                    </div>
+                                  )}
+                                  {item.metaAgentEvaluation.metadata.evaluationDuration && (
+                                    <div>
+                                      <span className="font-medium">Duration:</span> {item.metaAgentEvaluation.metadata.evaluationDuration}ms
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Debug: Show if meta-agents were enabled but no evaluation data */}
+                    {item.metaAgentsEnabled && !item.metaAgentEvaluation && (
+                      <div>
+                        <h5 className="font-medium text-gray-700 mb-1">
+                          Meta-Agent Status:
+                        </h5>
+                        <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
+                          <div className="text-sm text-yellow-800">
+                            Meta-agents were enabled for this test but no evaluation data is available.
+                            This might indicate the evaluation failed or was cancelled.
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                   </div>
                 )}

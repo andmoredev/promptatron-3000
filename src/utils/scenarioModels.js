@@ -504,6 +504,15 @@ export function extractScenarioMetadata(scenarioData) {
       ))
     ),
 
+    // Meta-agent information
+    hasMetaAgents: !!(scenarioData.metaAgents && scenarioData.metaAgents.enabled),
+    metaAgentsEnabled: scenarioData.metaAgents?.enabled === true,
+    metaAgentCount: scenarioData.metaAgents?.agents ? Object.keys(scenarioData.metaAgents.agents).length : 0,
+    metaAgentNames: scenarioData.metaAgents?.agents ? Object.keys(scenarioData.metaAgents.agents).filter(
+      agentName => scenarioData.metaAgents.agents[agentName]?.enabled !== false
+    ) : [],
+    availableMetaAgents: scenarioData.metaAgents?.agents ? Object.keys(scenarioData.metaAgents.agents) : [],
+
     // Computed properties
     isComplete: !!(scenarioData.id && scenarioData.name && scenarioData.description),
     complexity: calculateComplexity(scenarioData)

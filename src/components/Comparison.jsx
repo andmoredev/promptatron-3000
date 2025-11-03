@@ -136,6 +136,92 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
     return Math.round(totalSimilarity / calls1.length);
   };
 
+  // Calculate meta-agent evaluation similarity between two tests
+  const calculateMetaAgentSimilarity = (test1, test2) => {
+    const metaAgent1 = test1.metaAgentEvaluation;
+    const metaAgent2 = test2.metaAgentEvaluation;
+
+    // If neither has meta-agent evaluation, they're identical (100%)
+    if (!metaAgent1 && !metaAgent2) {
+      return 100;
+    }
+
+    // If only one has meta-agent evaluation, they're completely different (0%)
+    if (!metaAgent1 || !metaAgent2) {
+      return 0;
+    }
+
+    let similarity = 0;
+    let factors = 0;
+
+    // Compare overall recommendation (40% weight)
+    if (metaAgent1.overallRecommendation === metaAgent2.overallRecommendation) {
+      similarity += 40;
+    }
+    factors += 40;
+
+    // Compare confidence levels (20% weight)
+    const confidenceDiff = Math.abs((metaAgent1.overallConfidence || 0) - (metaAgent2.overallConfidence || 0));
+    const confidenceSimilarity = Math.max(0, 20 - (confidenceDiff / 5)); // 5% confidence diff = 1 point lost
+    similarity += confidenceSimilarity;
+    factors += 20;
+
+    // Compare individual agent results (40% weight)
+    const agents1 = metaAgent1.agentResults || [];
+    const agents2 = metaAgent2.agentResults || [];
+
+    if (agents1.length > 0 && agents2.length > 0) {
+      let agentSimilarity = 0;
+      let agentCount = 0;
+
+      // Compare each agent type
+      const agentTypes = new Set([
+        ...agents1.map(a => a.agentType),
+        ...agents2.map(a => a.agentType)
+      ]);
+
+      agentTypes.forEach(agentType => {
+        const agent1 = agents1.find(a => a.agentType === agentType);
+        const agent2 = agents2.find(a => a.agentType === agentType);
+
+        if (agent1 && agent2) {
+          let typeScore = 0;
+
+          // Same recommendation (50% of agent score)
+          if (agent1.recommendation === agent2.recommendation) {
+            typeScore += 50;
+          }
+
+          // Similar confidence (30% of agent score)
+          const agentConfidenceDiff = Math.abs((agent1.confidence || 0) - (agent2.confidence || 0));
+          typeScore += Math.max(0, 30 - (agentConfidenceDiff / 3));
+
+          // Similar analysis content (20% of agent score)
+          if (agent1.analysis && agent2.analysis) {
+            const analysisWords1 = agent1.analysis.toLowerCase().split(/\s+/);
+            const analysisWords2 = agent2.analysis.toLowerCase().split(/\s+/);
+            const commonWords = analysisWords1.filter(word => analysisWords2.includes(word));
+            const totalWords = new Set([...analysisWords1, ...analysisWords2]).size;
+
+            if (totalWords > 0) {
+              typeScore += (commonWords.length / totalWords) * 20;
+            }
+          }
+
+          agentSimilarity += typeScore;
+          agentCount++;
+        }
+      });
+
+      if (agentCount > 0) {
+        similarity += (agentSimilarity / agentCount) * 0.4; // 40% weight for agent results
+      }
+    }
+    factors += 40;
+
+    return Math.round(similarity);
+  };
+
   // Get tool usage comparison summary
   const getToolUsageComparison = () => {
     if (selectedTests.length !== 2) return null;
@@ -390,6 +476,15 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
               Tools
             </button>
             <button
+              onClick={() => setCompareMode('meta-agents')}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${compareMode === 'meta-agents'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+                }`}
+            >
+              Meta-Agents
+            </button>
+            <button
               onClick={() => setCompareMode('all')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${compareMode === 'all'
                 ? 'bg-white text-gray-900 shadow-sm'
@@ -525,6 +620,122 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
             </div>
           );
         })()}
+
+        {/* Meta-Agent Comparison */}
+        {selectedTests.length === 2 && (selectedTests[0].metaAgentEvaluation || selectedTests[1].metaAgentEvaluation) && (
+          <div className="mb-4 p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-indigo-900">Meta-Agent Evaluation Comparison</span>
+              <div className="flex items-center space-x-2">
+                <div className="w-32 bg-indigo-200 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full ${(() => {
+                      const similarity = calculateMetaAgentSimilarity(selectedTests[0], selectedTests[1]);
+                      return similarity >= 80 ? 'bg-green-500' :
+                             similarity >= 60 ? 'bg-yellow-500' :
+                             similarity >= 40 ? 'bg-orange-500' : 'bg-red-500';
+                    })()}`}
+                    style={{ width: `${calculateMetaAgentSimilarity(selectedTests[0], selectedTests[1])}%` }}
+                  />
+                </div>
+                <span className="text-sm font-semibold text-indigo-900">
+                  {calculateMetaAgentSimilarity(selectedTests[0], selectedTests[1])}%
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              {selectedTests.map((test, index) => (
+                <div key={test.id} className="space-y-1">
+                  <div className="font-medium text-indigo-800">Test {String.fromCharCode(65 + index)}</div>
+                  {test.metaAgentEvaluation ? (
+                    <>
+                      <div className="flex items-center space-x-2">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          test.metaAgentEvaluation.overallRecommendation === 'accept'
+                            ? 'bg-green-100 text-green-800'
+                            : test.metaAgentEvaluation.overallRecommendation === 'reject'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          🤖 {test.metaAgentEvaluation.overallRecommendation.toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="text-indigo-700">
+                        Confidence: {test.metaAgentEvaluation.overallConfidence}%
+                      </div>
+                      {test.metaAgentEvaluation.agentResults && (
+                        <div className="text-indigo-600">
+                          Agents: {test.metaAgentEvaluation.agentResults.map(a => a.agentType).join(', ')}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex items-center space-x-2">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                        No Meta-Agent Evaluation
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Meta-Agent Status */}
+            <div className="mt-2 text-xs text-indigo-700">
+              {(() => {
+                const [test1, test2] = selectedTests;
+                const hasMetaAgent1 = !!test1.metaAgentEvaluation;
+                const hasMetaAgent2 = !!test2.metaAgentEvaluation;
+
+                if (!hasMetaAgent1 && !hasMetaAgent2) {
+                  return (
+                    <div className="flex items-center space-x-1">
+                      <span>➖</span>
+                      <span>Neither test has meta-agent evaluation</span>
+                    </div>
+                  );
+                } else if (!hasMetaAgent1 || !hasMetaAgent2) {
+                  return (
+                    <div className="flex items-center space-x-1">
+                      <span>❌</span>
+                      <span>Only one test has meta-agent evaluation</span>
+                    </div>
+                  );
+                } else {
+                  const sameRecommendation = test1.metaAgentEvaluation.overallRecommendation === test2.metaAgentEvaluation.overallRecommendation;
+                  const confidenceDiff = Math.abs(
+                    (test1.metaAgentEvaluation.overallConfidence || 0) -
+                    (test2.metaAgentEvaluation.overallConfidence || 0)
+                  );
+
+                  if (sameRecommendation && confidenceDiff <= 10) {
+                    return (
+                      <div className="flex items-center space-x-1">
+                        <span>✅</span>
+                        <span>Similar meta-agent evaluations</span>
+                      </div>
+                    );
+                  } else if (sameRecommendation) {
+                    return (
+                      <div className="flex items-center space-x-1">
+                        <span>⚠️</span>
+                        <span>Same recommendation, different confidence levels</span>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div className="flex items-center space-x-1">
+                        <span>❌</span>
+                        <span>Different meta-agent recommendations</span>
+                      </div>
+                    );
+                  }
+                }
+              })()}
+            </div>
+          </div>
+        )}
 
         {/* Streaming Performance Comparison */}
         {selectedTests.length === 2 && selectedTests.every(test => test.isStreamed && test.streamingMetrics) && (
@@ -692,6 +903,34 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
                     </div>
                   )}
 
+                  {/* Meta-Agent Evaluation */}
+                  {test.metaAgentEvaluation && (
+                    <div>
+                      <span className="font-medium text-gray-700">Meta-Agent Evaluation:</span>
+                      <div className="ml-2 space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            test.metaAgentEvaluation.overallRecommendation === 'accept'
+                              ? 'bg-green-100 text-green-800'
+                              : test.metaAgentEvaluation.overallRecommendation === 'reject'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            🤖 {test.metaAgentEvaluation.overallRecommendation.toUpperCase()}
+                          </span>
+                          <span className="text-xs text-gray-600">
+                            {test.metaAgentEvaluation.overallConfidence}% confidence
+                          </span>
+                        </div>
+                        {test.metaAgentEvaluation.agentResults && test.metaAgentEvaluation.agentResults.length > 0 && (
+                          <div className="text-xs text-gray-600">
+                            Agents: {test.metaAgentEvaluation.agentResults.map(a => a.agentType.replace('-', ' ')).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Streaming Information */}
                   <div className="pt-2 border-t border-gray-300">
                     <div className="flex items-center space-x-2">
@@ -753,6 +992,98 @@ const Comparison = ({ selectedTests, onRemoveTest, onClearComparison }) => {
                       </div>
                     )}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Meta-Agent Evaluation */}
+            {(compareMode === 'metadata' || compareMode === 'meta-agents' || compareMode === 'all') && test.metaAgentEvaluation && (
+              <div className="mb-4">
+                <h5 className="font-medium text-gray-700 mb-2">Meta-Agent Evaluation:</h5>
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                  {/* Overall Recommendation */}
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-medium text-indigo-800">Overall Recommendation:</span>
+                    <div className="flex items-center space-x-2">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        test.metaAgentEvaluation.overallRecommendation === 'accept'
+                          ? 'bg-green-100 text-green-800'
+                          : test.metaAgentEvaluation.overallRecommendation === 'reject'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {test.metaAgentEvaluation.overallRecommendation.toUpperCase()}
+                      </span>
+                      <span className="text-xs text-indigo-600">
+                        {test.metaAgentEvaluation.overallConfidence}% confidence
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Individual Agent Results */}
+                  {test.metaAgentEvaluation.agentResults && test.metaAgentEvaluation.agentResults.length > 0 && (
+                    <div className="space-y-2">
+                      <h6 className="text-xs font-medium text-indigo-700">Individual Agent Results:</h6>
+                      {test.metaAgentEvaluation.agentResults.map((agentResult, agentIndex) => (
+                        <div key={agentIndex} className="bg-white border border-indigo-200 rounded p-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-indigo-900 capitalize">
+                              {agentResult.agentType.replace('-', ' ')}
+                            </span>
+                            <div className="flex items-center space-x-1">
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                agentResult.recommendation === 'accept'
+                                  ? 'bg-green-100 text-green-800'
+                                  : agentResult.recommendation === 'reject'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                {agentResult.recommendation}
+                              </span>
+                              <span className="text-xs text-indigo-600">
+                                {agentResult.confidence}%
+                              </span>
+                            </div>
+                          </div>
+
+                          {agentResult.analysis && (
+                            <div className="text-xs text-gray-700 mt-1">
+                              <div className="bg-gray-50 p-1 rounded text-xs line-clamp-2">
+                                {agentResult.analysis}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Agent-specific details */}
+                          {agentResult.details && (
+                            <div className="text-xs text-gray-600 mt-1">
+                              {agentResult.details.qualityScore && (
+                                <div>Quality Score: {agentResult.details.qualityScore}/100</div>
+                              )}
+                              {agentResult.details.findings && agentResult.details.findings.length > 0 && (
+                                <div>Findings: {agentResult.details.findings.length} items</div>
+                              )}
+                              {agentResult.details.safetyIssues && agentResult.details.safetyIssues.length > 0 && (
+                                <div className="text-red-600">Safety Issues: {agentResult.details.safetyIssues.length} items</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Evaluation Metadata */}
+                  {test.metaAgentEvaluation.metadata && (
+                    <div className="text-xs text-indigo-600 border-t border-indigo-200 pt-2 mt-2">
+                      {test.metaAgentEvaluation.metadata.scenarioId && (
+                        <div>Scenario: {test.metaAgentEvaluation.metadata.scenarioId}</div>
+                      )}
+                      {test.metaAgentEvaluation.metadata.evaluationDuration && (
+                        <div>Duration: {test.metaAgentEvaluation.metadata.evaluationDuration}ms</div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
