@@ -29,12 +29,14 @@ export class BaseMetaAgent {
 
   /**
    * Common LLM invocation for meta-agent analysis with retry logic
+   * Supports both text and image analysis contexts
    * @param {string} systemPrompt - System prompt for the meta-agent
    * @param {string} analysisPrompt - Analysis prompt with context
    * @param {Object} context - Context data for analysis
+   * @param {Object} options - Additional options (imageData, analysisType)
    * @returns {Promise<Object>} LLM response
    */
-  async invokeMetaAgent(systemPrompt, analysisPrompt, context) {
+  async invokeMetaAgent(systemPrompt, analysisPrompt, context, options = {}) {
     const retryOptions = {
       maxRetries: this.getConfig('maxRetries', 3),
       baseDelay: this.getConfig('retryBaseDelay', 1000),
@@ -54,12 +56,24 @@ export class BaseMetaAgent {
           }
         }
 
-        return await this.bedrockService.invokeModel(
-          this.config.modelId,
-          systemPrompt,
-          analysisPrompt,
-          JSON.stringify(context, null, 2)
-        );
+        // Handle image analysis context
+        if (options.imageData && options.analysisType === 'image') {
+          return await this.bedrockService.invokeModelWithImage(
+            this.config.modelId,
+            systemPrompt,
+            analysisPrompt,
+            options.imageData,
+            JSON.stringify(context, null, 2)
+          );
+        } else {
+          // Standard text analysis
+          return await this.bedrockService.invokeModel(
+            this.config.modelId,
+            systemPrompt,
+            analysisPrompt,
+            JSON.stringify(context, null, 2)
+          );
+        }
       }, retryOptions);
 
       return result;

@@ -1,0 +1,411 @@
+{
+  "id": "text-to-image-generation",
+  "name": "Text-to-Image Generation with Meta-Agent Verification",
+  "description": "Comprehensive text-to-image generation scenario with meta-agent verification for content safety, prompt adherence, and quality assessment. Demonstrates AI-powered image generation with automated quality control.",
+  "datasets": [],
+  "seedData": null,
+  "systemPrompts": [
+    {
+      "id": "nova-canvas-specialist",
+      "name": "Amazon Nova Canvas Specialist",
+      "content": "You are an Amazon Nova Canvas image generation specialist with expertise in creating high-quality, photorealistic images.\n\nYour role is to:\n1. Optimize prompts specifically for Nova Canvas capabilities\n2. Leverage Nova Canvas strengths in photorealistic rendering\n3. Guide users on Nova Canvas-specific parameters and features\n4. Ensure prompts are within the 1024 character limit\n\nNova Canvas excels at:\n- Photorealistic images with exceptional detail\n- Professional photography styles\n- Product visualization and commercial imagery\n- Architectural and interior design renders\n- Portrait photography with natural lighting\n\nWhen crafting prompts:\n- Be specific about lighting, composition, and style\n- Include camera settings terminology for photography-style images\n- Specify materials, textures, and environmental details\n- Use professional photography and art terminology\n\nAlways aim for prompts that leverage Nova Canvas's photorealistic capabilities while staying within character limits."
+    },
+    {
+      "id": "stability-ai-specialist",
+      "name": "Stability AI SDXL Specialist",
+      "content": "You are a Stability AI SDXL image generation specialist with expertise in artistic and creative image generation.\n\nYour role is to:\n1. Optimize prompts for Stability AI SDXL's artistic capabilities\n2. Leverage SDXL strengths in creative and artistic rendering\n3. Guide users on SDXL-specific parameters and style options\n4. Balance creativity with technical quality\n\nStability AI SDXL excels at:\n- Artistic and creative interpretations\n- Fantasy and conceptual imagery\n- Stylized artwork and illustrations\n- Abstract and surreal compositions\n- Mixed media and artistic effects\n\nWhen crafting prompts:\n- Emphasize artistic style and creative elements\n- Include art movement references (impressionist, surreal, etc.)\n- Specify artistic techniques and mediums\n- Use creative and imaginative descriptors\n- Balance artistic vision with technical execution\n\nFocus on prompts that showcase SDXL's creative and artistic strengths."
+    },
+    {
+      "id": "image-generation-specialist",
+      "name": "Multi-Model Image Generation Specialist",
+      "content": "You are an AI image generation specialist with expertise across multiple image generation models including Amazon Nova Canvas and Stability AI SDXL.\n\nYour role is to:\n1. Analyze user requests and recommend the best model for their needs\n2. Optimize prompts for the selected model's strengths\n3. Select appropriate generation parameters for optimal results\n4. Provide guidance on image generation best practices across models\n\nModel Selection Guidelines:\n- Nova Canvas: Best for photorealistic, professional, and commercial imagery\n- Stability AI SDXL: Best for artistic, creative, and stylized imagery\n\nWhen working with image generation:\n- Consider the artistic style, composition, and technical requirements\n- Suggest improvements to prompts for clarity and model-specific optimization\n- Recommend appropriate image dimensions and quality settings\n- Explain the capabilities and limitations of different models\n\nAlways aim for clear, detailed prompts that leverage each model's unique strengths."
+    },
+    {
+      "id": "creative-director",
+      "name": "Creative Director",
+      "content": "You are a creative director specializing in AI-generated imagery for professional and artistic applications.\n\nYour expertise includes:\n- Visual composition and artistic principles\n- Brand consistency and style guidelines\n- Technical image requirements for different use cases\n- Creative prompt engineering for optimal results\n- Model selection for specific creative objectives\n\nFocus on:\n- Ensuring images meet professional quality standards\n- Maintaining consistency with brand or project requirements\n- Optimizing prompts for artistic and technical excellence\n- Providing creative direction for image generation projects\n- Balancing creative vision with technical constraints\n\nModel Recommendations:\n- Use Nova Canvas for commercial, product, and professional photography needs\n- Use Stability AI SDXL for artistic, creative, and conceptual projects\n\nHelp users create compelling, high-quality images that effectively communicate their vision while leveraging the right model for their specific needs."
+    },
+    {
+      "id": "content-moderator",
+      "name": "Content Safety Moderator",
+      "content": "You are a content safety specialist focused on ensuring AI-generated images meet appropriate content guidelines across all supported models.\n\nYour responsibilities:\n- Review image generation requests for potential safety concerns\n- Identify prompts that might generate inappropriate content\n- Suggest modifications to ensure compliance with content policies\n- Provide guidance on safe and appropriate image generation practices\n- Ensure compliance across different model capabilities\n\nPrioritize:\n- Content safety and appropriateness\n- Compliance with platform and legal guidelines\n- User education on responsible AI image generation\n- Maintaining high standards for generated content\n- Model-specific safety considerations\n\nSafety Guidelines:\n- All models must adhere to the same content safety standards\n- Be aware of model-specific capabilities that might affect content generation\n- Provide clear guidance on acceptable use cases\n\nHelp users create appropriate, safe, and policy-compliant images regardless of the model used."
+    }
+  ],
+  "userPrompts": [
+    {
+      "id": "nova-canvas-product-photo",
+      "name": "Nova Canvas: Professional Product Photography",
+      "content": "Generate a professional product photograph of a luxury watch on a marble surface. Use studio lighting with soft shadows, shot with a 85mm lens at f/2.8. The watch should have a black leather strap and silver case, positioned at a 45-degree angle. Include subtle reflections on the marble surface."
+    },
+    {
+      "id": "nova-canvas-portrait",
+      "name": "Nova Canvas: Professional Portrait",
+      "content": "Create a professional headshot of a business executive in a modern office setting. Use natural window lighting with a subtle fill light. Shot with a 85mm lens at f/1.8 for shallow depth of field. The subject should be wearing a navy blue suit with a confident, approachable expression."
+    },
+    {
+      "id": "nova-canvas-architecture",
+      "name": "Nova Canvas: Architectural Photography",
+      "content": "Generate an architectural photograph of a modern glass office building during golden hour. Use a wide-angle lens (24mm) to capture the full height of the building. Include dramatic sky with warm lighting reflecting off the glass facade. Shot from a low angle to emphasize the building's imposing presence."
+    },
+    {
+      "id": "stability-ai-fantasy",
+      "name": "Stability AI: Fantasy Artwork",
+      "content": "Create a fantasy artwork of an enchanted forest with glowing mushrooms and ethereal light filtering through ancient trees. Style should be reminiscent of romantic period paintings with rich, saturated colors and mystical atmosphere. Include magical creatures like fairies or spirits in the composition."
+    },
+    {
+      "id": "stability-ai-abstract",
+      "name": "Stability AI: Abstract Art",
+      "content": "Generate an abstract expressionist painting representing the concept of 'digital transformation'. Use bold brushstrokes, vibrant blues and oranges, with geometric elements emerging from organic forms. The composition should convey movement and technological evolution."
+    },
+    {
+      "id": "stability-ai-surreal",
+      "name": "Stability AI: Surreal Composition",
+      "content": "Create a surreal artwork in the style of Salvador Dalí, featuring melting clocks floating above a desert landscape with impossible architecture. Include dreamlike elements such as floating objects and distorted perspectives. Use warm, golden tones with dramatic shadows."
+    },
+    {
+      "id": "simple-object",
+      "name": "Basic Object Generation",
+      "content": "Generate an image of a red apple on a wooden table with natural lighting."
+    },
+    {
+      "id": "landscape-scene",
+      "name": "Natural Landscape",
+      "content": "Generate a serene mountain landscape at sunset with a lake in the foreground and snow-capped peaks in the background."
+    },
+    {
+      "id": "food-photography",
+      "name": "Food Photography",
+      "content": "Create an appetizing image of a gourmet burger with fresh ingredients, photographed from above with natural lighting."
+    },
+    {
+      "id": "vintage-poster",
+      "name": "Vintage Style Poster",
+      "content": "Generate a vintage-style travel poster for Paris, featuring the Eiffel Tower, art deco typography, and warm, muted colors typical of 1930s advertising."
+    },
+    {
+      "id": "sci-fi-concept",
+      "name": "Science Fiction Concept",
+      "content": "Create a futuristic space station orbiting a distant planet, with sleek metallic surfaces, glowing energy conduits, and stars visible through large observation windows."
+    },
+    {
+      "id": "nature-macro",
+      "name": "Nature Macro Photography",
+      "content": "Generate a close-up image of a dewdrop on a flower petal with beautiful bokeh background, shot with a macro lens to capture fine details and textures."
+    },
+    {
+      "id": "minimalist-design",
+      "name": "Minimalist Design",
+      "content": "Create a minimalist composition featuring simple geometric shapes in a monochromatic color scheme with plenty of white space and clean lines."
+    },
+    {
+      "id": "artistic-portrait",
+      "name": "Artistic Portrait Style",
+      "content": "Create a portrait in the style of Renaissance oil painting, with dramatic chiaroscuro lighting, rich colors, and classical composition techniques."
+    },
+    {
+      "id": "architectural-interior",
+      "name": "Interior Architecture",
+      "content": "Generate an image of a modern minimalist living room with floor-to-ceiling windows, natural materials like wood and stone, and carefully curated furniture pieces."
+    },
+    {
+      "id": "wildlife-photography",
+      "name": "Wildlife Photography",
+      "content": "Create a wildlife photograph of a majestic eagle in flight against a mountain backdrop, captured with a telephoto lens showing fine feather detail and natural behavior."
+    }
+  ],
+  "tools": [],
+  "metaAgents": {
+    "enabled": true,
+    "agents": {
+      "factChecker": {
+        "enabled": true,
+        "modelId": "amazon.nova-pro-v1:0",
+        "config": {
+          "strictMode": false,
+          "confidenceThreshold": 75
+        }
+      },
+      "errorContainment": {
+        "enabled": true,
+        "modelId": "amazon.nova-pro-v1:0",
+        "config": {
+          "safetyLevel": "high",
+          "contentPolicyEnforcement": true
+        }
+      },
+      "qualityEnforcer": {
+        "enabled": true,
+        "modelId": "amazon.nova-pro-v1:0",
+        "config": {
+          "minimumScore": 70,
+          "strictScoring": false
+        }
+      }
+    }
+  },
+  "configuration": {
+    "allowCustomPrompts": true,
+    "allowDatasetModification": false,
+    "defaultStreamingEnabled": false,
+    "maxIterations": 5,
+    "recommendedModels": [
+      "amazon.nova-canvas-v1:0",
+      "stability.stable-diffusion-xl-base-v1:0",
+      "stability.sd3-large-v1:0"
+    ],
+    "imageGeneration": {
+      "enabled": true,
+      "defaultParameters": {
+        "width": 1024,
+        "height": 1024,
+        "quality": "standard",
+        "numberOfImages": 1
+      },
+      "supportedDimensions": [
+        { "width": 512, "height": 512, "label": "Square Small (512x512)" },
+        { "width": 768, "height": 768, "label": "Square Medium (768x768)" },
+        { "width": 1024, "height": 1024, "label": "Square Large (1024x1024)" },
+        { "width": 1152, "height": 896, "label": "Landscape (1152x896)" },
+        { "width": 896, "height": 1152, "label": "Portrait (896x1152)" },
+        { "width": 1344, "height": 768, "label": "Wide Landscape (1344x768)" },
+        { "width": 768, "height": 1344, "label": "Tall Portrait (768x1344)" }
+      ],
+      "qualityOptions": ["standard", "premium"],
+      "modelSpecificSettings": {
+        "amazon.nova-canvas-v1:0": {
+          "maxPromptLength": 1024,
+          "supportedQualities": ["standard", "premium"],
+          "defaultDimensions": { "width": 1024, "height": 1024 },
+          "strengths": ["photorealistic", "professional", "commercial"]
+        },
+        "stability.stable-diffusion-xl-base-v1:0": {
+          "maxPromptLength": 2048,
+          "supportedQualities": ["standard"],
+          "defaultDimensions": { "width": 1024, "height": 1024 },
+          "strengths": ["artistic", "creative", "stylized"]
+        },
+        "stability.sd3-large-v1:0": {
+          "maxPromptLength": 2048,
+          "supportedQualities": ["standard", "premium"],
+          "defaultDimensions": { "width": 1024, "height": 1024 },
+          "strengths": ["artistic", "creative", "detailed"]
+        }
+      }
+    },
+    "toolExecutionMode": "detection_and_execution"
+  },
+  "examples": [
+    {
+      "name": "Nova Canvas: Professional Product Photography",
+      "description": "Test Nova Canvas photorealistic capabilities with professional product photography",
+      "systemPrompt": "nova-canvas-specialist",
+      "userPrompt": "nova-canvas-product-photo",
+      "recommendedModel": "amazon.nova-canvas-v1:0",
+      "expectedOutcome": "Photorealistic product photograph with professional lighting, accurate materials, and commercial quality suitable for marketing use"
+    },
+    {
+      "name": "Nova Canvas: Portrait Photography",
+      "description": "Evaluate Nova Canvas portrait generation with professional photography standards",
+      "systemPrompt": "nova-canvas-specialist",
+      "userPrompt": "nova-canvas-portrait",
+      "recommendedModel": "amazon.nova-canvas-v1:0",
+      "expectedOutcome": "Professional headshot with natural lighting, proper depth of field, and business-appropriate presentation"
+    },
+    {
+      "name": "Stability AI: Fantasy Artwork",
+      "description": "Test Stability AI SDXL artistic capabilities with fantasy scene generation",
+      "systemPrompt": "stability-ai-specialist",
+      "userPrompt": "stability-ai-fantasy",
+      "recommendedModel": "stability.stable-diffusion-xl-base-v1:0",
+      "expectedOutcome": "Artistic fantasy scene with rich colors, mystical atmosphere, and creative interpretation of magical elements"
+    },
+    {
+      "name": "Stability AI: Abstract Art Creation",
+      "description": "Evaluate Stability AI SDXL abstract and conceptual art generation",
+      "systemPrompt": "stability-ai-specialist",
+      "userPrompt": "stability-ai-abstract",
+      "recommendedModel": "stability.stable-diffusion-xl-base-v1:0",
+      "expectedOutcome": "Abstract expressionist artwork with bold colors, dynamic composition, and conceptual representation of digital transformation"
+    },
+    {
+      "name": "Multi-Model Comparison: Architecture",
+      "description": "Compare architectural rendering capabilities across different models",
+      "systemPrompt": "image-generation-specialist",
+      "userPrompt": "nova-canvas-architecture",
+      "expectedOutcome": "High-quality architectural photograph with accurate perspective, lighting, and professional composition"
+    },
+    {
+      "name": "Content Safety Assessment",
+      "description": "Verify content safety protocols work correctly across all models",
+      "systemPrompt": "content-moderator",
+      "userPrompt": "landscape-scene",
+      "expectedOutcome": "Safe, appropriate landscape image passing all content safety checks with no policy violations"
+    },
+    {
+      "name": "Complex Prompt Adherence Test",
+      "description": "Test detailed prompt adherence with specific technical requirements",
+      "systemPrompt": "creative-director",
+      "userPrompt": "nature-macro",
+      "expectedOutcome": "Macro photography image with accurate technical details (bokeh, depth of field, fine textures) matching prompt specifications"
+    },
+    {
+      "name": "Style Consistency Verification",
+      "description": "Verify artistic style consistency and interpretation accuracy",
+      "systemPrompt": "creative-director",
+      "userPrompt": "vintage-poster",
+      "expectedOutcome": "Vintage travel poster with period-appropriate art deco elements, typography style, and color palette consistent with 1930s design"
+    },
+    {
+      "name": "Quality Enforcement Test",
+      "description": "Test quality enforcer meta-agent with various image types and styles",
+      "systemPrompt": "image-generation-specialist",
+      "userPrompt": "minimalist-design",
+      "expectedOutcome": "Clean minimalist composition with high technical quality scores and appropriate aesthetic evaluation"
+    },
+    {
+      "name": "Professional Standards Validation",
+      "description": "Validate professional quality standards for commercial use cases",
+      "systemPrompt": "creative-director",
+      "userPrompt": "food-photography",
+      "expectedOutcome": "Commercial-grade food photography with proper lighting, composition, and appetizing presentation suitable for marketing materials"
+    }
+  ],
+  "metadata": {
+    "documentation": "Text-to-Image Generation with comprehensive meta-agent verification",
+    "changelog": {
+      "1.0.0": "Initial text-to-image generation scenario with image-specific meta-agents"
+    },
+    "imageGenerationFeatures": {
+      "promptAdherenceVerification": "Meta-agent verification that generated images match the original text prompt",
+      "contentSafetyAnalysis": "Automated content safety assessment for generated images",
+      "qualityAssessment": "Technical and aesthetic quality evaluation with detailed scoring",
+      "multiModelSupport": "Support for multiple image generation models with model-specific parameters"
+    },
+    "metaAgentCapabilities": {
+      "factChecker": "Verifies prompt adherence and visual accuracy of generated images",
+      "errorContainment": "Identifies inappropriate, harmful, or policy-violating content in images",
+      "qualityEnforcer": "Evaluates technical quality, composition, detail level, and aesthetic appeal. ENFORCES STYLE POLICY: Automatically rejects cartoon-style images, only accepts photorealistic or non-cartoon artistic styles."
+    },
+    "supportedModels": {
+      "amazon.nova-canvas-v1:0": {
+        "name": "Amazon Nova Canvas",
+        "provider": "Amazon",
+        "maxPromptLength": 1024,
+        "supportedQualities": ["standard", "premium"],
+        "supportedDimensions": ["512x512", "768x768", "1024x1024", "1152x896", "896x1152", "1344x768", "768x1344"],
+        "strengths": ["photorealistic", "professional photography", "product visualization", "architectural rendering", "portrait photography"],
+        "bestUseCases": ["commercial photography", "product marketing", "professional portraits", "architectural visualization", "real estate photography"],
+        "technicalSpecs": {
+          "apiType": "InvokeModel",
+          "inputFormat": "TEXT_IMAGE",
+          "outputFormat": "base64",
+          "seedSupport": true,
+          "qualityControl": true
+        }
+      },
+      "stability.stable-diffusion-xl-base-v1:0": {
+        "name": "Stability AI SDXL Base",
+        "provider": "Stability AI",
+        "maxPromptLength": 2048,
+        "supportedQualities": ["standard"],
+        "supportedDimensions": ["512x512", "768x768", "1024x1024", "1152x896", "896x1152"],
+        "strengths": ["artistic creativity", "fantasy artwork", "abstract art", "stylized imagery", "concept art"],
+        "bestUseCases": ["digital art", "concept design", "fantasy illustrations", "abstract compositions", "creative projects"],
+        "technicalSpecs": {
+          "apiType": "InvokeModel",
+          "inputFormat": "TEXT_IMAGE",
+          "outputFormat": "base64",
+          "seedSupport": true,
+          "qualityControl": false
+        }
+      },
+      "stability.sd3-large-v1:0": {
+        "name": "Stable Diffusion 3 Large",
+        "provider": "Stability AI",
+        "maxPromptLength": 2048,
+        "supportedQualities": ["standard", "premium"],
+        "supportedDimensions": ["512x512", "768x768", "1024x1024", "1152x896", "896x1152"],
+        "strengths": ["detailed artwork", "complex compositions", "artistic interpretation", "creative flexibility", "style versatility"],
+        "bestUseCases": ["detailed illustrations", "complex artistic scenes", "creative interpretations", "artistic projects", "conceptual artwork"],
+        "technicalSpecs": {
+          "apiType": "InvokeModel",
+          "inputFormat": "TEXT_IMAGE",
+          "outputFormat": "base64",
+          "seedSupport": true,
+          "qualityControl": true
+        }
+      }
+    },
+    "qualityMetrics": {
+      "technicalQuality": "Resolution, clarity, artifacts, distortion assessment",
+      "composition": "Layout, balance, focal points, visual flow evaluation",
+      "detailLevel": "Appropriate detail, texture, refinement analysis",
+      "aestheticAppeal": "Visual appeal, style consistency, artistic merit scoring"
+    },
+    "stylePolicy": {
+      "cartoonRejection": "Cartoon-style images are automatically rejected by the quality enforcer meta-agent",
+      "acceptedStyles": ["photorealistic", "realistic", "artistic (non-cartoon)", "professional photography", "fine art"],
+      "rejectedStyles": ["cartoon", "animated", "comic book", "stylized cartoon", "caricature", "cell-shaded"],
+      "enforcement": "Style compliance is checked before quality assessment - cartoon detection triggers automatic rejection regardless of technical quality"
+    },
+    "testingScenarios": {
+      "modelComparison": {
+        "description": "Compare different models on the same prompt to evaluate strengths and capabilities",
+        "scenarios": [
+          {
+            "prompt": "Professional product photograph of a luxury watch",
+            "expectedBest": "amazon.nova-canvas-v1:0",
+            "reason": "Nova Canvas excels at photorealistic product photography"
+          },
+          {
+            "prompt": "Fantasy dragon in an enchanted forest",
+            "expectedBest": "stability.stable-diffusion-xl-base-v1:0",
+            "reason": "Stability AI SDXL excels at creative and fantasy artwork"
+          },
+          {
+            "prompt": "Abstract representation of digital innovation",
+            "expectedBest": "stability.sd3-large-v1:0",
+            "reason": "SD3 Large provides detailed abstract and conceptual artwork"
+          }
+        ]
+      },
+      "qualityAssessment": {
+        "description": "Test meta-agent quality assessment across different image types",
+        "criteria": [
+          "Technical quality (resolution, clarity, artifacts)",
+          "Composition (layout, balance, visual flow)",
+          "Detail level (texture, refinement, completeness)",
+          "Aesthetic appeal (visual impact, style consistency)"
+        ]
+      },
+      "contentSafety": {
+        "description": "Verify content safety detection across various prompt types",
+        "testCases": [
+          "Appropriate content should pass all safety checks",
+          "Borderline content should trigger warnings with specific guidance",
+          "Inappropriate content should be rejected with clear explanations"
+        ]
+      },
+      "promptAdherence": {
+        "description": "Test accuracy of generated images matching original prompts",
+        "evaluationPoints": [
+          "All specified visual elements present",
+          "Correct style and aesthetic interpretation",
+          "Accurate technical specifications (lighting, composition)",
+          "No missing or incorrect elements"
+        ]
+      }
+    },
+    "performanceMetrics": {
+      "generationTime": "Typical generation time ranges from 3-15 seconds depending on model and complexity",
+      "qualityThresholds": {
+        "excellent": "90-100 points",
+        "good": "80-89 points",
+        "acceptable": "70-79 points",
+        "poor": "60-69 points",
+        "unacceptable": "below 60 points"
+      },
+      "metaAgentResponse": "Meta-agent verification typically completes within 5-10 seconds per agent"
+    }
+  }
+}

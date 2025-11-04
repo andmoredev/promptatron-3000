@@ -880,6 +880,70 @@ export class FileService {
       errors.push('response must be a string if provided');
     }
 
+    // Validate image generation fields if present
+    if (testResult.imageData !== null && testResult.imageData !== undefined) {
+      if (typeof testResult.imageData !== 'string') {
+        errors.push('imageData must be a string if provided');
+      }
+    }
+
+    if (testResult.imagePrompt !== null && testResult.imagePrompt !== undefined) {
+      if (typeof testResult.imagePrompt !== 'string') {
+        errors.push('imagePrompt must be a string if provided');
+      }
+    }
+
+    if (testResult.imageParameters !== null && testResult.imageParameters !== undefined) {
+      if (typeof testResult.imageParameters !== 'object') {
+        errors.push('imageParameters must be an object if provided');
+      } else {
+        if (testResult.imageParameters.width !== undefined && typeof testResult.imageParameters.width !== 'number') {
+          errors.push('imageParameters.width must be a number if provided');
+        }
+        if (testResult.imageParameters.height !== undefined && typeof testResult.imageParameters.height !== 'number') {
+          errors.push('imageParameters.height must be a number if provided');
+        }
+        if (testResult.imageParameters.quality !== undefined && typeof testResult.imageParameters.quality !== 'string') {
+          errors.push('imageParameters.quality must be a string if provided');
+        }
+      }
+    }
+
+    if (testResult.seed !== null && testResult.seed !== undefined) {
+      if (typeof testResult.seed !== 'number') {
+        errors.push('seed must be a number if provided');
+      }
+    }
+
+    if (testResult.generationTime !== null && testResult.generationTime !== undefined) {
+      if (typeof testResult.generationTime !== 'number') {
+        errors.push('generationTime must be a number if provided');
+      }
+    }
+
+    // Validate image verification results if present
+    if (testResult.verificationResults !== null && testResult.verificationResults !== undefined) {
+      if (typeof testResult.verificationResults !== 'object') {
+        errors.push('verificationResults must be an object if provided');
+      } else {
+        if (testResult.verificationResults.overallRecommendation !== undefined &&
+            !['accept', 'reject', 'warning'].includes(testResult.verificationResults.overallRecommendation)) {
+          errors.push('verificationResults.overallRecommendation must be "accept", "reject", or "warning" if provided');
+        }
+
+        if (testResult.verificationResults.overallConfidence !== undefined &&
+            (typeof testResult.verificationResults.overallConfidence !== 'number' ||
+             testResult.verificationResults.overallConfidence < 0 ||
+             testResult.verificationResults.overallConfidence > 100)) {
+          errors.push('verificationResults.overallConfidence must be a number between 0 and 100 if provided');
+        }
+
+        if (testResult.verificationResults.agentResults !== undefined && !Array.isArray(testResult.verificationResults.agentResults)) {
+          errors.push('verificationResults.agentResults must be an array if provided');
+        }
+      }
+    }
+
     if (testResult.timestamp && !this.isValidTimestamp(testResult.timestamp)) {
       errors.push('timestamp must be a valid ISO string if provided');
     }
@@ -1318,6 +1382,25 @@ export class FileService {
       }
 
       if (testResult.metaAgentEvaluation.agentResults !== undefined && !Array.isArray(testResult.metaAgentEvaluation.agentResults)) {
+        return false;
+      }
+    }
+
+    // Validate image generation data if present
+    if (testResult.imageData !== null && testResult.imageData !== undefined) {
+      if (typeof testResult.imageData !== 'string') {
+        return false;
+      }
+    }
+
+    if (testResult.imageParameters !== null && testResult.imageParameters !== undefined) {
+      if (typeof testResult.imageParameters !== 'object') {
+        return false;
+      }
+    }
+
+    if (testResult.verificationResults !== null && testResult.verificationResults !== undefined) {
+      if (typeof testResult.verificationResults !== 'object') {
         return false;
       }
     }

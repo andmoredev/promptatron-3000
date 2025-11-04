@@ -1,4 +1,4 @@
-import { ConverseCommand, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
+import { ConverseCommand, ConverseStreamCommand, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { BedrockClientManager } from './bedrock/BedrockClient.js';
 import { ModelManager } from './bedrock/ModelManager.js';
 import { GuardrailManager } from './bedrock/GuardrailManager.js';
@@ -29,6 +29,14 @@ export class BedrockService {
   // Delegate model management methods
   async listFoundationModels() {
     return await this.modelManager.listFoundationModels();
+  }
+
+  /**
+   * Get supported image generation models
+   */
+  async listImageGenerationModels() {
+    const allModels = await this.listFoundationModels();
+    return allModels.filter(model => this.isImageGenerationModel(model.id));
   }
 
   /**
@@ -360,6 +368,277 @@ export class BedrockService {
     });
     return result;
   }
+
+  // ===== IMAGE GENERATION METHODS =====
+
+  /**
+   * Check if a model supports image generation
+   */
+  isImageGenerationModel(modelId) {
+    const imageModels = [
+      'amazon.nova-canvas-v1:0'
+    ];
+    return imageModels.includes(modelId);
+  }
+
+  /**
+   * Get supported image generation models
+   */
+  getSupportedImageModels() {
+    return [
+      {
+        id: 'amazon.nova-canvas-v1:0',
+        name: 'Amazon Nova Canvas',
+        provider: 'Amazon',
+        maxPromptLength: 1024,
+        supportedDimensions: [
+          { width: 512, height: 512 },
+          { width: 768, height: 768 },
+          { width: 1024, height: 1024 },
+          { width: 1152, height: 896 },
+          { width: 896, height: 1152 }
+        ],
+        supportedQualities: ['standard', 'premium'],
+        supportsNegativePrompt: true
+      }
+    ];
+  }
+
+  /**
+   * Validate image generation prompt based on model constraints
+   */
+  validateImagePrompt(modelId, prompt) {
+    const modelInfo = this.getSupportedImageModels().find(m => m.id === modelId);
+    if (!modelInfo) {
+      return { valid: false, error: 'Unsupported image generation model' };
+    }
+
+    if (!prompt || !prompt.trim()) {
+      return { valid: false, error: 'Prompt cannot be empty' };
+    }
+
+    if (prompt.length > modelInfo.maxPromptLength) {
+      return {
+        valid: false,
+        error: `Prompt too long. Maximum ${modelInfo.maxPromptLength} characters for ${modelInfo.name}`
+      };
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Generate image using Bedrock image generation models
+   */
+  async generateImage(modelId, prompt, parameters = {}) {
+    if (!this.clientManager.isReady()) {
+      const initResult = await this.clientManager.initialize();
+      if (!initResult.success) {
+        throw new Error(initResult.message);
+      }
+    }
+
+    // Validate model supports image generation
+    if (!this.isImageGenerationModel(modelId)) {
+      throw new Error(`Model ${modelId} does not support image generation`);
+    }
+
+    // Validate prompt
+    const validation = this.validateImagePrompt(modelId, prompt);
+    if (!validation.valid) {
+      throw new Error(validation.error);
+    }
+
+    const startTime = performance.now();
+
+    try {
+      // Prepare model-specific request
+      const requestBody = this.prepareImageGenerationRequest(modelId, prompt, parameters);
+
+      const command = new InvokeModelCommand({
+        modelId: modelId,
+        body: JSON.stringify(requestBody),
+        contentType: 'application/json',
+        accept: 'application/json'
+      });
+
+      const response = await this.clientManager.runtimeClient.send(command);
+      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+
+      const endTime = performance.now();
+
+      return this.parseImageGenerationResponse(modelId, responseBody, {
+        prompt,
+        parameters,
+        generationTime: endTime - startTime
+      });
+    } catch (error) {
+      throw new Error(`Image generation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Prepare image generation request based on model type
+   */
+  prepareImageGenerationRequest(modelId, prompt, parameters) {
+    const defaultParams = {
+      width: 512,
+      height: 512,
+      quality: 'standard',
+      numberOfImages: 1,
+      seed: Math.floor(Math.random() * 858993460)
+    };
+
+    const mergedParams = { ...defaultParams, ...parameters };
+
+    switch (modelId) {
+      case 'amazon.nova-canvas-v1:0':
+        return this.prepareNovaCanvasRequest(prompt, mergedParams);
+
+      default:
+        throw new Error(`Unsupported image generation model: ${modelId}`);
+    }
+  }
+
+  /**
+   * Prepare request for Amazon Nova Canvas
+   */
+  prepareNovaCanvasRequest(prompt, parameters) {
+    const request = {
+      taskType: "TEXT_IMAGE",
+      textToImageParams: {
+        text: prompt
+      },
+      imageGenerationConfig: {
+        seed: parameters.seed,
+        quality: parameters.quality,
+        width: parameters.width,
+        height: parameters.height,
+        numberOfImages: parameters.numberOfImages
+      }
+    };
+
+    // Add negative prompt if provided
+    if (parameters.negativePrompt) {
+      request.textToImageParams.negativeText = parameters.negativePrompt;
+    }
+
+    return request;
+  }
+
+
+
+  /**
+   * Parse image generation response based on model type
+   */
+  parseImageGenerationResponse(modelId, responseBody, metadata) {
+    switch (modelId) {
+      case 'amazon.nova-canvas-v1:0':
+        return this.parseNovaCanvasResponse(responseBody, metadata);
+
+      default:
+        throw new Error(`Unsupported image generation model: ${modelId}`);
+    }
+  }
+
+  /**
+   * Parse Amazon Nova Canvas response
+   */
+  parseNovaCanvasResponse(responseBody, metadata) {
+    return {
+      imageData: responseBody.images[0], // Base64 encoded image
+      seed: responseBody.seed,
+      prompt: metadata.prompt,
+      modelId: 'amazon.nova-canvas-v1:0',
+      parameters: metadata.parameters,
+      generationTime: metadata.generationTime,
+      format: 'png'
+    };
+  }
+
+  /**
+   * Invoke model with image for meta-agent analysis
+   * Uses Converse API with image input for image content analysis
+   */
+  async invokeModelWithImage(modelId, systemPrompt, userPrompt, imageData, context = '') {
+    if (!this.clientManager.isReady()) {
+      const initResult = await this.clientManager.initialize();
+      if (!initResult.success) {
+        throw new Error(initResult.message);
+      }
+    }
+
+    const startTime = performance.now();
+
+    try {
+      // Prepare message with image content
+      const messages = [
+        {
+          role: 'user',
+          content: [
+            {
+              image: {
+                format: 'png', // Assume PNG format for generated images
+                source: {
+                  bytes: this.base64ToUint8Array(imageData)
+                }
+              }
+            },
+            {
+              text: context ? `${userPrompt}\n\nContext:\n${context}` : userPrompt
+            }
+          ]
+        }
+      ];
+
+      const converseParams = {
+        modelId: modelId,
+        messages: messages,
+        inferenceConfig: {
+          maxTokens: 4000,
+          temperature: 0.7
+        }
+      };
+
+      // Add system prompt if provided
+      if (systemPrompt?.trim()) {
+        converseParams.system = [{ text: systemPrompt }];
+      }
+
+      const command = new ConverseCommand(converseParams);
+      const response = await this.clientManager.runtimeClient.send(command);
+
+      // Parse response
+      const result = this.parseConverseResponse(response);
+      result.responseTime = performance.now() - startTime;
+
+      return result;
+
+    } catch (error) {
+      throw new Error(`Failed to invoke model ${modelId} with image: ${error.message}`);
+    }
+  }
+
+  /**
+   * Convert base64 string to Uint8Array for Bedrock API
+   */
+  base64ToUint8Array(base64String) {
+    // Remove data URL prefix if present
+    const base64Data = base64String.replace(/^data:image\/[a-z]+;base64,/, '');
+
+    // Convert base64 to binary string
+    const binaryString = atob(base64Data);
+
+    // Convert binary string to Uint8Array
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    return bytes;
+  }
+
+
 }
 
 // Export singleton instance

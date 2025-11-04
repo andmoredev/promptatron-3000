@@ -50,7 +50,7 @@ export class MetaAgentService {
   }
 
   /**
-   * Load meta-agents for a specific scenario
+   * Load meta-agents for a specific scenario dynamically
    * @param {string} scenarioId - The scenario ID
    * @returns {Promise<Map>} Map of loaded meta-agents
    */
@@ -63,26 +63,34 @@ export class MetaAgentService {
       const agents = new Map();
       const scenarioPath = `../scenarios/${scenarioId}/meta-agents`;
 
-      try {
-        // Dynamically import meta-agents from scenario folder
-        const factChecker = await import(`${scenarioPath}/factChecker.js`);
-        agents.set('factChecker', factChecker.default);
-      } catch (error) {
-        console.warn(`[MetaAgentService] Could not load factChecker for ${scenarioId}:`, error.message);
+      // Define standard meta-agent types - same names for all scenarios
+      const metaAgentTypes = [
+        'factChecker',
+        'errorContainment',
+        'qualityEnforcer'
+        // Future extensibility - add new agent types here
+        // 'customAgent',
+        // 'domainSpecificAgent'
+      ];
+
+      // Dynamically attempt to load each meta-agent type
+      for (const agentType of metaAgentTypes) {
+        try {
+          const agentModule = await import(`${scenarioPath}/${agentType}.js`);
+          agents.set(agentType, agentModule.default);
+          console.log(`[MetaAgentService] Successfully loaded ${agentType} for ${scenarioId}`);
+        } catch (error) {
+          // Only log as debug for missing agents - this is expected behavior
+          console.debug(`[MetaAgentService] Could not load ${agentType} for ${scenarioId}:`, error.message);
+        }
       }
 
-      try {
-        const errorContainment = await import(`${scenarioPath}/errorContainment.js`);
-        agents.set('errorContainment', errorContainment.default);
-      } catch (error) {
-        console.warn(`[MetaAgentService] Could not load errorContainment for ${scenarioId}:`, error.message);
-      }
-
-      try {
-        const qualityEnforcer = await import(`${scenarioPath}/qualityEnforcer.js`);
-        agents.set('qualityEnforcer', qualityEnforcer.default);
-      } catch (error) {
-        console.warn(`[MetaAgentService] Could not load qualityEnforcer for ${scenarioId}:`, error.message);
+      // Log summary of loaded agents
+      const loadedAgentTypes = Array.from(agents.keys());
+      if (loadedAgentTypes.length > 0) {
+        console.log(`[MetaAgentService] Loaded ${loadedAgentTypes.length} meta-agents for ${scenarioId}: ${loadedAgentTypes.join(', ')}`);
+      } else {
+        console.warn(`[MetaAgentService] No meta-agents found for scenario ${scenarioId}`);
       }
 
       this.scenarioAgents.set(scenarioId, agents);
@@ -107,7 +115,7 @@ export class MetaAgentService {
       }
 
       // Generate evaluation ID
-      const evaluationId = `meta_eval_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const evaluationId = `meta_eval_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
       // Load scenario meta-agents
       const agents = await this.loadScenarioMetaAgents(scenarioId);
@@ -324,7 +332,7 @@ export class MetaAgentService {
   }
 
   /**
-   * Get enabled agents based on configuration
+   * Get enabled agents based on configuration - dynamically handles any agent type
    * @param {Map} agents - Available agents map
    * @param {Object} config - Meta-agent configuration
    * @returns {Array} Array of enabled agent instances
@@ -332,21 +340,26 @@ export class MetaAgentService {
   getEnabledAgents(agents, config) {
     const enabled = [];
 
-    if (config.agents?.factChecker?.enabled && agents.has('factChecker')) {
-      const AgentClass = agents.get('factChecker');
-      enabled.push(new AgentClass(config.agents.factChecker.config || {}));
+    // Dynamically process all configured agents
+    if (config.agents) {
+      for (const [agentType, agentConfig] of Object.entries(config.agents)) {
+        // Check if agent is enabled and available
+        if (agentConfig?.enabled && agents.has(agentType)) {
+          try {
+            const AgentClass = agents.get(agentType);
+            const agentInstance = new AgentClass(agentConfig.config || {});
+            enabled.push(agentInstance);
+            console.log(`[MetaAgentService] Enabled ${agentType} meta-agent`);
+          } catch (error) {
+            console.error(`[MetaAgentService] Failed to instantiate ${agentType} meta-agent:`, error);
+          }
+        } else if (agentConfig?.enabled) {
+          console.warn(`[MetaAgentService] Agent ${agentType} is enabled in config but not available in scenario`);
+        }
+      }
     }
 
-    if (config.agents?.errorContainment?.enabled && agents.has('errorContainment')) {
-      const AgentClass = agents.get('errorContainment');
-      enabled.push(new AgentClass(config.agents.errorContainment.config || {}));
-    }
-
-    if (config.agents?.qualityEnforcer?.enabled && agents.has('qualityEnforcer')) {
-      const AgentClass = agents.get('qualityEnforcer');
-      enabled.push(new AgentClass(config.agents.qualityEnforcer.config || {}));
-    }
-
+    console.log(`[MetaAgentService] Total enabled agents: ${enabled.length}`);
     return enabled;
   }
 
@@ -362,10 +375,10 @@ export class MetaAgentService {
 
     // Categorize failure reasons
     const failureReasons = {};
-    [...fallbackResults, ...failedResults].forEach(result => {
+    for (const result of [...fallbackResults, ...failedResults]) {
       const reason = result.details?.reason || 'unknown';
       failureReasons[reason] = (failureReasons[reason] || 0) + 1;
-    });
+    }
 
     // If no valid results, provide degraded service information
     if (validResults.length === 0) {
@@ -509,13 +522,13 @@ export class MetaAgentService {
   notifyStatusCallbacks(evaluationId, status) {
     const callbacks = this.statusCallbacks.get(evaluationId);
     if (callbacks) {
-      callbacks.forEach(callback => {
+      for (const callback of callbacks) {
         try {
           callback(status);
         } catch (error) {
           console.error('[MetaAgentService] Error in status callback:', error);
         }
-      });
+      }
     }
   }
 
@@ -632,7 +645,7 @@ export class MetaAgentService {
   setEvaluationTimeout(evaluationId, timeoutMs) {
     const timeoutId = setTimeout(() => {
       const evaluation = this.activeEvaluations.get(evaluationId);
-      if (evaluation && evaluation.status === 'running') {
+      if (evaluation?.status === 'running') {
         console.warn(`[MetaAgentService] Evaluation ${evaluationId} timed out after ${timeoutMs}ms`);
         this.cancelEvaluation(evaluationId, 'timeout');
       }
@@ -663,9 +676,7 @@ export class MetaAgentService {
     const evaluation = this.activeEvaluations.get(evaluationId);
     if (evaluation) {
       // Clear any pending timeouts
-      if (evaluation.clearTimeout) {
-        evaluation.clearTimeout();
-      }
+      evaluation.clearTimeout?.();
 
       // Remove from active evaluations
       this.activeEvaluations.delete(evaluationId);
@@ -714,9 +725,7 @@ export class MetaAgentService {
 
     // Clear all timeouts
     for (const evaluation of this.activeEvaluations.values()) {
-      if (evaluation.clearTimeout) {
-        evaluation.clearTimeout();
-      }
+      evaluation.clearTimeout?.();
     }
 
     // Clear all data structures

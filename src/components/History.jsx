@@ -20,6 +20,7 @@ const History = ({
   const [selectedItem, setSelectedItem] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterModel, setFilterModel] = useState("");
+  const [filterContentType, setFilterContentType] = useState("");
   const [filterToolUsage, setFilterToolUsage] = useState("");
   const [filterToolExecution, setFilterToolExecution] = useState("");
   const [showStats, setShowStats] = useState(false);
@@ -70,7 +71,7 @@ const History = ({
     }
   }, [cleanedHistory]);
 
-  // Filter history based on search, model filter, and tool usage filter (with error handling)
+  // Filter history based on search, model filter, tool usage filter, and content type (with error handling)
   const filteredHistory = React.useMemo(() => {
     try {
       return cleanedHistory.filter((item) => {
@@ -86,6 +87,8 @@ const History = ({
             ?.toLowerCase()
             .includes(searchTerm.toLowerCase()) ||
           item.response?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          // Include image generation prompt in search
+          item.imagePrompt?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           // Include tool usage in search
           item.toolUsage?.toolCalls?.some(
             (call) =>
@@ -96,6 +99,11 @@ const History = ({
           );
 
         const matchesModel = !filterModel || item.modelId === filterModel;
+
+        const matchesContentType =
+          !filterContentType ||
+          (filterContentType === "text" && !item.imageData) ||
+          (filterContentType === "image" && item.imageData);
 
         const matchesToolUsage =
           !filterToolUsage ||
@@ -113,6 +121,7 @@ const History = ({
         return (
           matchesSearch &&
           matchesModel &&
+          matchesContentType &&
           matchesToolUsage &&
           matchesToolExecution
         );
@@ -121,7 +130,7 @@ const History = ({
       console.error("Error filtering history:", error);
       return [];
     }
-  }, [cleanedHistory, searchTerm, filterModel, filterToolUsage]);
+  }, [cleanedHistory, searchTerm, filterModel, filterContentType, filterToolUsage, filterToolExecution]);
 
   const formatTimestamp = (timestamp) => {
     return new Date(timestamp).toLocaleString();
@@ -376,6 +385,54 @@ const History = ({
                 )}
               </div>
 
+              {/* Content Type Stats */}
+              {(() => {
+                const textTests = cleanedHistory.filter(item => !item.imageData).length;
+                const imageTests = cleanedHistory.filter(item => item.imageData).length;
+
+                if (imageTests > 0) {
+                  return (
+                    <div className="border-t border-gray-200 pt-3">
+                      <h5 className="font-medium text-gray-800 mb-2">
+                        Content Type Statistics
+                      </h5>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                        <div>
+                          <span className="text-gray-600">Text Generation:</span>
+                          <span className="ml-2 font-medium text-blue-600">
+                            {textTests}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Image Generation:</span>
+                          <span className="ml-2 font-medium text-green-600">
+                            {imageTests}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Image Models Used:</span>
+                          <span className="ml-2 font-medium">
+                            {new Set(cleanedHistory.filter(item => item.imageData).map(item => item.modelId)).size}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Avg Generation Time:</span>
+                          <span className="ml-2 font-medium">
+                            {(() => {
+                              const imageTestsWithTime = cleanedHistory.filter(item => item.imageData && item.generationTime);
+                              if (imageTestsWithTime.length === 0) return 'N/A';
+                              const avgTime = imageTestsWithTime.reduce((sum, item) => sum + item.generationTime, 0) / imageTestsWithTime.length;
+                              return avgTime < 1000 ? `${Math.round(avgTime)}ms` : `${(avgTime / 1000).toFixed(1)}s`;
+                            })()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               {/* Tool Usage Stats */}
               {stats.toolUsageStats && (
                 <div className="border-t border-gray-200 pt-3">
@@ -539,7 +596,7 @@ const History = ({
         )}
 
         {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
           <div>
             <label
               htmlFor="search"
@@ -552,7 +609,7 @@ const History = ({
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search prompts, datasets, responses, or tool usage..."
+              placeholder="Search prompts, datasets, responses, images, or tool usage..."
               className="input-field"
             />
           </div>
@@ -575,6 +632,24 @@ const History = ({
                   {model}
                 </option>
               ))}
+            </select>
+          </div>
+          <div>
+            <label
+              htmlFor="content-type-filter"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
+              Filter by Content Type
+            </label>
+            <select
+              id="content-type-filter"
+              value={filterContentType}
+              onChange={(e) => setFilterContentType(e.target.value)}
+              className="select-field"
+            >
+              <option value="">All content</option>
+              <option value="text">Text generation</option>
+              <option value="image">Image generation</option>
             </select>
           </div>
           <div>
@@ -859,38 +934,89 @@ const History = ({
                       Dataset: {item.datasetType}/{item.datasetOption}
                     </p>
                   )}
-                  <div className="text-sm text-gray-600">
-                    <span className="font-medium">Prompts:</span>
-                    <div className="mt-1 space-y-1">
-                      {item.systemPrompt && (
-                        <div className="flex items-start">
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 mr-2 flex-shrink-0">
-                            System
-                          </span>
-                          <span className="text-gray-700">
-                            {truncateText(item.systemPrompt, 60)}
-                          </span>
+
+                  {/* Image Generation Content */}
+                  {item.imageData ? (
+                    <div className="flex space-x-3 mb-3">
+                      {/* Image Thumbnail */}
+                      <div className="flex-shrink-0">
+                        <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
+                          <img
+                            src={`data:image/png;base64,${item.imageData}`}
+                            alt={item.imagePrompt || 'Generated image'}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'flex';
+                            }}
+                          />
+                          <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs" style={{display: 'none'}}>
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
                         </div>
-                      )}
-                      {(item.userPrompt || item.prompt) && (
-                        <div className="flex items-start">
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 mr-2 flex-shrink-0">
-                            User
-                          </span>
-                          <span className="text-gray-700">
-                            {truncateText(item.userPrompt || item.prompt, 60)}
-                          </span>
+                      </div>
+
+                      {/* Image Metadata */}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-gray-600">
+                          <span className="font-medium">Image Prompt:</span>
+                          <div className="mt-1">
+                            <div className="flex items-start">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 mr-2 flex-shrink-0">
+                                🎨 Image
+                              </span>
+                              <span className="text-gray-700">
+                                {truncateText(item.imagePrompt || 'No prompt available', 60)}
+                              </span>
+                            </div>
+                          </div>
+                          {item.imageParameters && (
+                            <div className="mt-1 text-xs text-gray-500">
+                              {item.imageParameters.width}×{item.imageParameters.height}
+                              {item.imageParameters.quality && ` • ${item.imageParameters.quality}`}
+                              {item.seed && ` • Seed: ${item.seed}`}
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {!item.systemPrompt &&
-                        !item.userPrompt &&
-                        !item.prompt && (
-                          <span className="text-gray-500 italic">
-                            No prompts available
-                          </span>
-                        )}
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    /* Text Generation Content */
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium">Prompts:</span>
+                      <div className="mt-1 space-y-1">
+                        {item.systemPrompt && (
+                          <div className="flex items-start">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 mr-2 flex-shrink-0">
+                              System
+                            </span>
+                            <span className="text-gray-700">
+                              {truncateText(item.systemPrompt, 60)}
+                            </span>
+                          </div>
+                        )}
+                        {(item.userPrompt || item.prompt) && (
+                          <div className="flex items-start">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 mr-2 flex-shrink-0">
+                              User
+                            </span>
+                            <span className="text-gray-700">
+                              {truncateText(item.userPrompt || item.prompt, 60)}
+                            </span>
+                          </div>
+                        )}
+                        {!item.systemPrompt &&
+                          !item.userPrompt &&
+                          !item.prompt && (
+                            <span className="text-gray-500 italic">
+                              No prompts available
+                            </span>
+                          )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Guardrail Information Display (Always Visible) */}
@@ -1080,16 +1206,187 @@ const History = ({
                       </div>
                     </div>
 
-                    <div>
-                      <h5 className="font-medium text-gray-700 mb-1">
-                        Response:
-                      </h5>
-                      <div className="bg-gray-50 border border-gray-200 rounded p-3 max-h-64 overflow-y-auto">
-                        <div className="text-sm text-gray-800 whitespace-pre-wrap">
-                          {item.response || "No response available"}
+                    {/* Response or Image Display */}
+                    {item.imageData ? (
+                      <div>
+                        <h5 className="font-medium text-gray-700 mb-1">
+                          Generated Image:
+                        </h5>
+                        <div className="bg-gray-50 border border-gray-200 rounded p-3">
+                          <div className="flex justify-center mb-3">
+                            <img
+                              src={`data:image/png;base64,${item.imageData}`}
+                              alt={item.imagePrompt || 'Generated image'}
+                              className="max-w-full max-h-96 rounded border border-gray-300"
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                                e.target.nextSibling.style.display = 'block';
+                              }}
+                            />
+                            <div className="text-center text-gray-500 py-8" style={{display: 'none'}}>
+                              <svg className="mx-auto h-12 w-12 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                              </svg>
+                              <p className="text-sm">Failed to load image</p>
+                            </div>
+                          </div>
+
+                          {/* Image Metadata */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm border-t border-gray-300 pt-3">
+                            {item.imageParameters && (
+                              <>
+                                <div>
+                                  <span className="font-medium text-gray-700">Dimensions:</span>
+                                  <div className="text-gray-600">{item.imageParameters.width}×{item.imageParameters.height}</div>
+                                </div>
+                                {item.imageParameters.quality && (
+                                  <div>
+                                    <span className="font-medium text-gray-700">Quality:</span>
+                                    <div className="text-gray-600 capitalize">{item.imageParameters.quality}</div>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                            {item.seed && (
+                              <div>
+                                <span className="font-medium text-gray-700">Seed:</span>
+                                <div className="text-gray-600 font-mono text-xs">{item.seed}</div>
+                              </div>
+                            )}
+                            {item.generationTime && (
+                              <div>
+                                <span className="font-medium text-gray-700">Generation Time:</span>
+                                <div className="text-gray-600">
+                                  {item.generationTime < 1000 ? `${Math.round(item.generationTime)}ms` : `${(item.generationTime / 1000).toFixed(1)}s`}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div>
+                        <h5 className="font-medium text-gray-700 mb-1">
+                          Response:
+                        </h5>
+                        <div className="bg-gray-50 border border-gray-200 rounded p-3 max-h-64 overflow-y-auto">
+                          <div className="text-sm text-gray-800 whitespace-pre-wrap">
+                            {item.response || "No response available"}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Image Verification Results */}
+                    {item.imageData && item.verificationResults && (
+                      <div>
+                        <h5 className="font-medium text-gray-700 mb-1">
+                          Image Verification Results:
+                        </h5>
+                        <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                          <div className="space-y-3">
+                            {/* Overall Status */}
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-blue-800">
+                                Overall Status:
+                              </span>
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                item.verificationResults.overallRecommendation === 'accept'
+                                  ? 'bg-green-100 text-green-800'
+                                  : item.verificationResults.overallRecommendation === 'reject'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                {item.verificationResults.overallRecommendation === 'accept' ? '✓ Approved' :
+                                 item.verificationResults.overallRecommendation === 'reject' ? '✗ Rejected' : '⚠ Warning'}
+                                <span className="ml-1">
+                                  ({item.verificationResults.overallConfidence}% confidence)
+                                </span>
+                              </span>
+                            </div>
+
+                            {/* Individual Verification Results */}
+                            {item.verificationResults.agentResults?.map((agentResult, index) => (
+                              <div
+                                key={`verification-${item.id || index}-${index}-${agentResult.agentType}`}
+                                className="border border-blue-300 rounded p-2 bg-white"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-medium text-blue-900 capitalize">
+                                    {agentResult.agentType.replace('-', ' ')}
+                                  </span>
+                                  <div className="flex items-center space-x-2">
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                      agentResult.recommendation === 'accept'
+                                        ? 'bg-green-100 text-green-800'
+                                        : agentResult.recommendation === 'reject'
+                                        ? 'bg-red-100 text-red-800'
+                                        : 'bg-yellow-100 text-yellow-800'
+                                    }`}>
+                                      {agentResult.recommendation}
+                                    </span>
+                                    <span className="text-xs text-blue-600">
+                                      {agentResult.confidence}%
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {agentResult.analysis && (
+                                  <div className="text-xs text-gray-700">
+                                    <div className="font-medium mb-1">Analysis:</div>
+                                    <div className="bg-gray-50 p-2 rounded text-xs">
+                                      {agentResult.analysis}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Agent-specific details for images */}
+                                {agentResult.details && (
+                                  <div className="text-xs text-gray-700 mt-2">
+                                    {agentResult.details.safetyIssues && agentResult.details.safetyIssues.length > 0 && (
+                                      <div className="mb-1">
+                                        <span className="font-medium">Safety Issues:</span>
+                                        <ul className="list-disc list-inside ml-2 mt-1">
+                                          {agentResult.details.safetyIssues.map((issue, issueIndex) => (
+                                            <li key={issueIndex} className="text-xs text-red-700">{issue}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+
+                                    {agentResult.details.findings && agentResult.details.findings.length > 0 && (
+                                      <div className="mb-1">
+                                        <span className="font-medium">Findings:</span>
+                                        <ul className="list-disc list-inside ml-2 mt-1">
+                                          {agentResult.details.findings.map((finding, findingIndex) => (
+                                            <li key={findingIndex} className="text-xs">{finding}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+
+                                    {agentResult.details.qualityScore && (
+                                      <div className="mb-1">
+                                        <span className="font-medium">Quality Score:</span>
+                                        <span className="ml-1">{agentResult.details.qualityScore}/100</span>
+                                        {agentResult.details.breakdown && (
+                                          <div className="mt-1 grid grid-cols-2 gap-1 text-xs">
+                                            <div>Technical: {agentResult.details.breakdown.technical}/25</div>
+                                            <div>Composition: {agentResult.details.breakdown.composition}/25</div>
+                                            <div>Detail: {agentResult.details.breakdown.detail}/25</div>
+                                            <div>Aesthetics: {agentResult.details.breakdown.aesthetics}/25</div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Tool Usage Section */}
                     <div>
@@ -1378,7 +1675,9 @@ const History = ({
               onClick={() => {
                 setSearchTerm("");
                 setFilterModel("");
+                setFilterContentType("");
                 setFilterToolUsage("");
+                setFilterToolExecution("");
               }}
               className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-2"
             >

@@ -24,6 +24,10 @@ const ScenarioBuilder = lazy(() => import('./components/ScenarioBuilder'));
 
 const ToolExecutionMonitor = lazy(() => import('./components/ToolExecutionMonitor'));
 const GuardrailsSection = lazy(() => import('./components/GuardrailsSection'));
+const ImageGenerationInterface = lazy(() => import('./components/ImageGenerationInterface'));
+const ImageDisplay = lazy(() => import('./components/ImageDisplay'));
+const ImageVerificationResults = lazy(() => import('./components/ImageVerificationResults'));
+const ErrorRecoveryOptions = lazy(() => import('./components/ErrorRecoveryOptions'));
 import { bedrockService } from "./services/bedrockService";
 import { datasetToolIntegrationService } from "./services/datasetToolIntegrationService";
 import { scenarioToolIntegrationService } from "./services/scenarioToolIntegrationService";
@@ -32,6 +36,8 @@ import { toolExecutionService } from "./services/toolExecutionService";
 import { workflowTrackingService } from "./services/workflowTrackingService";
 import { guardrailService } from "./services/guardrailService";
 import { metaAgentService } from "./services/MetaAgentService";
+import { imageService } from "./services/imageService";
+import { imageVerificationService } from "./services/imageVerificationService";
 import { useHistory } from "./hooks/useHistory";
 import { useModelOutput } from "./hooks/useModelOutput";
 import {
@@ -202,6 +208,17 @@ function App() {
   const [metaAgentPhase, setMetaAgentPhase] = useState('');
   const [metaAgentConfig, setMetaAgentConfig] = useState(null);
 
+  // Image generation state
+  const [imageGenerationResult, setImageGenerationResult] = useState(null);
+  const [imageVerificationResults, setImageVerificationResults] = useState(null);
+  const [isImageGenerating, setIsImageGenerating] = useState(false);
+  const [imageGenerationError, setImageGenerationError] = useState(null);
+
+  // Generation mode state
+  const [generationMode, setGenerationMode] = useState(
+    savedFormState.generationMode || 'text'
+  );
+
   // Track if this is the initial load
   const isInitialLoad = useRef(true);
 
@@ -215,7 +232,10 @@ function App() {
         datasetSelector: false,
         promptEditor: false,
         executionSettings: false,
-        guardrails: false
+        guardrails: false,
+        imageGeneration: false,
+        imageDisplay: false,
+        imageVerification: false
       };
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -728,6 +748,21 @@ function App() {
     });
   };
 
+  // Helper function to check if current scenario is image generation
+  const isImageGenerationScenario = () => {
+    if (!selectedScenario || !scenarioService.isInitialized) {
+      return false;
+    }
+
+    try {
+      const scenario = scenarioService.getScenario(selectedScenario);
+      return scenario && scenario.configuration && scenario.configuration.imageGeneration && scenario.configuration.imageGeneration.enabled;
+    } catch (error) {
+      console.error('Error checking if scenario is image generation:', error);
+      return false;
+    }
+  };
+
   // Helper function to provide recovery suggestions for tool execution errors
   const getToolExecutionRecoveryOptions = (error) => {
     const suggestions = [];
@@ -805,7 +840,13 @@ function App() {
   const isFormValid = () => {
     const hasValidationErrors = Object.keys(validationErrors).length > 0;
 
-    // Base requirements
+    if (generationMode === 'image') {
+      // For image generation, only require model selection
+      // The ImageGenerationInterface handles its own validation
+      return !hasValidationErrors && selectedModel && bedrockService.isImageGenerationModel(selectedModel);
+    }
+
+    // Text generation validation
     let hasRequiredFields = selectedModel && userPrompt.trim();
 
     // Scenario-based validation
@@ -1208,7 +1249,8 @@ function App() {
       userPrompt,
       selectedDataset,
       selectedScenario,
-      scenarioConfig
+      scenarioConfig,
+      generationMode
     };
 
     const validationResult = validateForm(formData);
@@ -1242,7 +1284,7 @@ function App() {
     if (statePersistenceInitialized) {
       updateUIState({ validationErrors: filteredErrors });
     }
-  }, [selectedModel, systemPrompt, userPrompt, selectedDataset, selectedScenario, scenarioConfig, touchedFields, scenarioService.isInitialized]);
+  }, [selectedModel, systemPrompt, userPrompt, selectedDataset, selectedScenario, scenarioConfig, touchedFields, scenarioService.isInitialized, generationMode]);
 
   // Create debounced save function for form state persistence (silent background saving)
   const debouncedSave = useMemo(() => createDebouncedSave(1500), []);
@@ -1262,6 +1304,7 @@ function App() {
       guardrailsEnabled,
       metaAgentsEnabled,
       metaAgentConfig,
+      generationMode,
     };
 
     // Only save if we have some meaningful data (avoid saving empty initial state)
@@ -1281,6 +1324,7 @@ function App() {
     guardrailsEnabled,
     metaAgentsEnabled,
     metaAgentConfig,
+    generationMode,
     debouncedSave,
   ]);
 
@@ -2354,6 +2398,215 @@ function App() {
     }
   };
 
+  // Handle image generation with comprehensive error handling
+  const handleImageGeneration = async (generationData) => {
+    setIsImageGenerating(true);
+    setImageGenerationError(null);
+    setImageGenerationResult(null);
+    setImageVerificationResults(null);
+
+    try {
+      console.log('[App] Starting image generation:', generationData);
+
+      // Ensure image service is ready
+      if (!imageService.isReady()) {
+        const initResult = await imageService.initialize();
+        if (!initResult.success) {
+          throw new Error(`Image service initialization failed: ${initResult.message}`);
+        }
+      }
+
+      // Generate image with enhanced error handling and retry logic
+      const result = await imageService.generateImage(
+        generationData.modelId,
+        generationData.prompt,
+        generationData.parameters,
+        {
+          enableRetry: true,
+          timeout: 120000, // 2 minutes
+          onRetry: (errorInfo, attempt, delay) => {
+            console.log(`[App] Image generation retry ${attempt} in ${delay}ms:`, errorInfo.userMessage);
+            // Could show retry notification to user here
+          },
+          onRecoveryOptions: (errorInfo) => {
+            console.log('[App] Recovery options available:', errorInfo.recoveryOptions);
+            // Store recovery options for UI display
+            if (errorInfo.recoveryOptions.length > 0) {
+              setImageGenerationError({
+                ...errorInfo,
+                showRecoveryOptions: true
+              });
+            }
+          }
+        }
+      );
+
+      console.log('[App] Image generation completed:', result);
+      setImageGenerationResult(result);
+
+      // Start image verification if meta-agents are enabled
+      if (metaAgentsEnabled && selectedScenario) {
+        try {
+          console.log('[App] Starting image verification...');
+          setImageVerificationResults({ isVerifying: true });
+
+          const verificationResult = await imageVerificationService.verifyImage(
+            result,
+            generationData.prompt,
+            selectedScenario
+          );
+
+          console.log('[App] Image verification completed:', verificationResult);
+          setImageVerificationResults(verificationResult);
+        } catch (verificationError) {
+          console.error('[App] Image verification failed:', verificationError);
+          setImageVerificationResults({
+            error: verificationError.message,
+            isVerifying: false
+          });
+        }
+      }
+
+      // Save to history
+      const historyEntry = {
+        id: result.id,
+        timestamp: result.timestamp,
+        modelId: generationData.modelId,
+        prompt: generationData.prompt,
+        parameters: generationData.parameters,
+        result: result,
+        verificationResults: imageVerificationResults,
+        scenarioId: selectedScenario,
+        type: 'image-generation'
+      };
+
+      await saveTestResult(historyEntry);
+
+    } catch (error) {
+      console.error('[App] Image generation failed:', error);
+
+      // Handle enhanced error with recovery options
+      if (error.errorInfo && error.recoveryOptions) {
+        setImageGenerationError({
+          message: error.message,
+          errorInfo: error.errorInfo,
+          recoveryOptions: error.recoveryOptions,
+          showRecoveryOptions: true,
+          isRetryable: error.isRetryable
+        });
+      } else {
+        setImageGenerationError({
+          message: error.message || 'Image generation failed',
+          showRecoveryOptions: false
+        });
+      }
+    } finally {
+      setIsImageGenerating(false);
+    }
+  };
+
+  // Handle error recovery actions
+  const handleImageErrorRecovery = async (recoveryOption) => {
+    console.log('[App] Executing recovery option:', recoveryOption);
+
+    if (!recoveryOption) {
+      return;
+    }
+
+    try {
+      setIsImageGenerating(true);
+      setImageGenerationError(null);
+
+      // Get the last generation data for retry
+      const lastGenerationData = imageGenerationResult ? {
+        modelId: imageGenerationResult.modelId,
+        prompt: imageGenerationResult.prompt,
+        parameters: imageGenerationResult.parameters
+      } : null;
+
+      if (!lastGenerationData) {
+        throw new Error('No previous generation data available for recovery');
+      }
+
+      // Execute recovery action based on type
+      switch (recoveryOption.action) {
+        case 'retry':
+          // Simple retry with same parameters
+          await handleImageGeneration(lastGenerationData);
+          break;
+
+        case 'reduce_dimensions':
+          // Retry with smaller dimensions
+          await handleImageGeneration({
+            ...lastGenerationData,
+            parameters: {
+              ...lastGenerationData.parameters,
+              width: 512,
+              height: 512
+            }
+          });
+          break;
+
+        case 'reduce_quality':
+          // Retry with standard quality
+          await handleImageGeneration({
+            ...lastGenerationData,
+            parameters: {
+              ...lastGenerationData.parameters,
+              quality: 'standard'
+            }
+          });
+          break;
+
+        case 'single_image':
+          // Retry with single image
+          await handleImageGeneration({
+            ...lastGenerationData,
+            parameters: {
+              ...lastGenerationData.parameters,
+              numberOfImages: 1
+            }
+          });
+          break;
+
+        case 'fallback_model':
+          // Switch to fallback model
+          if (recoveryOption.fallbackModel) {
+            await handleImageGeneration({
+              ...lastGenerationData,
+              modelId: recoveryOption.fallbackModel
+            });
+          }
+          break;
+
+        case 'wait':
+          // Wait and retry
+          if (recoveryOption.delay) {
+            await new Promise(resolve => setTimeout(resolve, recoveryOption.delay));
+            await handleImageGeneration(lastGenerationData);
+          }
+          break;
+
+        default:
+          console.warn('[App] Unknown recovery action:', recoveryOption.action);
+          break;
+      }
+    } catch (error) {
+      console.error('[App] Recovery action failed:', error);
+      setImageGenerationError({
+        message: `Recovery failed: ${error.message}`,
+        showRecoveryOptions: false
+      });
+    } finally {
+      setIsImageGenerating(false);
+    }
+  };
+
+  // Dismiss error recovery options
+  const handleDismissImageError = () => {
+    setImageGenerationError(null);
+  };
+
   const handleLoadFromHistory = (historyItem) => {
     setSelectedModel(historyItem.modelId);
     setSelectedDataset({
@@ -2447,6 +2700,24 @@ function App() {
   const handleModelSelect = (modelId) => {
     setSelectedModel(modelId);
     markFieldAsTouched("model");
+  };
+
+  // Handle generation mode change
+  const handleGenerationModeChange = (mode) => {
+    setGenerationMode(mode);
+
+    // Clear model selection when switching modes to force user to select appropriate model
+    setSelectedModel('');
+
+    // Clear any existing results
+    setTestResults(null);
+    setImageGenerationResult(null);
+    setImageVerificationResults(null);
+    setImageGenerationError(null);
+
+    // Clear validation errors
+    setValidationErrors({});
+    setTouchedFields({});
   };
 
   const handleToggleGuardrails = () => {
@@ -2801,6 +3072,7 @@ function App() {
       setMetaAgentPhase('');
       setMetaAgentEvaluationId(null);
       setMetaAgentConfig(null);
+      setGenerationMode('text');
 
       // Clear UI state
       setTouchedFields({});
@@ -2810,6 +3082,9 @@ function App() {
 
       // Clear test results
       setTestResults(null);
+      setImageGenerationResult(null);
+      setImageVerificationResults(null);
+      setImageGenerationError(null);
     }
   };
 
@@ -2922,6 +3197,8 @@ function App() {
                         externalError={error}
                         isCollapsed={collapsedSections.modelSelector}
                         onToggleCollapse={() => toggleSectionCollapse('modelSelector')}
+                        generationMode={generationMode}
+                        onGenerationModeChange={handleGenerationModeChange}
                       />
 
                       <ScenarioSelector
@@ -2975,21 +3252,41 @@ function App() {
                         />
                       )}
 
-                      <PromptEditor
-                        systemPrompt={systemPrompt}
-                        userPrompt={userPrompt}
-                        onSystemPromptChange={handleSystemPromptChange}
-                        onUserPromptChange={handleUserPromptChange}
-                        systemPromptError={validationErrors.systemPrompt}
-                        userPromptError={validationErrors.userPrompt}
-                        scenarioSystemPrompts={availableSystemPrompts}
-                        scenarioUserPrompts={availableUserPrompts}
-                        systemPromptWarning={validationWarnings.systemPrompt}
-                        userPromptWarning={validationWarnings.userPrompt}
-                        selectedDataset={selectedDataset}
-                        isCollapsed={collapsedSections.promptEditor}
-                        onToggleCollapse={() => toggleSectionCollapse('promptEditor')}
-                      />
+                      {/* Prompt Editor - Only show for text generation mode */}
+                      {generationMode === 'text' && (
+                        <PromptEditor
+                          systemPrompt={systemPrompt}
+                          userPrompt={userPrompt}
+                          onSystemPromptChange={handleSystemPromptChange}
+                          onUserPromptChange={handleUserPromptChange}
+                          systemPromptError={validationErrors.systemPrompt}
+                          userPromptError={validationErrors.userPrompt}
+                          scenarioSystemPrompts={availableSystemPrompts}
+                          scenarioUserPrompts={availableUserPrompts}
+                          systemPromptWarning={validationWarnings.systemPrompt}
+                          userPromptWarning={validationWarnings.userPrompt}
+                          selectedDataset={selectedDataset}
+                          isCollapsed={collapsedSections.promptEditor}
+                          onToggleCollapse={() => toggleSectionCollapse('promptEditor')}
+                        />
+                      )}
+
+                      {/* Image Generation Interface - Only show for image generation mode */}
+                      {generationMode === 'image' && (
+                        <Suspense fallback={<LoadingSpinner message="Loading image generation..." />}>
+                          <ImageGenerationInterface
+                            selectedModel={selectedModel}
+                            onImageGenerated={handleImageGeneration}
+                            isLoading={isImageGenerating}
+                            error={imageGenerationError}
+                            isCollapsed={collapsedSections.imageGeneration}
+                            onToggleCollapse={() => toggleSectionCollapse('imageGeneration')}
+                            // Pass scenario prompts as initial values for image generation
+                            scenarioUserPrompts={availableUserPrompts}
+                            initialPrompt={userPrompt || ''}
+                          />
+                        </Suspense>
+                      )}
 
                       {/* Execution Settings */}
                       <ConditionalExecutionSettings
@@ -3214,28 +3511,31 @@ function App() {
                         </div>
                       )}
 
-                      <div className="flex justify-center">
-                        <button
-                          onClick={handleRunTest}
-                          disabled={isLoading || !isFormValid()}
-                          className={`btn-primary px-8 py-3 text-lg transition-all duration-200 ${
-                            isLoading || !isFormValid()
-                              ? "opacity-50 cursor-not-allowed"
-                              : "hover:shadow-lg"
-                          }`}
-                        >
-                          {isLoading ? (
-                            <LoadingSpinner
-                              size="sm"
-                              color="white"
-                              text="Running Test..."
-                              inline
-                            />
-                          ) : (
-                            "Run Test"
-                          )}
-                        </button>
-                      </div>
+                      {/* Run Test Button - Hide for image generation mode */}
+                      {generationMode === 'text' && (
+                        <div className="flex justify-center">
+                          <button
+                            onClick={handleRunTest}
+                            disabled={isLoading || !isFormValid()}
+                            className={`btn-primary px-8 py-3 text-lg transition-all duration-200 ${
+                              isLoading || !isFormValid()
+                                ? "opacity-50 cursor-not-allowed"
+                                : "hover:shadow-lg"
+                            }`}
+                          >
+                            {isLoading ? (
+                              <LoadingSpinner
+                                size="sm"
+                                color="white"
+                                text="Running Test..."
+                                inline
+                              />
+                            ) : (
+                              "Run Test"
+                            )}
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Right Column - Results */}
@@ -3243,8 +3543,70 @@ function App() {
                       className="animate-slide-up"
                       style={{ animationDelay: "0.1s" }}
                     >
-                      <Suspense fallback={<LoadingSpinner message="Loading results..." />}>
-                      <TestResults
+                      {/* Image Generation Results - Only show for image generation mode */}
+                      {generationMode === 'image' && (
+                        <div className="space-y-6">
+                          <Suspense fallback={<LoadingSpinner message="Loading image display..." />}>
+                            <ImageDisplay
+                              imageResult={imageGenerationResult}
+                              verificationResults={imageVerificationResults}
+                              onRegenerate={() => {
+                                // Trigger regeneration with same parameters
+                                if (imageGenerationResult) {
+                                  handleImageGeneration({
+                                    modelId: imageGenerationResult.modelId,
+                                    prompt: imageGenerationResult.prompt,
+                                    parameters: imageGenerationResult.parameters
+                                  });
+                                }
+                              }}
+                              onSaveToHistory={async (result) => {
+                                const historyEntry = {
+                                  id: result.id,
+                                  timestamp: result.timestamp,
+                                  modelId: result.modelId,
+                                  prompt: result.prompt,
+                                  parameters: result.parameters,
+                                  result: result,
+                                  verificationResults: imageVerificationResults,
+                                  scenarioId: selectedScenario,
+                                  type: 'image-generation'
+                                };
+                                await saveTestResult(historyEntry);
+                              }}
+                              isLoading={isImageGenerating}
+                              error={imageGenerationError}
+                            />
+                          </Suspense>
+
+                          {/* Error Recovery Options */}
+                          {imageGenerationError?.showRecoveryOptions && (
+                            <Suspense fallback={<LoadingSpinner message="Loading error recovery..." />}>
+                              <ErrorRecoveryOptions
+                                errorInfo={imageGenerationError}
+                                onRecoveryAction={handleImageErrorRecovery}
+                                onDismiss={handleDismissImageError}
+                                isLoading={isImageGenerating}
+                              />
+                            </Suspense>
+                          )}
+
+                          {metaAgentsEnabled && (
+                            <Suspense fallback={<LoadingSpinner message="Loading verification results..." />}>
+                              <ImageVerificationResults
+                                results={imageVerificationResults}
+                                isLoading={imageVerificationResults?.isVerifying}
+                                error={imageVerificationResults?.error}
+                              />
+                            </Suspense>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Text Generation Results - Only show for text generation mode */}
+                      {generationMode === 'text' && (
+                        <Suspense fallback={<LoadingSpinner message="Loading results..." />}>
+                        <TestResults
                         results={testResults}
                         isLoading={isLoading}
                         determinismEnabled={determinismEnabled}
@@ -3311,7 +3673,8 @@ function App() {
                         metaAgentError={metaAgentStatus === 'error' ? metaAgentPhase : null}
                         onRetryMetaAgent={handleMetaAgentRetry}
                       />
-                      </Suspense>
+                        </Suspense>
+                      )}
                     </div>
                   </div>
                 </div>

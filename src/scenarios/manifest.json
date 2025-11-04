@@ -18,12 +18,18 @@
       "folder": "expense-report-validator",
       "configFile": "scenario.json",
       "enabled": true
+    },
+    {
+      "id": "text-to-image-generation",
+      "folder": "text-to-image-generation",
+      "configFile": "scenario.json",
+      "enabled": true
     }
   ],
   "metadata": {
     "manifestVersion": "1.0.0",
     "lastUpdated": "2025-11-03T12:00:00Z",
-    "totalScenarios": 3,
+    "totalScenarios": 4,
     "description": "Consolidated scenario structure with all scenario files, datasets, and tools organized under /src/scenarios/"
   }
 }

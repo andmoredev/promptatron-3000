@@ -170,6 +170,7 @@ export function useHistory() {
         record.systemPrompt?.toLowerCase().includes(term) ||
         record.userPrompt?.toLowerCase().includes(term) ||
         record.prompt?.toLowerCase().includes(term) || // Legacy prompt field for backward compatibility
+        record.imagePrompt?.toLowerCase().includes(term) || // Image generation prompt
         record.datasetType?.toLowerCase().includes(term) ||
         record.datasetOption?.toLowerCase().includes(term) ||
         record.response?.toLowerCase().includes(term) ||
@@ -234,6 +235,16 @@ export function useHistory() {
         totalTests: 0,
         uniqueModels: 0,
         uniqueDatasets: 0,
+        contentTypeStats: {
+          textTests: 0,
+          imageTests: 0,
+          imageModelsUsed: 0,
+          averageImageGenerationTime: 0,
+          imageTestsWithVerification: 0,
+          imageVerificationAccepted: 0,
+          imageVerificationRejected: 0,
+          imageVerificationWarning: 0
+        },
         toolUsageStats: {
           testsWithTools: 0,
           testsWithoutTools: 0,
@@ -308,10 +319,41 @@ export function useHistory() {
       .map(record => new Date(record.timestamp))
       .sort((a, b) => a - b);
 
+    // Calculate image generation statistics
+    const imageTests = history.filter(record => record.imageData).length;
+    const textTests = history.length - imageTests;
+    const imageModelsUsed = new Set(history.filter(record => record.imageData).map(record => record.modelId)).size;
+
+    const imageTestsWithTime = history.filter(record => record.imageData && record.generationTime);
+    const averageImageGenerationTime = imageTestsWithTime.length > 0
+      ? imageTestsWithTime.reduce((sum, record) => sum + record.generationTime, 0) / imageTestsWithTime.length
+      : 0;
+
+    const imageTestsWithVerification = history.filter(record => record.imageData && record.verificationResults).length;
+    const imageVerificationAccepted = history.filter(record =>
+      record.imageData && record.verificationResults?.overallRecommendation === 'accept'
+    ).length;
+    const imageVerificationRejected = history.filter(record =>
+      record.imageData && record.verificationResults?.overallRecommendation === 'reject'
+    ).length;
+    const imageVerificationWarning = history.filter(record =>
+      record.imageData && record.verificationResults?.overallRecommendation === 'warning'
+    ).length;
+
     return {
       totalTests: history.length,
       uniqueModels,
       uniqueDatasets,
+      contentTypeStats: {
+        textTests,
+        imageTests,
+        imageModelsUsed,
+        averageImageGenerationTime,
+        imageTestsWithVerification,
+        imageVerificationAccepted,
+        imageVerificationRejected,
+        imageVerificationWarning
+      },
       toolUsageStats: {
         testsWithTools,
         testsWithoutTools,
