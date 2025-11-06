@@ -253,7 +253,7 @@ const ImageGenerationInterface = ({
         aria-labelledby="image-generation-header"
         aria-hidden={isCollapsed}
       >
-        <div className="space-y-6">
+        <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
           {/* Model Information */}
           {modelInfo && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
@@ -550,27 +550,7 @@ const ImageGenerationInterface = ({
             </div>
           )}
 
-          {/* Generate Button */}
-          <div className="flex justify-end">
-            <button
-              onClick={handleGenerate}
-              disabled={!isFormValid || isLoading}
-              className={`px-6 py-2 rounded-md font-medium transition-colors duration-200 ${
-                isFormValid && !isLoading
-                  ? 'bg-primary-600 text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              {isLoading ? (
-                <div className="flex items-center space-x-2">
-                  <LoadingSpinner size="sm" color="white" inline />
-                  <span>Generating...</span>
-                </div>
-              ) : (
-                'Generate Image'
-              )}
-            </button>
-          </div>
+
 
           {/* Usage Guidelines */}
           {validationResult?.usageGuidelines && validationResult.usageGuidelines.length > 0 && (
@@ -618,6 +598,28 @@ const ImageGenerationInterface = ({
               </div>
             </div>
           )}
+
+          {/* Generate Button - Sticky at bottom */}
+          <div className="flex justify-end pt-4 border-t border-gray-200 mt-6 bg-white sticky bottom-0">
+            <button
+              onClick={handleGenerate}
+              disabled={!isFormValid || isLoading}
+              className={`px-6 py-2 rounded-md font-medium transition-colors duration-200 ${
+                isFormValid && !isLoading
+                  ? 'bg-primary-600 text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              {isLoading ? (
+                <div className="flex items-center space-x-2">
+                  <LoadingSpinner size="sm" color="white" inline />
+                  <span>Generating...</span>
+                </div>
+              ) : (
+                'Generate Image'
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -763,6 +763,64 @@ function App() {
     }
   };
 
+  // Transform meta-agent results to match ImageVerificationResults component expectations
+  const transformMetaAgentResults = (metaAgentStatus) => {
+    if (!metaAgentStatus || !metaAgentStatus.agentResults) {
+      return null;
+    }
+
+    const agentResults = metaAgentStatus.agentResults || [];
+    const overallResult = metaAgentStatus.result || {};
+
+    // Map agent types to verification categories
+    const agentTypeMapping = {
+      'fact-checker': 'promptAdherence',
+      'error-containment': 'contentSafety',
+      'quality-enforcer': 'imageQuality'
+    };
+
+    // Transform individual agent results
+    const results = {};
+    agentResults.forEach(agentResult => {
+      const category = agentTypeMapping[agentResult.agentType];
+      if (category && agentResult) {
+        results[category] = {
+          recommendation: agentResult.recommendation || 'warning',
+          confidence: agentResult.confidence || 0,
+          analysis: agentResult.analysis || 'No analysis available',
+          findings: agentResult.details?.findings || [],
+          safetyIssues: agentResult.details?.safetyIssues || [],
+          qualityScore: agentResult.details?.qualityScore,
+          breakdown: agentResult.details?.breakdown,
+          rawResponse: agentResult
+        };
+      }
+    });
+
+    // Create summary information
+    const summary = {
+      overallRecommendation: overallResult.overallRecommendation || 'warning',
+      overallConfidence: overallResult.overallConfidence || 0,
+      message: overallResult.summary || 'Meta-agent evaluation completed',
+      successfulVerifications: overallResult.successfulAgents || 0,
+      totalVerifications: overallResult.agentCount || 0,
+      hasWarnings: overallResult.overallRecommendation === 'warning' || overallResult.degraded,
+      hasRejections: overallResult.overallRecommendation === 'reject'
+    };
+
+    return {
+      results,
+      summary,
+      metadata: {
+        startTime: metaAgentStatus.startTime ? new Date(metaAgentStatus.startTime).toISOString() : null,
+        endTime: metaAgentStatus.endTime ? new Date(metaAgentStatus.endTime).toISOString() : null,
+        totalTime: metaAgentStatus.endTime && metaAgentStatus.startTime ?
+          metaAgentStatus.endTime - metaAgentStatus.startTime : null,
+        modelUsed: 'amazon.nova-pro-v1:0' // Default model used by meta-agents
+      }
+    };
+  };
+
   // Helper function to provide recovery suggestions for tool execution errors
   const getToolExecutionRecoveryOptions = (error) => {
     const suggestions = [];
@@ -2444,22 +2502,50 @@ function App() {
       console.log('[App] Image generation completed:', result);
       setImageGenerationResult(result);
 
-      // Start image verification if meta-agents are enabled
+      // Start meta-agent verification if enabled
       if (metaAgentsEnabled && selectedScenario) {
         try {
-          console.log('[App] Starting image verification...');
+          console.log('[App] Starting meta-agent verification for image...');
           setImageVerificationResults({ isVerifying: true });
 
-          const verificationResult = await imageVerificationService.verifyImage(
-            result,
-            generationData.prompt,
-            selectedScenario
+          // Use the real meta-agent service for image verification
+          const evaluationId = await metaAgentService.startEvaluation(
+            result, // The image result as the baseline result
+            selectedScenario,
+            {
+              ...metaAgentConfig, // Include the agent configuration
+              evaluationType: 'image_verification',
+              originalPrompt: generationData.prompt,
+              modelId: generationData.modelId,
+              parameters: generationData.parameters
+            }
           );
 
-          console.log('[App] Image verification completed:', verificationResult);
-          setImageVerificationResults(verificationResult);
+          console.log('[App] Meta-agent evaluation started for image:', evaluationId);
+
+          // Subscribe to status updates for image verification
+          const unsubscribe = metaAgentService.onStatusUpdate(evaluationId, async (status) => {
+            console.log('[App] Image meta-agent status update:', status);
+
+            if (status.status === 'completed') {
+              console.log('[App] Image meta-agent evaluation completed:', status);
+
+              // Transform meta-agent results to match ImageVerificationResults component expectations
+              const transformedResults = transformMetaAgentResults(status);
+              setImageVerificationResults(transformedResults);
+              unsubscribe();
+            } else if (status.status === 'failed') {
+              console.error('[App] Image meta-agent evaluation failed:', status.error);
+              setImageVerificationResults({
+                error: status.error,
+                isVerifying: false
+              });
+              unsubscribe();
+            }
+          });
+
         } catch (verificationError) {
-          console.error('[App] Image verification failed:', verificationError);
+          console.error('[App] Image meta-agent verification failed:', verificationError);
           setImageVerificationResults({
             error: verificationError.message,
             isVerifying: false

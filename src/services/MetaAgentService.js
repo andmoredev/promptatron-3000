@@ -76,7 +76,7 @@ export class MetaAgentService {
       // Dynamically attempt to load each meta-agent type
       for (const agentType of metaAgentTypes) {
         try {
-          const agentModule = await import(`${scenarioPath}/${agentType}.js`);
+          const agentModule = await import(/* @vite-ignore */ `${scenarioPath}/${agentType}.js`);
           agents.set(agentType, agentModule.default);
           console.log(`[MetaAgentService] Successfully loaded ${agentType} for ${scenarioId}`);
         } catch (error) {
@@ -109,6 +109,7 @@ export class MetaAgentService {
    * @returns {Promise<string>} Evaluation ID
    */
   async startEvaluation(baselineResult, scenarioId, metaAgentConfig) {
+    console.log('[MetaAgentService] Starting meta-agent evaluation for scenario:', scenarioId, metaAgentConfig);
     try {
       if (!this.isInitialized) {
         await this.initialize();
@@ -120,6 +121,7 @@ export class MetaAgentService {
       // Load scenario meta-agents
       const agents = await this.loadScenarioMetaAgents(scenarioId);
       const enabledAgents = this.getEnabledAgents(agents, metaAgentConfig);
+      console.log('[MetaAgentService] Enabled meta-agents:', agents, enabledAgents);
 
       if (enabledAgents.length === 0) {
         throw new Error(`No meta-agents available or enabled for scenario ${scenarioId}`);

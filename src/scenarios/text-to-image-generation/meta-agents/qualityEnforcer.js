@@ -12,14 +12,32 @@ import { BaseMetaAgent } from '../../../services/BaseMetaAgent.js';
 class QualityEnforcerAgent extends BaseMetaAgent {
   constructor(config = {}) {
     super('quality-enforcer', config);
-    this.systemPrompt = `You are a quality assessment specialist for image generation validation with strict style requirements.
+    this.systemPrompt = `You are a STRICT image style enforcer. Your ONLY job is to determine if images are photorealistic or not.
 
-Your job is to evaluate the technical and aesthetic quality of generated images and enforce style guidelines.
+🚫 YOU MUST RESPOND WITH "REJECT" IF THE IMAGE HAS ANY OF THESE:
+- Cartoon, anime, manga, or comic book style
+- Illustration, digital art, or drawing appearance
+- Simplified, stylized, or exaggerated features
+- Flat colors, bold outlines, or cell-shading
+- Non-photorealistic rendering
+- Vector graphics or logo-like appearance
+- Fantasy, fictional, or imaginary elements
+- Artistic interpretation rather than realistic depiction
 
-CRITICAL REQUIREMENT: REJECT ALL CARTOON-STYLE IMAGES
-- Any image with cartoon, animated, or stylized cartoon characteristics must be REJECTED
-- This includes: cartoon characters, animated style, comic book style, simplified/stylized features
-- Only photorealistic, realistic, or artistic (non-cartoon) styles are acceptable
+✅ ONLY RESPOND WITH "ACCEPT" IF:
+- The image looks like a genuine photograph
+- It has photorealistic quality that could fool someone into thinking it's real
+- Natural lighting, realistic textures, and proportions
+- No artistic stylization whatsoever
+
+🔍 DETECTION RULES:
+1. Look at the image FIRST - ignore the prompt
+2. If you see ANY non-photorealistic elements → REJECT
+3. If uncertain whether it's a photo or art → REJECT
+4. Only if it's clearly photorealistic → ACCEPT
+5. Be EXTREMELY strict - err on the side of rejection
+
+CRITICAL: Your recommendation field MUST be either "ACCEPT" or "REJECT" - no other values allowed.
 
 Evaluate on these dimensions:
 1. Technical Quality (25 points): Resolution, clarity, artifacts, distortion
@@ -52,6 +70,8 @@ You must respond with valid JSON in the following format:
    * @returns {Object} Formatted meta-agent evaluation result
    */
   async evaluate(imageResult) {
+    console.log(`[QualityEnforcer] Analyzing image for prompt: "${imageResult.prompt}"`);
+
     const analysisPrompt = `Evaluate the quality of this generated image:
 
 ORIGINAL PROMPT: "${imageResult.prompt}"
@@ -60,14 +80,19 @@ MODEL USED: ${imageResult.modelId}
 
 GENERATION PARAMETERS: ${JSON.stringify(imageResult.parameters || {}, null, 2)}
 
-CRITICAL FIRST STEP - STYLE COMPLIANCE CHECK:
-Before evaluating quality, determine if this image is cartoon-style:
-- Look for cartoon characteristics: simplified features, exaggerated proportions, flat colors, outlined style
-- Check for animated/comic book aesthetics: cell-shading, non-photorealistic rendering
-- Identify stylized or caricature-like elements typical of cartoons/animation
-- If ANY cartoon elements are detected, immediately set recommendation to "REJECT"
+STEP 1 - STYLE CHECK (MOST IMPORTANT):
+Look at this image and determine: Is this a photograph or is it art/cartoon/illustration?
 
-If the image is NOT cartoon-style, then assess quality on these dimensions:
+If you see ANY of these → IMMEDIATELY set recommendation to "REJECT":
+- Cartoon/anime/manga style
+- Digital art or illustration appearance
+- Stylized, simplified, or exaggerated features
+- Non-photorealistic rendering
+- Artistic interpretation
+
+If it looks like a genuine photograph → set recommendation to "ACCEPT" and continue with quality assessment.
+
+STEP 2 - Quality Assessment (only if ACCEPT from Step 1):
 
 1. Technical Quality (0-25 points):
    - Image resolution and clarity
@@ -100,7 +125,10 @@ Quality scoring guidelines:
 - 60-69: Poor - noticeable quality issues
 - Below 60: Unacceptable - significant quality problems
 
-IMPORTANT: If cartoon-style detected, use "REJECT" recommendation and explain in analysis.
+MANDATORY RESPONSE FORMAT:
+- If ANY non-photorealistic elements detected → recommendation: "REJECT"
+- If genuinely photorealistic → recommendation: "ACCEPT"
+- NO OTHER VALUES ALLOWED (not "WARNING", not "MAYBE", only "ACCEPT" or "REJECT")
 
 Respond with JSON only:
 {
@@ -134,6 +162,7 @@ Respond with JSON only:
         }
       );
 
+      console.log('ANDRESSS', result);
       const parsed = this.parseMetaAgentResponse(result.text);
       return this.formatResult(
         parsed.analysis,
@@ -183,20 +212,10 @@ Respond with JSON only:
         qualityScore = Object.values(normalizedBreakdown).reduce((sum, score) => sum + score, 0);
       }
 
-      // Force rejection for cartoon-style detection
+      // Trust the AI model's recommendation - no code overrides
       let recommendation = parsed.recommendation || 'WARNING';
-      if (parsed.analysis && (
-        parsed.analysis.toLowerCase().includes('cartoon') ||
-        parsed.analysis.toLowerCase().includes('animated') ||
-        parsed.analysis.toLowerCase().includes('comic') ||
-        recommendation.toUpperCase() === 'REJECT'
-      )) {
-        recommendation = 'REJECT';
-        // Lower quality score for cartoon-style images
-        if (qualityScore > 30) {
-          qualityScore = Math.min(30, qualityScore);
-        }
-      }
+
+      console.log(`[QualityEnforcer] AI Model Decision: ${recommendation}, Quality Score: ${parsed.qualityScore}, Analysis: ${(parsed.analysis || '').substring(0, 100)}...`);
 
       return {
         recommendation: recommendation,

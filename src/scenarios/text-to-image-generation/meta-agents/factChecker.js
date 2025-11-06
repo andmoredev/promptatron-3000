@@ -24,7 +24,6 @@ Analyze the image and compare it to the original prompt to identify:
 - Missing elements that were specifically requested
 - Incorrect interpretations of the prompt
 - Additional elements not requested that may detract from the prompt
-- Overall accuracy of the visual representation
 
 Provide specific findings about what matches and what doesn't match the prompt.
 

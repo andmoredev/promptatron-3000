@@ -48,21 +48,6 @@
       "content": "Generate an architectural photograph of a modern glass office building during golden hour. Use a wide-angle lens (24mm) to capture the full height of the building. Include dramatic sky with warm lighting reflecting off the glass facade. Shot from a low angle to emphasize the building's imposing presence."
     },
     {
-      "id": "stability-ai-fantasy",
-      "name": "Stability AI: Fantasy Artwork",
-      "content": "Create a fantasy artwork of an enchanted forest with glowing mushrooms and ethereal light filtering through ancient trees. Style should be reminiscent of romantic period paintings with rich, saturated colors and mystical atmosphere. Include magical creatures like fairies or spirits in the composition."
-    },
-    {
-      "id": "stability-ai-abstract",
-      "name": "Stability AI: Abstract Art",
-      "content": "Generate an abstract expressionist painting representing the concept of 'digital transformation'. Use bold brushstrokes, vibrant blues and oranges, with geometric elements emerging from organic forms. The composition should convey movement and technological evolution."
-    },
-    {
-      "id": "stability-ai-surreal",
-      "name": "Stability AI: Surreal Composition",
-      "content": "Create a surreal artwork in the style of Salvador Dalí, featuring melting clocks floating above a desert landscape with impossible architecture. Include dreamlike elements such as floating objects and distorted perspectives. Use warm, golden tones with dramatic shadows."
-    },
-    {
       "id": "simple-object",
       "name": "Basic Object Generation",
       "content": "Generate an image of a red apple on a wooden table with natural lighting."
