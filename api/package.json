@@ -1,0 +1,11 @@
+{
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0",
+    "crypto": "^1.0.1"
+  },
+  "devDependencies": {
+    "@aws-sdk/util-dynamodb": "^3.914.0"
+  }
+}
