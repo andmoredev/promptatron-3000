@@ -258,7 +258,7 @@
   }
 
   .collapsible-content.expanded {
-    @apply max-h-screen opacity-100;
+    @apply max-h-none opacity-100;
   }
 
   .collapsible-content.collapsed {

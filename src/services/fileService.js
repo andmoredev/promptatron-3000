@@ -78,9 +78,9 @@ export class FileService {
   }
 
   /**
-   * Enrich test history records with determinism grades
+   * Enrich test history records with determinism grades and meta-agent evaluations
    * @param {Array} records - Test history records
-   * @returns {Promise<Array>} Records enriched with determinism grades
+   * @returns {Promise<Array>} Records enriched with determinism grades and meta-agent evaluations
    */
   async enrichWithDeterminismGrades(records) {
     try {
@@ -103,6 +103,23 @@ export class FileService {
               fallbackAnalysis: evaluation.grade.fallbackAnalysis || false
             }
           }
+
+          // Try to get meta-agent evaluation for this test
+          const metaAgentEvaluation = await this.getMetaAgentEvaluation(record.id)
+          if (metaAgentEvaluation) {
+            enrichedRecord.metaAgentEvaluation = {
+              evaluationId: metaAgentEvaluation.evaluationId,
+              overallRecommendation: metaAgentEvaluation.overallRecommendation,
+              overallConfidence: metaAgentEvaluation.overallConfidence,
+              agentResults: metaAgentEvaluation.agentResults,
+              status: metaAgentEvaluation.status,
+              timestamp: metaAgentEvaluation.timestamp,
+              metadata: metaAgentEvaluation.metadata
+            }
+          } else if (record.metaAgentEvaluation) {
+            // Meta-agent data might already be in the record (direct save)
+            enrichedRecord.metaAgentEvaluation = record.metaAgentEvaluation;
+          }
         }
 
         enrichedRecords.push(enrichedRecord)
@@ -110,7 +127,7 @@ export class FileService {
 
       return enrichedRecords
     } catch (error) {
-      console.error('Failed to enrich records with determinism grades:', error)
+      console.error('Failed to enrich records with determinism grades and meta-agent evaluations:', error)
       // Return original records if enrichment fails
       return records
     }
@@ -173,20 +190,10 @@ export class FileService {
       // Add ID and timestamp if not present
       let newId = testResult.id || this.generateId();
 
-      // Load existing history to check for ID conflicts
+
+
+      // Load existing history to check for existing records
       const history = await this.loadHistory();
-
-      // Ensure ID uniqueness
-      const existingIds = new Set(history.map(item => item.id));
-      let idCounter = 1;
-      const originalId = newId;
-
-      while (existingIds.has(newId)) {
-        newId = `${originalId}-${idCounter}`;
-        idCounter++;
-      }
-
-      // Silently handle ID conflicts without logging
 
       const enrichedResult = {
         id: newId,
@@ -194,8 +201,30 @@ export class FileService {
         ...testResult
       };
 
-      // Add new result to the beginning of the array (most recent first)
-      history.unshift(enrichedResult);
+      // Check if we're updating an existing record (same ID)
+      const existingIndex = history.findIndex(item => item.id === newId);
+
+      if (existingIndex !== -1) {
+        // Update existing record
+        console.log('[FileService] Updating existing test result:', newId);
+        history[existingIndex] = enrichedResult;
+      } else {
+        // Ensure ID uniqueness for new records
+        const existingIds = new Set(history.map(item => item.id));
+        let idCounter = 1;
+        const originalId = newId;
+
+        while (existingIds.has(newId)) {
+          newId = `${originalId}-${idCounter}`;
+          idCounter++;
+        }
+
+        // Update the enriched result with the final ID
+        enrichedResult.id = newId;
+
+        // Add new result to the beginning of the array (most recent first)
+        history.unshift(enrichedResult);
+      }
 
       // Keep only the last 100 results to prevent excessive storage usage
       const trimmedHistory = history.slice(0, 100);
@@ -252,6 +281,129 @@ export class FileService {
         console.error('Fallback save also failed:', fallbackError);
         throw new Error(`Failed to save test result: ${error.message}`);
       }
+    }
+  }
+
+  /**
+   * Save meta-agent evaluation result and associate it with test result
+   * @param {string} testId - Test ID to associate evaluation with
+   * @param {Object} metaAgentResult - Meta-agent evaluation result
+   * @returns {Promise<boolean>} True if saved successfully
+   */
+  async saveMetaAgentEvaluation(testId, metaAgentResult) {
+    try {
+      console.log('Saving meta-agent evaluation - testId:', testId, 'metaAgentResult:', metaAgentResult);
+
+      // Prepare evaluation data for storage
+      const evaluationData = {
+        evaluationId: `meta_eval_${testId}_${Date.now()}`,
+        testId,
+        timestamp: metaAgentResult.timestamp || Date.now(),
+        overallRecommendation: metaAgentResult.overallRecommendation,
+        overallConfidence: metaAgentResult.overallConfidence,
+        agentResults: metaAgentResult.agentResults || [],
+        status: metaAgentResult.status || 'completed',
+        metadata: {
+          evaluationDuration: metaAgentResult.evaluationDuration,
+          scenarioId: metaAgentResult.scenarioId,
+          enabledAgents: metaAgentResult.enabledAgents || [],
+          config: metaAgentResult.config
+        }
+      };
+
+      // Save to localStorage with a specific key pattern
+      const metaAgentKey = `meta-agent-eval-${testId}`;
+
+      if (this.isLocalStorageAvailable()) {
+        localStorage.setItem(metaAgentKey, JSON.stringify(evaluationData));
+      } else {
+        // Fallback to in-memory storage
+        if (!this._inMemoryMetaAgentEvals) {
+          this._inMemoryMetaAgentEvals = new Map();
+        }
+        this._inMemoryMetaAgentEvals.set(metaAgentKey, evaluationData);
+      }
+
+      console.log('Meta-agent evaluation saved for test:', testId);
+      return true;
+    } catch (error) {
+      console.error('Failed to save meta-agent evaluation:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get meta-agent evaluation for a test
+   * @param {string} testId - Test ID to get evaluation for
+   * @returns {Promise<Object|null>} Evaluation result or null if not found
+   */
+  async getMetaAgentEvaluation(testId) {
+    try {
+      const metaAgentKey = `meta-agent-eval-${testId}`;
+
+      // Try localStorage first
+      if (this.isLocalStorageAvailable()) {
+        const evaluationData = localStorage.getItem(metaAgentKey);
+        if (evaluationData) {
+          return JSON.parse(evaluationData);
+        }
+      }
+
+      // Fallback to in-memory storage
+      if (this._inMemoryMetaAgentEvals && this._inMemoryMetaAgentEvals.has(metaAgentKey)) {
+        return this._inMemoryMetaAgentEvals.get(metaAgentKey);
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Failed to get meta-agent evaluation:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get all meta-agent evaluations
+   * @returns {Promise<Array>} Array of all meta-agent evaluations
+   */
+  async getAllMetaAgentEvaluations() {
+    try {
+      const evaluations = [];
+
+      // Get from localStorage
+      if (this.isLocalStorageAvailable()) {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('meta-agent-eval-')) {
+            try {
+              const evaluationData = JSON.parse(localStorage.getItem(key));
+              evaluations.push(evaluationData);
+            } catch (parseError) {
+              console.warn(`Failed to parse meta-agent evaluation for key ${key}:`, parseError);
+            }
+          }
+        }
+      }
+
+      // Add from in-memory storage
+      if (this._inMemoryMetaAgentEvals) {
+        for (const [key, evaluationData] of this._inMemoryMetaAgentEvals) {
+          if (key.startsWith('meta-agent-eval-')) {
+            // Check if we already have this evaluation from localStorage
+            const existingEval = evaluations.find(e => e.evaluationId === evaluationData.evaluationId);
+            if (!existingEval) {
+              evaluations.push(evaluationData);
+            }
+          }
+        }
+      }
+
+      // Sort by timestamp (newest first)
+      evaluations.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+      return evaluations;
+    } catch (error) {
+      console.error('Failed to get all meta-agent evaluations:', error);
+      return [];
     }
   }
 
@@ -728,6 +880,70 @@ export class FileService {
       errors.push('response must be a string if provided');
     }
 
+    // Validate image generation fields if present
+    if (testResult.imageData !== null && testResult.imageData !== undefined) {
+      if (typeof testResult.imageData !== 'string') {
+        errors.push('imageData must be a string if provided');
+      }
+    }
+
+    if (testResult.imagePrompt !== null && testResult.imagePrompt !== undefined) {
+      if (typeof testResult.imagePrompt !== 'string') {
+        errors.push('imagePrompt must be a string if provided');
+      }
+    }
+
+    if (testResult.imageParameters !== null && testResult.imageParameters !== undefined) {
+      if (typeof testResult.imageParameters !== 'object') {
+        errors.push('imageParameters must be an object if provided');
+      } else {
+        if (testResult.imageParameters.width !== undefined && typeof testResult.imageParameters.width !== 'number') {
+          errors.push('imageParameters.width must be a number if provided');
+        }
+        if (testResult.imageParameters.height !== undefined && typeof testResult.imageParameters.height !== 'number') {
+          errors.push('imageParameters.height must be a number if provided');
+        }
+        if (testResult.imageParameters.quality !== undefined && typeof testResult.imageParameters.quality !== 'string') {
+          errors.push('imageParameters.quality must be a string if provided');
+        }
+      }
+    }
+
+    if (testResult.seed !== null && testResult.seed !== undefined) {
+      if (typeof testResult.seed !== 'number') {
+        errors.push('seed must be a number if provided');
+      }
+    }
+
+    if (testResult.generationTime !== null && testResult.generationTime !== undefined) {
+      if (typeof testResult.generationTime !== 'number') {
+        errors.push('generationTime must be a number if provided');
+      }
+    }
+
+    // Validate image verification results if present
+    if (testResult.verificationResults !== null && testResult.verificationResults !== undefined) {
+      if (typeof testResult.verificationResults !== 'object') {
+        errors.push('verificationResults must be an object if provided');
+      } else {
+        if (testResult.verificationResults.overallRecommendation !== undefined &&
+            !['accept', 'reject', 'warning'].includes(testResult.verificationResults.overallRecommendation)) {
+          errors.push('verificationResults.overallRecommendation must be "accept", "reject", or "warning" if provided');
+        }
+
+        if (testResult.verificationResults.overallConfidence !== undefined &&
+            (typeof testResult.verificationResults.overallConfidence !== 'number' ||
+             testResult.verificationResults.overallConfidence < 0 ||
+             testResult.verificationResults.overallConfidence > 100)) {
+          errors.push('verificationResults.overallConfidence must be a number between 0 and 100 if provided');
+        }
+
+        if (testResult.verificationResults.agentResults !== undefined && !Array.isArray(testResult.verificationResults.agentResults)) {
+          errors.push('verificationResults.agentResults must be an array if provided');
+        }
+      }
+    }
+
     if (testResult.timestamp && !this.isValidTimestamp(testResult.timestamp)) {
       errors.push('timestamp must be a valid ISO string if provided');
     }
@@ -801,6 +1017,37 @@ export class FileService {
       }
     }
 
+    // Validate meta-agent evaluation structure if present
+    if (testResult.metaAgentEvaluation !== null && testResult.metaAgentEvaluation !== undefined) {
+      if (typeof testResult.metaAgentEvaluation !== 'object') {
+        errors.push('metaAgentEvaluation must be an object if provided');
+      } else {
+        if (testResult.metaAgentEvaluation.overallRecommendation !== undefined &&
+            !['accept', 'reject', 'warning'].includes(testResult.metaAgentEvaluation.overallRecommendation)) {
+          errors.push('metaAgentEvaluation.overallRecommendation must be "accept", "reject", or "warning" if provided');
+        }
+
+        if (testResult.metaAgentEvaluation.overallConfidence !== undefined &&
+            (typeof testResult.metaAgentEvaluation.overallConfidence !== 'number' ||
+             testResult.metaAgentEvaluation.overallConfidence < 0 ||
+             testResult.metaAgentEvaluation.overallConfidence > 100)) {
+          errors.push('metaAgentEvaluation.overallConfidence must be a number between 0 and 100 if provided');
+        }
+
+        if (testResult.metaAgentEvaluation.agentResults !== undefined && !Array.isArray(testResult.metaAgentEvaluation.agentResults)) {
+          errors.push('metaAgentEvaluation.agentResults must be an array if provided');
+        }
+
+        if (testResult.metaAgentEvaluation.status !== undefined && typeof testResult.metaAgentEvaluation.status !== 'string') {
+          errors.push('metaAgentEvaluation.status must be a string if provided');
+        }
+
+        if (testResult.metaAgentEvaluation.evaluationId !== undefined && typeof testResult.metaAgentEvaluation.evaluationId !== 'string') {
+          errors.push('metaAgentEvaluation.evaluationId must be a string if provided');
+        }
+      }
+    }
+
     return errors;
   }
 
@@ -866,11 +1113,12 @@ export class FileService {
       }
 
       const exportData = {
-        version: '1.3', // Version to track export format
+        version: '1.4', // Version to track export format (updated for meta-agent support)
         exportDate: new Date().toISOString(),
         testHistory: history,
         determinismEvaluations: await determinismStorageService.getAllEvaluations(),
-        toolExecutionWorkflows: detailedWorkflows
+        toolExecutionWorkflows: detailedWorkflows,
+        metaAgentEvaluations: await this.getAllMetaAgentEvaluations()
       }
 
       const dataStr = JSON.stringify(exportData, null, 2);
@@ -914,16 +1162,18 @@ export class FileService {
       let importedHistory = []
       let importedEvaluations = []
       let importedWorkflows = []
+      let importedMetaAgentEvaluations = []
 
       // Handle different format versions
       if (Array.isArray(importedData)) {
         // Old format - just test history
         importedHistory = importedData
       } else if (importedData.version && importedData.testHistory) {
-        // New format - includes determinism evaluations and possibly workflows
+        // New format - includes determinism evaluations, workflows, and possibly meta-agent evaluations
         importedHistory = importedData.testHistory || []
         importedEvaluations = importedData.determinismEvaluations || []
         importedWorkflows = importedData.toolExecutionWorkflows || []
+        importedMetaAgentEvaluations = importedData.metaAgentEvaluations || []
       } else {
         throw new Error('Invalid history file format')
       }
@@ -931,8 +1181,8 @@ export class FileService {
       // Validate test history records
       const validRecords = importedHistory.filter(record => this.validateTestResult(record));
 
-      if (validRecords.length === 0 && importedEvaluations.length === 0 && importedWorkflows.length === 0) {
-        throw new Error('No valid test results, evaluations, or workflows found in the file');
+      if (validRecords.length === 0 && importedEvaluations.length === 0 && importedWorkflows.length === 0 && importedMetaAgentEvaluations.length === 0) {
+        throw new Error('No valid test results, evaluations, workflows, or meta-agent evaluations found in the file');
       }
 
       // Load existing history
@@ -991,8 +1241,25 @@ export class FileService {
         }
       }
 
-      const totalImported = newRecords.length + importedEvaluationCount + importedWorkflowCount
-      console.log(`Imported ${newRecords.length} test records, ${importedEvaluationCount} evaluations, and ${importedWorkflowCount} workflows`)
+      // Import meta-agent evaluations
+      let importedMetaAgentCount = 0
+      if (importedMetaAgentEvaluations.length > 0) {
+        for (const metaAgentEvaluation of importedMetaAgentEvaluations) {
+          try {
+            if (metaAgentEvaluation.testId) {
+              const saved = await this.saveMetaAgentEvaluation(metaAgentEvaluation.testId, metaAgentEvaluation)
+              if (saved) {
+                importedMetaAgentCount++
+              }
+            }
+          } catch (metaAgentError) {
+            console.warn('Failed to import meta-agent evaluation:', metaAgentEvaluation.testId, metaAgentError.message)
+          }
+        }
+      }
+
+      const totalImported = newRecords.length + importedEvaluationCount + importedWorkflowCount + importedMetaAgentCount
+      console.log(`Imported ${newRecords.length} test records, ${importedEvaluationCount} evaluations, ${importedWorkflowCount} workflows, and ${importedMetaAgentCount} meta-agent evaluations`)
 
       return totalImported;
     } catch (error) {
@@ -1091,6 +1358,49 @@ export class FileService {
       }
 
       if (testResult.toolExecution.workflowSummary !== undefined && typeof testResult.toolExecution.workflowSummary !== 'object') {
+        return false;
+      }
+    }
+
+    // Validate meta-agent evaluation data if present
+    if (testResult.metaAgentEvaluation !== null && testResult.metaAgentEvaluation !== undefined) {
+      if (typeof testResult.metaAgentEvaluation !== 'object') {
+        return false;
+      }
+
+      // Basic structure validation for meta-agent evaluation
+      if (testResult.metaAgentEvaluation.overallRecommendation !== undefined &&
+          !['accept', 'reject', 'warning'].includes(testResult.metaAgentEvaluation.overallRecommendation)) {
+        return false;
+      }
+
+      if (testResult.metaAgentEvaluation.overallConfidence !== undefined &&
+          (typeof testResult.metaAgentEvaluation.overallConfidence !== 'number' ||
+           testResult.metaAgentEvaluation.overallConfidence < 0 ||
+           testResult.metaAgentEvaluation.overallConfidence > 100)) {
+        return false;
+      }
+
+      if (testResult.metaAgentEvaluation.agentResults !== undefined && !Array.isArray(testResult.metaAgentEvaluation.agentResults)) {
+        return false;
+      }
+    }
+
+    // Validate image generation data if present
+    if (testResult.imageData !== null && testResult.imageData !== undefined) {
+      if (typeof testResult.imageData !== 'string') {
+        return false;
+      }
+    }
+
+    if (testResult.imageParameters !== null && testResult.imageParameters !== undefined) {
+      if (typeof testResult.imageParameters !== 'object') {
+        return false;
+      }
+    }
+
+    if (testResult.verificationResults !== null && testResult.verificationResults !== undefined) {
+      if (typeof testResult.verificationResults !== 'object') {
         return false;
       }
     }

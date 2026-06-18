@@ -24,6 +24,10 @@ const ScenarioBuilder = lazy(() => import('./components/ScenarioBuilder'));
 
 const ToolExecutionMonitor = lazy(() => import('./components/ToolExecutionMonitor'));
 const GuardrailsSection = lazy(() => import('./components/GuardrailsSection'));
+const ImageGenerationInterface = lazy(() => import('./components/ImageGenerationInterface'));
+const ImageDisplay = lazy(() => import('./components/ImageDisplay'));
+const ImageVerificationResults = lazy(() => import('./components/ImageVerificationResults'));
+const ErrorRecoveryOptions = lazy(() => import('./components/ErrorRecoveryOptions'));
 import { bedrockService } from "./services/bedrockService";
 import { datasetToolIntegrationService } from "./services/datasetToolIntegrationService";
 import { scenarioToolIntegrationService } from "./services/scenarioToolIntegrationService";
@@ -31,6 +35,9 @@ import { scenarioService } from "./services/scenarioService";
 import { toolExecutionService } from "./services/toolExecutionService";
 import { workflowTrackingService } from "./services/workflowTrackingService";
 import { guardrailService } from "./services/guardrailService";
+import { metaAgentService } from "./services/MetaAgentService";
+import { imageService } from "./services/imageService";
+import { imageVerificationService } from "./services/imageVerificationService";
 import { useHistory } from "./hooks/useHistory";
 import { useModelOutput } from "./hooks/useModelOutput";
 import {
@@ -192,6 +199,26 @@ function App() {
   const [guardrailDiscoveryComplete, setGuardrailDiscoveryComplete] = useState(false);
   const [isAddingGuardrail, setIsAddingGuardrail] = useState(false);
 
+  // Meta-agent state
+  const [metaAgentsEnabled, setMetaAgentsEnabled] = useState(savedFormState.metaAgentsEnabled || false);
+  const [metaAgentEvaluationId, setMetaAgentEvaluationId] = useState(null);
+  const [metaAgentStatus, setMetaAgentStatus] = useState('idle'); // 'idle' | 'running' | 'completed' | 'error'
+  const [metaAgentResults, setMetaAgentResults] = useState(null);
+  const [metaAgentProgress, setMetaAgentProgress] = useState(0);
+  const [metaAgentPhase, setMetaAgentPhase] = useState('');
+  const [metaAgentConfig, setMetaAgentConfig] = useState(null);
+
+  // Image generation state
+  const [imageGenerationResult, setImageGenerationResult] = useState(null);
+  const [imageVerificationResults, setImageVerificationResults] = useState(null);
+  const [isImageGenerating, setIsImageGenerating] = useState(false);
+  const [imageGenerationError, setImageGenerationError] = useState(null);
+
+  // Generation mode state
+  const [generationMode, setGenerationMode] = useState(
+    savedFormState.generationMode || 'text'
+  );
+
   // Track if this is the initial load
   const isInitialLoad = useRef(true);
 
@@ -205,7 +232,10 @@ function App() {
         datasetSelector: false,
         promptEditor: false,
         executionSettings: false,
-        guardrails: false
+        guardrails: false,
+        imageGeneration: false,
+        imageDisplay: false,
+        imageVerification: false
       };
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -496,6 +526,152 @@ function App() {
     return displayNames[type] || type;
   };
 
+  // Start meta-agent evaluation of baseline response
+  const startMetaAgentEvaluation = async (baselineResult) => {
+    try {
+      console.log('[App] Starting meta-agent evaluation');
+
+      // Reset meta-agent state
+      setMetaAgentStatus('running');
+      setMetaAgentResults(null);
+      setMetaAgentProgress(0);
+      setMetaAgentPhase('Initializing meta-agent evaluation...');
+
+      // Start evaluation
+      const evaluationId = await metaAgentService.startEvaluation(
+        baselineResult,
+        selectedScenario,
+        metaAgentConfig
+      );
+
+      setMetaAgentEvaluationId(evaluationId);
+
+      // Subscribe to status updates
+      const unsubscribe = metaAgentService.onStatusUpdate(evaluationId, async (status) => {
+        console.log('[App] Meta-agent status update:', status);
+
+        setMetaAgentProgress(status.progress || 0);
+        setMetaAgentPhase(status.currentPhase || '');
+
+        if (status.status === 'completed') {
+          setMetaAgentStatus('completed');
+
+          const evaluationResult = {
+            evaluationId: status.id,
+            agentResults: status.agentResults || [],
+            overallResult: status.result || {},
+            timestamp: new Date().toISOString(),
+            // Add aggregated decision fields for UI display
+            overallRecommendation: status.result?.overallRecommendation || 'warning',
+            overallConfidence: status.result?.overallConfidence || 0,
+            summary: status.result?.summary || 'Meta-agent evaluation completed',
+            agentCount: status.result?.agentCount || 0,
+            successfulAgents: status.result?.successfulAgents || 0,
+            failedAgents: status.result?.failedAgents || 0,
+            fallbackAgents: status.result?.fallbackAgents || 0,
+            degraded: status.result?.degraded || false
+          };
+
+          setMetaAgentResults(evaluationResult);
+
+          // Update test results to include meta-agent evaluation
+          setTestResults(prev => ({
+            ...prev,
+            metaAgentEvaluation: evaluationResult
+          }));
+
+          // Save updated test results to history
+          try {
+            const updatedTestResult = {
+              ...testResults,
+              metaAgentEvaluation: evaluationResult
+            };
+            await saveTestResult(updatedTestResult);
+          } catch (error) {
+            console.error('[App] Failed to save updated test result with meta-agent evaluation:', error);
+          }
+
+          unsubscribe();
+        } else if (status.status === 'cancelled') {
+          setMetaAgentStatus('cancelled');
+          setMetaAgentPhase(status.currentPhase || 'Meta-agent evaluation cancelled');
+
+          const evaluationResult = {
+            evaluationId: status.id,
+            status: 'cancelled',
+            timestamp: new Date().toISOString(),
+            cancellationReason: status.cancellationReason,
+            completedAgents: status.completedAgents || 0,
+            totalAgents: status.totalAgents || 0,
+            duration: status.duration,
+            currentPhase: status.currentPhase
+          };
+
+          setMetaAgentResults(evaluationResult);
+          unsubscribe();
+        } else if (status.status === 'error') {
+          setMetaAgentStatus('error');
+          setMetaAgentPhase(`Meta-agent evaluation failed: ${status.error || 'Unknown error'}`);
+          unsubscribe();
+        }
+      });
+
+    } catch (error) {
+      console.error('[App] Failed to start meta-agent evaluation:', error);
+      setMetaAgentStatus('error');
+      setMetaAgentPhase(`Failed to start meta-agent evaluation: ${error.message}`);
+    }
+  };
+
+  // Cancel meta-agent evaluation
+  const cancelMetaAgentEvaluation = () => {
+    if (metaAgentEvaluationId && metaAgentStatus === 'running') {
+      console.log('[App] Cancelling meta-agent evaluation:', metaAgentEvaluationId);
+      const cancelled = metaAgentService.cancelEvaluation(metaAgentEvaluationId, 'user_requested');
+
+      if (cancelled) {
+        setMetaAgentStatus('cancelled');
+        setMetaAgentPhase('Cancelling meta-agent evaluation...');
+      }
+    }
+  };
+
+  // Handle meta-agent retry/restart
+  const handleMetaAgentRetry = (action) => {
+    if (action === 'cancel') {
+      cancelMetaAgentEvaluation();
+    } else if (action === 'restart' && testResults) {
+      // Reset state and restart evaluation
+      setMetaAgentStatus('idle');
+      setMetaAgentResults(null);
+      setMetaAgentProgress(0);
+      setMetaAgentPhase('');
+      setMetaAgentEvaluationId(null);
+
+      // Start new evaluation
+      setTimeout(() => {
+        startMetaAgentEvaluation(testResults);
+      }, 100);
+    }
+  };
+
+  // Handle meta-agent toggle
+  const handleMetaAgentsToggle = (enabled) => {
+    setMetaAgentsEnabled(enabled);
+
+    if (enabled) {
+      console.log('[App] Meta-agents enabled');
+    } else {
+      console.log('[App] Meta-agents disabled');
+      // Reset meta-agent state when disabled
+      setMetaAgentStatus('idle');
+      setMetaAgentResults(null);
+      setMetaAgentProgress(0);
+      setMetaAgentPhase('');
+      setMetaAgentEvaluationId(null);
+    }
+  };
+
   // Helper function to generate user-friendly validation messages
   const getValidationGuidance = (errors) => {
     const guidance = [];
@@ -570,6 +746,79 @@ function App() {
 
       return newState;
     });
+  };
+
+  // Helper function to check if current scenario is image generation
+  const isImageGenerationScenario = () => {
+    if (!selectedScenario || !scenarioService.isInitialized) {
+      return false;
+    }
+
+    try {
+      const scenario = scenarioService.getScenario(selectedScenario);
+      return scenario && scenario.configuration && scenario.configuration.imageGeneration && scenario.configuration.imageGeneration.enabled;
+    } catch (error) {
+      console.error('Error checking if scenario is image generation:', error);
+      return false;
+    }
+  };
+
+  // Transform meta-agent results to match ImageVerificationResults component expectations
+  const transformMetaAgentResults = (metaAgentStatus) => {
+    if (!metaAgentStatus || !metaAgentStatus.agentResults) {
+      return null;
+    }
+
+    const agentResults = metaAgentStatus.agentResults || [];
+    const overallResult = metaAgentStatus.result || {};
+
+    // Map agent types to verification categories
+    const agentTypeMapping = {
+      'fact-checker': 'promptAdherence',
+      'error-containment': 'contentSafety',
+      'quality-enforcer': 'imageQuality'
+    };
+
+    // Transform individual agent results
+    const results = {};
+    agentResults.forEach(agentResult => {
+      const category = agentTypeMapping[agentResult.agentType];
+      if (category && agentResult) {
+        results[category] = {
+          recommendation: agentResult.recommendation || 'warning',
+          confidence: agentResult.confidence || 0,
+          analysis: agentResult.analysis || 'No analysis available',
+          findings: agentResult.details?.findings || [],
+          safetyIssues: agentResult.details?.safetyIssues || [],
+          qualityScore: agentResult.details?.qualityScore,
+          breakdown: agentResult.details?.breakdown,
+          rawResponse: agentResult
+        };
+      }
+    });
+
+    // Create summary information
+    const summary = {
+      overallRecommendation: overallResult.overallRecommendation || 'warning',
+      overallConfidence: overallResult.overallConfidence || 0,
+      message: overallResult.summary || 'Meta-agent evaluation completed',
+      successfulVerifications: overallResult.successfulAgents || 0,
+      totalVerifications: overallResult.agentCount || 0,
+      hasWarnings: overallResult.overallRecommendation === 'warning' || overallResult.degraded,
+      hasRejections: overallResult.overallRecommendation === 'reject'
+    };
+
+    return {
+      results,
+      summary,
+      metadata: {
+        startTime: metaAgentStatus.startTime ? new Date(metaAgentStatus.startTime).toISOString() : null,
+        endTime: metaAgentStatus.endTime ? new Date(metaAgentStatus.endTime).toISOString() : null,
+        totalTime: metaAgentStatus.endTime && metaAgentStatus.startTime ?
+          metaAgentStatus.endTime - metaAgentStatus.startTime : null,
+        modelUsed: 'amazon.nova-pro-v1:0' // Default model used by meta-agents
+      }
+    };
   };
 
   // Helper function to provide recovery suggestions for tool execution errors
@@ -649,7 +898,13 @@ function App() {
   const isFormValid = () => {
     const hasValidationErrors = Object.keys(validationErrors).length > 0;
 
-    // Base requirements
+    if (generationMode === 'image') {
+      // For image generation, only require model selection
+      // The ImageGenerationInterface handles its own validation
+      return !hasValidationErrors && selectedModel && bedrockService.isImageGenerationModel(selectedModel);
+    }
+
+    // Text generation validation
     let hasRequiredFields = selectedModel && userPrompt.trim();
 
     // Scenario-based validation
@@ -757,6 +1012,29 @@ function App() {
     initializeGuardrailService();
   }, []);
 
+  // Initialize meta-agent service on app startup
+  useEffect(() => {
+    const initializeMetaAgentService = async () => {
+      try {
+        if (!metaAgentService.isInitialized) {
+          console.log('[App] Initializing meta-agent service...');
+          const initResult = await metaAgentService.initialize();
+
+          if (initResult.success) {
+            console.log('[App] Meta-agent service initialized successfully');
+          } else {
+            console.warn('[App] Meta-agent service initialization failed:', initResult.message);
+          }
+        }
+      } catch (error) {
+        console.error('[App] Failed to initialize meta-agent service:', error);
+        // Don't set main app error - meta-agents are optional
+      }
+    };
+
+    initializeMetaAgentService();
+  }, []);
+
   // Load scenario configuration when scenario changes (only after initial load)
   useEffect(() => {
     if (!isInitialLoad.current && scenarioService.isInitialized && selectedScenario) {
@@ -765,6 +1043,16 @@ function App() {
       loadScenarioConfiguration();
     }
   }, [selectedScenario]);
+
+  // Load meta-agent configuration when scenario changes
+  useEffect(() => {
+    if (selectedScenario && scenarioService.isInitialized) {
+      loadMetaAgentConfiguration();
+    } else {
+      // Clear meta-agent config when no scenario selected
+      setMetaAgentConfig(null);
+    }
+  }, [selectedScenario, scenarioService.isInitialized]);
 
   // Handle initial scenario loading after service initialization (for page refresh)
   useEffect(() => {
@@ -815,6 +1103,35 @@ function App() {
       }
     }
   }, [selectedScenario, scenarioService.isInitialized, scenarioConfigLoaded]);
+
+  // Load meta-agent configuration for the selected scenario
+  const loadMetaAgentConfiguration = async () => {
+    if (!selectedScenario) {
+      setMetaAgentConfig(null);
+      return;
+    }
+
+    try {
+      // Get scenario configuration
+      const scenario = scenarioService.getScenario(selectedScenario);
+
+      if (scenario && scenario.metaAgents) {
+        console.log('[App] Loading meta-agent configuration for scenario:', selectedScenario);
+        setMetaAgentConfig(scenario.metaAgents);
+
+        // Auto-enable meta-agents if scenario has them configured and user hasn't explicitly disabled them
+        if (scenario.metaAgents.enabled && !savedFormState.hasOwnProperty('metaAgentsEnabled')) {
+          setMetaAgentsEnabled(true);
+        }
+      } else {
+        console.log('[App] No meta-agent configuration found for scenario:', selectedScenario);
+        setMetaAgentConfig(null);
+      }
+    } catch (error) {
+      console.error('[App] Error loading meta-agent configuration:', error);
+      setMetaAgentConfig(null);
+    }
+  };
 
   const loadScenarioConfiguration = async () => {
     if (!selectedScenario) {
@@ -990,7 +1307,8 @@ function App() {
       userPrompt,
       selectedDataset,
       selectedScenario,
-      scenarioConfig
+      scenarioConfig,
+      generationMode
     };
 
     const validationResult = validateForm(formData);
@@ -1024,7 +1342,7 @@ function App() {
     if (statePersistenceInitialized) {
       updateUIState({ validationErrors: filteredErrors });
     }
-  }, [selectedModel, systemPrompt, userPrompt, selectedDataset, selectedScenario, scenarioConfig, touchedFields, scenarioService.isInitialized]);
+  }, [selectedModel, systemPrompt, userPrompt, selectedDataset, selectedScenario, scenarioConfig, touchedFields, scenarioService.isInitialized, generationMode]);
 
   // Create debounced save function for form state persistence (silent background saving)
   const debouncedSave = useMemo(() => createDebouncedSave(1500), []);
@@ -1042,6 +1360,9 @@ function App() {
       useToolsEnabled,
       maxIterations,
       guardrailsEnabled,
+      metaAgentsEnabled,
+      metaAgentConfig,
+      generationMode,
     };
 
     // Only save if we have some meaningful data (avoid saving empty initial state)
@@ -1059,6 +1380,9 @@ function App() {
     useToolsEnabled,
     maxIterations,
     guardrailsEnabled,
+    metaAgentsEnabled,
+    metaAgentConfig,
+    generationMode,
     debouncedSave,
   ]);
 
@@ -1122,6 +1446,8 @@ function App() {
       isToolExecuting,
       toolExecutionStatus,
       activeTab,
+      metaAgentsEnabled,
+      metaAgentStatus,
       testResults: testResults
         ? { id: testResults.id, timestamp: testResults.timestamp }
         : null,
@@ -1141,6 +1467,8 @@ function App() {
     isToolExecuting,
     toolExecutionStatus,
     activeTab,
+    metaAgentsEnabled,
+    metaAgentStatus,
     testResults,
     backupState,
   ]);
@@ -1319,6 +1647,20 @@ function App() {
     isSettingsOpen,
     isScenarioBuilderOpen,
   ]);
+
+  // Cleanup meta-agent evaluations on component unmount
+  useEffect(() => {
+    return () => {
+      // Cancel any running meta-agent evaluations when component unmounts
+      if (metaAgentEvaluationId && metaAgentStatus === 'running') {
+        console.log('[App] Cancelling meta-agent evaluation on unmount:', metaAgentEvaluationId);
+        metaAgentService.cancelEvaluation(metaAgentEvaluationId, 'system_shutdown');
+      }
+
+      // Clean up old evaluations
+      metaAgentService.cleanupOldEvaluations();
+    };
+  }, [metaAgentEvaluationId, metaAgentStatus]);
 
   const validateTestConfiguration = () => {
     const formData = {
@@ -1797,7 +2139,6 @@ function App() {
             }
           } else if (streamingEnabled) {
             // Tool detection mode with streaming
-
             setIsStreaming(true);
             setStreamingContent("");
             setStreamingError(null);
@@ -1963,8 +2304,6 @@ function App() {
             },
           });
 
-
-
           return {
             id: testId,
             modelId: selectedModel,
@@ -1988,6 +2327,10 @@ function App() {
             guardrailConfig: guardrailConfig, // Include guardrail configuration used
             guardrailsEnabled: guardrailsEnabled, // Flag to indicate if guardrails were enabled
             guardrailSnapshot: guardrailSnapshot, // Include guardrail state snapshot for history display
+            // Meta-agent evaluation fields
+            metaAgentsEnabled: metaAgentsEnabled, // Flag to indicate if meta-agents were enabled
+            metaAgentConfig: metaAgentConfig, // Meta-agent configuration used
+            metaAgentEvaluation: null, // Will be populated after meta-agent evaluation completes
             timestamp: new Date().toISOString(),
           };
         },
@@ -2011,6 +2354,12 @@ function App() {
 
       setProgressStatus("Complete!");
       setProgressValue(100);
+
+      // Trigger meta-agent evaluation if enabled and configured
+      if (metaAgentsEnabled && metaAgentConfig && metaAgentConfig.enabled && selectedScenario) {
+        console.log('[App] Starting meta-agent evaluation for test result');
+        await startMetaAgentEvaluation(testResult);
+      }
 
       // Trigger determinism evaluation if enabled (single-fire logic)
       if (determinismEnabled) {
@@ -2107,6 +2456,243 @@ function App() {
     }
   };
 
+  // Handle image generation with comprehensive error handling
+  const handleImageGeneration = async (generationData) => {
+    setIsImageGenerating(true);
+    setImageGenerationError(null);
+    setImageGenerationResult(null);
+    setImageVerificationResults(null);
+
+    try {
+      console.log('[App] Starting image generation:', generationData);
+
+      // Ensure image service is ready
+      if (!imageService.isReady()) {
+        const initResult = await imageService.initialize();
+        if (!initResult.success) {
+          throw new Error(`Image service initialization failed: ${initResult.message}`);
+        }
+      }
+
+      // Generate image with enhanced error handling and retry logic
+      const result = await imageService.generateImage(
+        generationData.modelId,
+        generationData.prompt,
+        generationData.parameters,
+        {
+          enableRetry: true,
+          timeout: 120000, // 2 minutes
+          onRetry: (errorInfo, attempt, delay) => {
+            console.log(`[App] Image generation retry ${attempt} in ${delay}ms:`, errorInfo.userMessage);
+            // Could show retry notification to user here
+          },
+          onRecoveryOptions: (errorInfo) => {
+            console.log('[App] Recovery options available:', errorInfo.recoveryOptions);
+            // Store recovery options for UI display
+            if (errorInfo.recoveryOptions.length > 0) {
+              setImageGenerationError({
+                ...errorInfo,
+                showRecoveryOptions: true
+              });
+            }
+          }
+        }
+      );
+
+      console.log('[App] Image generation completed:', result);
+      setImageGenerationResult(result);
+
+      // Start meta-agent verification if enabled
+      if (metaAgentsEnabled && selectedScenario) {
+        try {
+          console.log('[App] Starting meta-agent verification for image...');
+          setImageVerificationResults({ isVerifying: true });
+
+          // Use the real meta-agent service for image verification
+          const evaluationId = await metaAgentService.startEvaluation(
+            result, // The image result as the baseline result
+            selectedScenario,
+            {
+              ...metaAgentConfig, // Include the agent configuration
+              evaluationType: 'image_verification',
+              originalPrompt: generationData.prompt,
+              modelId: generationData.modelId,
+              parameters: generationData.parameters
+            }
+          );
+
+          console.log('[App] Meta-agent evaluation started for image:', evaluationId);
+
+          // Subscribe to status updates for image verification
+          const unsubscribe = metaAgentService.onStatusUpdate(evaluationId, async (status) => {
+            console.log('[App] Image meta-agent status update:', status);
+
+            if (status.status === 'completed') {
+              console.log('[App] Image meta-agent evaluation completed:', status);
+
+              // Transform meta-agent results to match ImageVerificationResults component expectations
+              const transformedResults = transformMetaAgentResults(status);
+              setImageVerificationResults(transformedResults);
+              unsubscribe();
+            } else if (status.status === 'failed') {
+              console.error('[App] Image meta-agent evaluation failed:', status.error);
+              setImageVerificationResults({
+                error: status.error,
+                isVerifying: false
+              });
+              unsubscribe();
+            }
+          });
+
+        } catch (verificationError) {
+          console.error('[App] Image meta-agent verification failed:', verificationError);
+          setImageVerificationResults({
+            error: verificationError.message,
+            isVerifying: false
+          });
+        }
+      }
+
+      // Save to history
+      const historyEntry = {
+        id: result.id,
+        timestamp: result.timestamp,
+        modelId: generationData.modelId,
+        prompt: generationData.prompt,
+        parameters: generationData.parameters,
+        result: result,
+        verificationResults: imageVerificationResults,
+        scenarioId: selectedScenario,
+        type: 'image-generation'
+      };
+
+      await saveTestResult(historyEntry);
+
+    } catch (error) {
+      console.error('[App] Image generation failed:', error);
+
+      // Handle enhanced error with recovery options
+      if (error.errorInfo && error.recoveryOptions) {
+        setImageGenerationError({
+          message: error.message,
+          errorInfo: error.errorInfo,
+          recoveryOptions: error.recoveryOptions,
+          showRecoveryOptions: true,
+          isRetryable: error.isRetryable
+        });
+      } else {
+        setImageGenerationError({
+          message: error.message || 'Image generation failed',
+          showRecoveryOptions: false
+        });
+      }
+    } finally {
+      setIsImageGenerating(false);
+    }
+  };
+
+  // Handle error recovery actions
+  const handleImageErrorRecovery = async (recoveryOption) => {
+    console.log('[App] Executing recovery option:', recoveryOption);
+
+    if (!recoveryOption) {
+      return;
+    }
+
+    try {
+      setIsImageGenerating(true);
+      setImageGenerationError(null);
+
+      // Get the last generation data for retry
+      const lastGenerationData = imageGenerationResult ? {
+        modelId: imageGenerationResult.modelId,
+        prompt: imageGenerationResult.prompt,
+        parameters: imageGenerationResult.parameters
+      } : null;
+
+      if (!lastGenerationData) {
+        throw new Error('No previous generation data available for recovery');
+      }
+
+      // Execute recovery action based on type
+      switch (recoveryOption.action) {
+        case 'retry':
+          // Simple retry with same parameters
+          await handleImageGeneration(lastGenerationData);
+          break;
+
+        case 'reduce_dimensions':
+          // Retry with smaller dimensions
+          await handleImageGeneration({
+            ...lastGenerationData,
+            parameters: {
+              ...lastGenerationData.parameters,
+              width: 512,
+              height: 512
+            }
+          });
+          break;
+
+        case 'reduce_quality':
+          // Retry with standard quality
+          await handleImageGeneration({
+            ...lastGenerationData,
+            parameters: {
+              ...lastGenerationData.parameters,
+              quality: 'standard'
+            }
+          });
+          break;
+
+        case 'single_image':
+          // Retry with single image
+          await handleImageGeneration({
+            ...lastGenerationData,
+            parameters: {
+              ...lastGenerationData.parameters,
+              numberOfImages: 1
+            }
+          });
+          break;
+
+        case 'fallback_model':
+          // Switch to fallback model
+          if (recoveryOption.fallbackModel) {
+            await handleImageGeneration({
+              ...lastGenerationData,
+              modelId: recoveryOption.fallbackModel
+            });
+          }
+          break;
+
+        case 'wait':
+          // Wait and retry
+          if (recoveryOption.delay) {
+            await new Promise(resolve => setTimeout(resolve, recoveryOption.delay));
+            await handleImageGeneration(lastGenerationData);
+          }
+          break;
+
+        default:
+          console.warn('[App] Unknown recovery action:', recoveryOption.action);
+          break;
+      }
+    } catch (error) {
+      console.error('[App] Recovery action failed:', error);
+      setImageGenerationError({
+        message: `Recovery failed: ${error.message}`,
+        showRecoveryOptions: false
+      });
+    } finally {
+      setIsImageGenerating(false);
+    }
+  };
+
+  // Dismiss error recovery options
+  const handleDismissImageError = () => {
+    setImageGenerationError(null);
+  };
+
   const handleLoadFromHistory = (historyItem) => {
     setSelectedModel(historyItem.modelId);
     setSelectedDataset({
@@ -2200,6 +2786,24 @@ function App() {
   const handleModelSelect = (modelId) => {
     setSelectedModel(modelId);
     markFieldAsTouched("model");
+  };
+
+  // Handle generation mode change
+  const handleGenerationModeChange = (mode) => {
+    setGenerationMode(mode);
+
+    // Clear model selection when switching modes to force user to select appropriate model
+    setSelectedModel('');
+
+    // Clear any existing results
+    setTestResults(null);
+    setImageGenerationResult(null);
+    setImageVerificationResults(null);
+    setImageGenerationError(null);
+
+    // Clear validation errors
+    setValidationErrors({});
+    setTouchedFields({});
   };
 
   const handleToggleGuardrails = () => {
@@ -2547,6 +3151,14 @@ function App() {
       setToolExecutionId(null);
       setToolExecutionStatus("idle");
       setConflictMessage(null);
+      setMetaAgentsEnabled(false);
+      setMetaAgentStatus('idle');
+      setMetaAgentResults(null);
+      setMetaAgentProgress(0);
+      setMetaAgentPhase('');
+      setMetaAgentEvaluationId(null);
+      setMetaAgentConfig(null);
+      setGenerationMode('text');
 
       // Clear UI state
       setTouchedFields({});
@@ -2556,6 +3168,9 @@ function App() {
 
       // Clear test results
       setTestResults(null);
+      setImageGenerationResult(null);
+      setImageVerificationResults(null);
+      setImageGenerationError(null);
     }
   };
 
@@ -2668,6 +3283,8 @@ function App() {
                         externalError={error}
                         isCollapsed={collapsedSections.modelSelector}
                         onToggleCollapse={() => toggleSectionCollapse('modelSelector')}
+                        generationMode={generationMode}
+                        onGenerationModeChange={handleGenerationModeChange}
                       />
 
                       <ScenarioSelector
@@ -2721,21 +3338,41 @@ function App() {
                         />
                       )}
 
-                      <PromptEditor
-                        systemPrompt={systemPrompt}
-                        userPrompt={userPrompt}
-                        onSystemPromptChange={handleSystemPromptChange}
-                        onUserPromptChange={handleUserPromptChange}
-                        systemPromptError={validationErrors.systemPrompt}
-                        userPromptError={validationErrors.userPrompt}
-                        scenarioSystemPrompts={availableSystemPrompts}
-                        scenarioUserPrompts={availableUserPrompts}
-                        systemPromptWarning={validationWarnings.systemPrompt}
-                        userPromptWarning={validationWarnings.userPrompt}
-                        selectedDataset={selectedDataset}
-                        isCollapsed={collapsedSections.promptEditor}
-                        onToggleCollapse={() => toggleSectionCollapse('promptEditor')}
-                      />
+                      {/* Prompt Editor - Only show for text generation mode */}
+                      {generationMode === 'text' && (
+                        <PromptEditor
+                          systemPrompt={systemPrompt}
+                          userPrompt={userPrompt}
+                          onSystemPromptChange={handleSystemPromptChange}
+                          onUserPromptChange={handleUserPromptChange}
+                          systemPromptError={validationErrors.systemPrompt}
+                          userPromptError={validationErrors.userPrompt}
+                          scenarioSystemPrompts={availableSystemPrompts}
+                          scenarioUserPrompts={availableUserPrompts}
+                          systemPromptWarning={validationWarnings.systemPrompt}
+                          userPromptWarning={validationWarnings.userPrompt}
+                          selectedDataset={selectedDataset}
+                          isCollapsed={collapsedSections.promptEditor}
+                          onToggleCollapse={() => toggleSectionCollapse('promptEditor')}
+                        />
+                      )}
+
+                      {/* Image Generation Interface - Only show for image generation mode */}
+                      {generationMode === 'image' && (
+                        <Suspense fallback={<LoadingSpinner message="Loading image generation..." />}>
+                          <ImageGenerationInterface
+                            selectedModel={selectedModel}
+                            onImageGenerated={handleImageGeneration}
+                            isLoading={isImageGenerating}
+                            error={imageGenerationError}
+                            isCollapsed={collapsedSections.imageGeneration}
+                            onToggleCollapse={() => toggleSectionCollapse('imageGeneration')}
+                            // Pass scenario prompts as initial values for image generation
+                            scenarioUserPrompts={availableUserPrompts}
+                            initialPrompt={userPrompt || ''}
+                          />
+                        </Suspense>
+                      )}
 
                       {/* Execution Settings */}
                       <ConditionalExecutionSettings
@@ -2758,6 +3395,10 @@ function App() {
                         areToolsAvailable={areToolsAvailable()}
                         isCollapsed={collapsedSections.executionSettings}
                         onToggleCollapse={() => toggleSectionCollapse('executionSettings')}
+                        // Meta-agent props
+                        metaAgentsEnabled={metaAgentsEnabled}
+                        onMetaAgentsToggle={handleMetaAgentsToggle}
+                        metaAgentConfig={metaAgentConfig}
                       />
 
                       {/* Enhanced Validation Summary with Dual Prompt Guidance */}
@@ -2956,28 +3597,31 @@ function App() {
                         </div>
                       )}
 
-                      <div className="flex justify-center">
-                        <button
-                          onClick={handleRunTest}
-                          disabled={isLoading || !isFormValid()}
-                          className={`btn-primary px-8 py-3 text-lg transition-all duration-200 ${
-                            isLoading || !isFormValid()
-                              ? "opacity-50 cursor-not-allowed"
-                              : "hover:shadow-lg"
-                          }`}
-                        >
-                          {isLoading ? (
-                            <LoadingSpinner
-                              size="sm"
-                              color="white"
-                              text="Running Test..."
-                              inline
-                            />
-                          ) : (
-                            "Run Test"
-                          )}
-                        </button>
-                      </div>
+                      {/* Run Test Button - Hide for image generation mode */}
+                      {generationMode === 'text' && (
+                        <div className="flex justify-center">
+                          <button
+                            onClick={handleRunTest}
+                            disabled={isLoading || !isFormValid()}
+                            className={`btn-primary px-8 py-3 text-lg transition-all duration-200 ${
+                              isLoading || !isFormValid()
+                                ? "opacity-50 cursor-not-allowed"
+                                : "hover:shadow-lg"
+                            }`}
+                          >
+                            {isLoading ? (
+                              <LoadingSpinner
+                                size="sm"
+                                color="white"
+                                text="Running Test..."
+                                inline
+                              />
+                            ) : (
+                              "Run Test"
+                            )}
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Right Column - Results */}
@@ -2985,8 +3629,70 @@ function App() {
                       className="animate-slide-up"
                       style={{ animationDelay: "0.1s" }}
                     >
-                      <Suspense fallback={<LoadingSpinner message="Loading results..." />}>
-                      <TestResults
+                      {/* Image Generation Results - Only show for image generation mode */}
+                      {generationMode === 'image' && (
+                        <div className="space-y-6">
+                          <Suspense fallback={<LoadingSpinner message="Loading image display..." />}>
+                            <ImageDisplay
+                              imageResult={imageGenerationResult}
+                              verificationResults={imageVerificationResults}
+                              onRegenerate={() => {
+                                // Trigger regeneration with same parameters
+                                if (imageGenerationResult) {
+                                  handleImageGeneration({
+                                    modelId: imageGenerationResult.modelId,
+                                    prompt: imageGenerationResult.prompt,
+                                    parameters: imageGenerationResult.parameters
+                                  });
+                                }
+                              }}
+                              onSaveToHistory={async (result) => {
+                                const historyEntry = {
+                                  id: result.id,
+                                  timestamp: result.timestamp,
+                                  modelId: result.modelId,
+                                  prompt: result.prompt,
+                                  parameters: result.parameters,
+                                  result: result,
+                                  verificationResults: imageVerificationResults,
+                                  scenarioId: selectedScenario,
+                                  type: 'image-generation'
+                                };
+                                await saveTestResult(historyEntry);
+                              }}
+                              isLoading={isImageGenerating}
+                              error={imageGenerationError}
+                            />
+                          </Suspense>
+
+                          {/* Error Recovery Options */}
+                          {imageGenerationError?.showRecoveryOptions && (
+                            <Suspense fallback={<LoadingSpinner message="Loading error recovery..." />}>
+                              <ErrorRecoveryOptions
+                                errorInfo={imageGenerationError}
+                                onRecoveryAction={handleImageErrorRecovery}
+                                onDismiss={handleDismissImageError}
+                                isLoading={isImageGenerating}
+                              />
+                            </Suspense>
+                          )}
+
+                          {metaAgentsEnabled && (
+                            <Suspense fallback={<LoadingSpinner message="Loading verification results..." />}>
+                              <ImageVerificationResults
+                                results={imageVerificationResults}
+                                isLoading={imageVerificationResults?.isVerifying}
+                                error={imageVerificationResults?.error}
+                              />
+                            </Suspense>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Text Generation Results - Only show for text generation mode */}
+                      {generationMode === 'text' && (
+                        <Suspense fallback={<LoadingSpinner message="Loading results..." />}>
+                        <TestResults
                         results={testResults}
                         isLoading={isLoading}
                         determinismEnabled={determinismEnabled}
@@ -3033,8 +3739,28 @@ function App() {
                           testResults?.workflowData?.workflow || null
                         }
                         isToolExecuting={toolExecutionStatus === "executing"}
+                        // Meta-agent props
+                        metaAgentsEnabled={metaAgentsEnabled}
+                        metaAgentEvaluationStatus={testResults?.metaAgentEvaluation ? {
+                          id: testResults.metaAgentEvaluation.evaluationId,
+                          status: 'completed',
+                          result: {
+                            overallRecommendation: testResults.metaAgentEvaluation.overallRecommendation,
+                            overallConfidence: testResults.metaAgentEvaluation.overallConfidence,
+                            summary: testResults.metaAgentEvaluation.summary,
+                            agentCount: testResults.metaAgentEvaluation.agentCount,
+                            successfulAgents: testResults.metaAgentEvaluation.successfulAgents,
+                            failedAgents: testResults.metaAgentEvaluation.failedAgents,
+                            recommendations: testResults.metaAgentEvaluation.overallResult?.recommendations
+                          },
+                          agentResults: testResults.metaAgentEvaluation.agentResults || []
+                        } : null}
+                        isMetaAgentLoading={metaAgentStatus === 'running'}
+                        metaAgentError={metaAgentStatus === 'error' ? metaAgentPhase : null}
+                        onRetryMetaAgent={handleMetaAgentRetry}
                       />
-                      </Suspense>
+                        </Suspense>
+                      )}
                     </div>
                   </div>
                 </div>

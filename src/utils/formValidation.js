@@ -197,36 +197,55 @@ export function validateForm(formData) {
     errors.model = modelResult.error
   }
 
-  // Validate system prompt
-  const systemPromptResult = validateField('systemPrompt', formData.systemPrompt)
-  results.systemPrompt = systemPromptResult
-  if (!systemPromptResult.isValid) {
-    errors.systemPrompt = systemPromptResult.error
-  }
+  // Generation mode specific validation
+  const generationMode = formData.generationMode || 'text'
 
-  // Validate user prompt
-  const userPromptResult = validateField('userPrompt', formData.userPrompt)
-  results.userPrompt = userPromptResult
-  if (!userPromptResult.isValid) {
-    errors.userPrompt = userPromptResult.error
-  }
+  if (generationMode === 'text') {
+    // Text generation validation - requires prompts
 
-  // Scenario-aware dataset validation
-  if (formData.selectedScenario && formData.scenarioConfig) {
-    // Only validate dataset if scenario requires it
-    if (formData.scenarioConfig.showDatasetSelector) {
+    // Validate system prompt
+    const systemPromptResult = validateField('systemPrompt', formData.systemPrompt)
+    results.systemPrompt = systemPromptResult
+    if (!systemPromptResult.isValid) {
+      errors.systemPrompt = systemPromptResult.error
+    }
+
+    // Validate user prompt
+    const userPromptResult = validateField('userPrompt', formData.userPrompt)
+    results.userPrompt = userPromptResult
+    if (!userPromptResult.isValid) {
+      errors.userPrompt = userPromptResult.error
+    }
+
+    // Scenario-aware dataset validation for text generation
+    if (formData.selectedScenario && formData.scenarioConfig) {
+      // Only validate dataset if scenario requires it
+      if (formData.scenarioConfig.showDatasetSelector) {
+        const datasetResult = validateField('dataset', formData.selectedDataset)
+        results.dataset = datasetResult
+        if (!datasetResult.isValid) {
+          errors.dataset = datasetResult.error
+        }
+      }
+    } else {
+      // Fallback to standard dataset validation for non-scenario mode
       const datasetResult = validateField('dataset', formData.selectedDataset)
       results.dataset = datasetResult
       if (!datasetResult.isValid) {
         errors.dataset = datasetResult.error
       }
     }
-  } else {
-    // Fallback to standard dataset validation for non-scenario mode
-    const datasetResult = validateField('dataset', formData.selectedDataset)
-    results.dataset = datasetResult
-    if (!datasetResult.isValid) {
-      errors.dataset = datasetResult.error
+  } else if (generationMode === 'image') {
+    // Image generation validation - different requirements
+
+    // For image generation, we don't require system prompts or datasets
+    // The ImageGenerationInterface component handles its own prompt validation
+
+    // Validate that the selected model supports image generation
+    if (formData.selectedModel) {
+      // Import bedrockService to check if model supports image generation
+      // Note: This creates a circular dependency, so we'll handle this in the App component instead
+      // For now, just validate that a model is selected
     }
   }
 

@@ -20,21 +20,42 @@ export class ModelManager {
     }
 
     try {
-      const command = new ListFoundationModelsCommand({
+      // Get text models
+      const textCommand = new ListFoundationModelsCommand({
         byOutputModality: 'TEXT',
         byInferenceType: 'ON_DEMAND'
       });
 
-      const response = await this.clientManager.managementClient.send(command);
+      const textResponse = await this.clientManager.managementClient.send(textCommand);
+      const textModels = textResponse.modelSummaries || [];
 
-      const models = response.modelSummaries?.map(model => ({
+      // Get image models
+      const imageCommand = new ListFoundationModelsCommand({
+        byOutputModality: 'IMAGE',
+        byInferenceType: 'ON_DEMAND'
+      });
+
+      let imageModels = [];
+      try {
+        const imageResponse = await this.clientManager.managementClient.send(imageCommand);
+        imageModels = imageResponse.modelSummaries || [];
+      } catch (error) {
+        // Image models might not be available in all regions, continue without them
+        console.warn('Image models not available:', error.message);
+      }
+
+      // Combine all models
+      const allModels = [...textModels, ...imageModels];
+
+      const models = allModels.map(model => ({
         id: model.modelId,
         name: this.getModelDisplayName(model.modelId),
         provider: model.providerName,
         inputModalities: model.inputModalities,
         outputModalities: model.outputModalities,
-        responseStreamingSupported: model.responseStreamingSupported
-      })) || [];
+        responseStreamingSupported: model.responseStreamingSupported,
+        supportsImageGeneration: this.isImageGenerationModel(model.modelId)
+      }));
 
       return models.sort((a, b) => {
         if (a.provider !== b.provider) {
@@ -49,10 +70,23 @@ export class ModelManager {
   }
 
   /**
+   * Check if a model supports image generation
+   */
+  isImageGenerationModel(modelId) {
+    const imageModels = [
+      'amazon.nova-canvas-v1:0',
+      'stability.stable-diffusion-xl-v1',
+      'stability.sd3-large-v1:0'
+    ];
+    return imageModels.includes(modelId);
+  }
+
+  /**
    * Get user-friendly model display names
    */
   getModelDisplayName(modelId) {
     const modelNames = {
+      // Text generation models
       'amazon.nova-pro-v1:0': 'Amazon Nova Pro',
       'amazon.nova-lite-v1:0': 'Amazon Nova Lite',
       'amazon.nova-micro-v1:0': 'Amazon Nova Micro',
@@ -70,7 +104,12 @@ export class ModelManager {
       'mistral.mistral-large-2407-v1:0': 'Mistral Large 2',
       'mistral.mistral-small-2402-v1:0': 'Mistral Small',
       'cohere.command-r-plus-v1:0': 'Command R+',
-      'cohere.command-r-v1:0': 'Command R'
+      'cohere.command-r-v1:0': 'Command R',
+
+      // Image generation models
+      'amazon.nova-canvas-v1:0': 'Amazon Nova Canvas',
+      'stability.stable-diffusion-xl-v1': 'Stability AI SDXL 1.0',
+      'stability.sd3-large-v1:0': 'Stable Diffusion 3 Large'
     };
 
     return modelNames[modelId] || modelId;

@@ -1,0 +1,429 @@
+{
+  "expenses": {
+    "EXP-2024-001": {
+      "expenseId": "EXP-2024-001",
+      "employee": {
+        "name": "John Smith",
+        "employeeId": "EMP001",
+        "level": "standard",
+        "department": "Sales"
+      },
+      "expense": {
+        "amount": 45.50,
+        "category": "business_meal",
+        "date": "2024-01-15",
+        "description": "Lunch with client",
+        "merchant": "Olive Garden",
+        "location": "New York"
+      },
+      "receipt": {
+        "total": 45.50,
+        "tax": 3.50,
+        "tip": 7.00,
+        "merchant": "Olive Garden",
+        "date": "2024-01-15"
+      },
+      "businessJustification": "Client meeting to discuss Q1 project requirements",
+      "status": "pending_approval",
+      "submittedDate": "2024-01-16T09:30:00Z"
+    },
+    "EXP-2024-201": {
+      "expenseId": "EXP-2024-201",
+      "employee": {
+        "name": "John Smith",
+        "employeeId": "EMP201",
+        "level": "standard",
+        "department": "Sales"
+      },
+      "expense": {
+        "amount": 310.00,
+        "category": "business_meal",
+        "date": "2024-01-15",
+        "description": "Dinner with client",
+        "merchant": "Italian Restaurant",
+        "location": "New York"
+      },
+      "receipt": {
+        "total": 130.00,
+        "tax": 10.50,
+        "tip": 20.00,
+        "merchant": "Italian Restaurant",
+        "date": "2024-01-15"
+      },
+      "businessJustification": "Client meeting to discuss project",
+      "status": "pending_approval",
+      "submittedDate": "2024-01-16T14:22:00Z",
+      "flags": {
+        "ocrMismatch": true,
+        "amountDiscrepancy": 180.00,
+        "riskLevel": "high"
+      }
+    },
+    "EXP-2024-101": {
+      "expenseId": "EXP-2024-101",
+      "employee": {
+        "name": "Tom Anderson",
+        "employeeId": "EMP101",
+        "level": "standard",
+        "department": "Marketing"
+      },
+      "expense": {
+        "amount": 150.00,
+        "category": "business_meal",
+        "date": "2024-01-15",
+        "description": "Expensive dinner",
+        "merchant": "Morton's Steakhouse",
+        "location": "New York"
+      },
+      "receipt": {
+        "total": 150.00,
+        "tax": 12.00,
+        "tip": 25.00,
+        "merchant": "Morton's Steakhouse",
+        "date": "2024-01-15"
+      },
+      "businessJustification": "Client dinner",
+      "status": "pending_approval",
+      "submittedDate": "2024-01-16T16:45:00Z",
+      "flags": {
+        "exceedsPolicyLimit": true,
+        "policyViolation": "EXCEEDS_MEAL_LIMIT",
+        "riskLevel": "medium"
+      }
+    },
+    "EXP-2024-102": {
+      "expenseId": "EXP-2024-102",
+      "employee": {
+        "name": "Nancy White",
+        "employeeId": "EMP102",
+        "level": "standard",
+        "department": "Finance"
+      },
+      "expense": {
+        "amount": 85.00,
+        "category": "business_meal",
+        "date": "2024-01-18",
+        "description": "Solo lunch",
+        "merchant": "Fine Dining",
+        "location": "Local"
+      },
+      "receipt": {
+        "total": 85.00,
+        "tax": 6.50,
+        "tip": 12.00,
+        "merchant": "Fine Dining",
+        "date": "2024-01-18"
+      },
+      "businessJustification": "Working lunch",
+      "status": "pending_approval",
+      "submittedDate": "2024-01-19T10:15:00Z",
+      "flags": {
+        "noClientPresent": true,
+        "policyViolation": "NO_CLIENT_PRESENT",
+        "riskLevel": "medium"
+      }
+    },
+    "EXP-2024-202": {
+      "expenseId": "EXP-2024-202",
+      "employee": {
+        "name": "Alice Johnson",
+        "employeeId": "EMP202",
+        "level": "manager",
+        "department": "Operations"
+      },
+      "expense": {
+        "amount": 75.50,
+        "category": "business_meal",
+        "date": "2024-01-18",
+        "description": "Lunch meeting",
+        "merchant": "Cafe Bistro",
+        "location": "Boston"
+      },
+      "receipt": {
+        "total": 57.50,
+        "tax": 4.50,
+        "tip": 8.00,
+        "merchant": "Cafe Bistro",
+        "date": "2024-01-18"
+      },
+      "businessJustification": "Team planning session",
+      "status": "pending_approval",
+      "submittedDate": "2024-01-19T11:30:00Z",
+      "flags": {
+        "ocrMismatch": true,
+        "submittedHigher": true,
+        "amountDiscrepancy": 18.00,
+        "riskLevel": "low"
+      }
+    },
+    "EXP-2024-DEMO": {
+      "expenseId": "EXP-2024-DEMO",
+      "employee": {
+        "name": "Sarah Chen",
+        "employeeId": "EMP999",
+        "level": "standard",
+        "department": "Engineering"
+      },
+      "expense": {
+        "amount": 95.00,
+        "category": "business_meal",
+        "date": "2024-01-20",
+        "description": "Client dinner at steakhouse",
+        "merchant": "Prime Steakhouse",
+        "location": "San Francisco"
+      },
+      "receipt": {
+        "total": 95.00,
+        "tax": 8.50,
+        "tip": 15.00,
+        "merchant": "Prime Steakhouse",
+        "date": "2024-01-20",
+        "temperature": "hot",
+        "receiptCondition": "excellent",
+        "ocrConfidence": 0.98
+      },
+      "businessJustification": "Important client meeting to finalize contract terms",
+      "status": "pending_approval",
+      "submittedDate": "2024-01-21T08:15:00Z",
+      "flags": {
+        "exceedsPolicyLimit": true,
+        "policyViolation": "EXCEEDS_MEAL_LIMIT_STANDARD",
+        "requiresPolicyCheck": true,
+        "temperatureIndicator": "hot",
+        "riskLevel": "high"
+      },
+      "policyCheckRequired": {
+        "reason": "Amount exceeds standard employee meal limit of $75",
+        "checkType": "MEAL_LIMIT_VALIDATION",
+        "expectedAction": "Should check employee level and meal policy limits"
+      }
+    },
+    "EXP-2024-WEEKEND": {
+      "expenseId": "EXP-2024-WEEKEND",
+      "employee": {
+        "name": "Mike Rodriguez",
+        "employeeId": "EMP888",
+        "level": "standard",
+        "department": "Sales"
+      },
+      "expense": {
+        "amount": 65.00,
+        "category": "business_meal",
+        "date": "2024-01-21",
+        "description": "Weekend client entertainment",
+        "merchant": "Sports Bar & Grill",
+        "location": "Chicago"
+      },
+      "receipt": {
+        "total": 65.00,
+        "tax": 5.20,
+        "tip": 10.00,
+        "merchant": "Sports Bar & Grill",
+        "date": "2024-01-21",
+        "temperature": "warm",
+        "receiptCondition": "good",
+        "ocrConfidence": 0.95,
+        "dayOfWeek": "Sunday"
+      },
+      "businessJustification": "Client requested weekend meeting",
+      "status": "pending_approval",
+      "submittedDate": "2024-01-22T09:00:00Z",
+      "flags": {
+        "weekendExpense": true,
+        "policyViolation": "WEEKEND_EXPENSE_NOT_PREAPPROVED",
+        "requiresPolicyCheck": true,
+        "temperatureIndicator": "warm",
+        "riskLevel": "medium"
+      },
+      "policyCheckRequired": {
+        "reason": "Weekend expense without pre-approval",
+        "checkType": "WEEKEND_POLICY_VALIDATION",
+        "expectedAction": "Should check weekend expense policy and pre-approval status"
+      }
+    },
+    "EXP-2024-301": {
+      "expenseId": "EXP-2024-301",
+      "employee": {
+        "name": "Sarah Chen",
+        "employeeId": "EMP999",
+        "level": "standard",
+        "department": "Engineering"
+      },
+      "expense": {
+        "amount": 95.00,
+        "category": "business_meal",
+        "date": "2024-01-20",
+        "description": "Client dinner at steakhouse",
+        "merchant": "Prime Steakhouse",
+        "location": "San Francisco"
+      },
+      "receipt": {
+        "total": 95.00,
+        "tax": 8.50,
+        "tip": 15.00,
+        "merchant": "Prime Steakhouse",
+        "date": "2024-01-20",
+        "temperature": "hot",
+        "receiptCondition": "excellent",
+        "ocrConfidence": 0.98
+      },
+      "businessJustification": "Important client meeting to finalize contract terms",
+      "status": "pending_approval",
+      "submittedDate": "2024-01-21T08:15:00Z",
+      "flags": {
+        "exceedsPolicyLimit": true,
+        "policyViolation": "EXCEEDS_MEAL_LIMIT_STANDARD",
+        "requiresPolicyCheck": true,
+        "temperatureIndicator": "hot",
+        "riskLevel": "high"
+      },
+      "policyCheckRequired": {
+        "reason": "Amount exceeds standard employee meal limit of $75",
+        "checkType": "MEAL_LIMIT_VALIDATION",
+        "expectedAction": "Should check employee level and meal policy limits"
+      }
+    },
+    "EXP-2024-302": {
+      "expenseId": "EXP-2024-302",
+      "employee": {
+        "name": "Mike Rodriguez",
+        "employeeId": "EMP888",
+        "level": "standard",
+        "department": "Sales"
+      },
+      "expense": {
+        "amount": 65.00,
+        "category": "business_meal",
+        "date": "2024-01-21",
+        "description": "Weekend client entertainment",
+        "merchant": "Sports Bar & Grill",
+        "location": "Chicago"
+      },
+      "receipt": {
+        "total": 65.00,
+        "tax": 5.20,
+        "tip": 10.00,
+        "merchant": "Sports Bar & Grill",
+        "date": "2024-01-21",
+        "temperature": "warm",
+        "receiptCondition": "good",
+        "ocrConfidence": 0.95,
+        "dayOfWeek": "Sunday"
+      },
+      "businessJustification": "Client requested weekend meeting",
+      "status": "pending_approval",
+      "submittedDate": "2024-01-22T09:00:00Z",
+      "flags": {
+        "weekendExpense": true,
+        "policyViolation": "WEEKEND_EXPENSE_NOT_PREAPPROVED",
+        "requiresPolicyCheck": true,
+        "temperatureIndicator": "warm",
+        "riskLevel": "medium"
+      },
+      "policyCheckRequired": {
+        "reason": "Weekend expense without pre-approval",
+        "checkType": "WEEKEND_POLICY_VALIDATION",
+        "expectedAction": "Should check weekend expense policy and pre-approval status"
+      }
+    },
+    "EXP-2024-303": {
+      "expenseId": "EXP-2024-303",
+      "employee": {
+        "name": "John Smith",
+        "employeeId": "EMP201",
+        "level": "standard",
+        "department": "Sales"
+      },
+      "expense": {
+        "amount": 310.00,
+        "category": "business_meal",
+        "date": "2024-01-15",
+        "description": "Dinner with client",
+        "merchant": "Italian Restaurant",
+        "location": "New York"
+      },
+      "receipt": {
+        "total": 130.00,
+        "tax": 10.50,
+        "tip": 20.00,
+        "merchant": "Italian Restaurant",
+        "date": "2024-01-15",
+        "temperature": "hot",
+        "receiptCondition": "poor",
+        "ocrConfidence": 0.75
+      },
+      "businessJustification": "Client meeting to discuss project",
+      "status": "pending_approval",
+      "submittedDate": "2024-01-16T14:22:00Z",
+      "flags": {
+        "ocrMismatch": true,
+        "amountDiscrepancy": 180.00,
+        "requiresPolicyCheck": true,
+        "temperatureIndicator": "hot",
+        "riskLevel": "high"
+      },
+      "policyCheckRequired": {
+        "reason": "$180 discrepancy between submitted ($310) and receipt ($130)",
+        "checkType": "OCR_MISMATCH_VALIDATION",
+        "expectedAction": "Should flag for investigation due to major amount discrepancy"
+      }
+    }
+  },
+  "policies": {
+    "business_meal": {
+      "standard": {
+        "dailyLimit": 75,
+        "perMealLimit": 50,
+        "requiresClient": true
+      },
+      "manager": {
+        "dailyLimit": 100,
+        "perMealLimit": 75,
+        "requiresClient": false
+      },
+      "director": {
+        "dailyLimit": 150,
+        "perMealLimit": 100,
+        "requiresClient": false
+      },
+      "executive": {
+        "dailyLimit": 200,
+        "perMealLimit": 150,
+        "requiresClient": false
+      }
+    },
+    "travel_lodging": {
+      "standard": { "dailyLimit": 150 },
+      "manager": { "dailyLimit": 200 },
+      "director": { "dailyLimit": 300 },
+      "executive": { "dailyLimit": 500 }
+    },
+    "transportation": {
+      "standard": { "dailyLimit": 100 },
+      "manager": { "dailyLimit": 150 },
+      "director": { "dailyLimit": 200 },
+      "executive": { "dailyLimit": 300 }
+    }
+  },
+  "complianceRules": {
+    "receiptRequired": {
+      "threshold": 25,
+      "description": "Receipt required for all expenses over $25"
+    },
+    "businessJustification": {
+      "required": true,
+      "minimumLength": 15,
+      "description": "All expenses must have legitimate business purpose"
+    },
+    "weekendExpenses": {
+      "allowed": false,
+      "exceptions": ["business_travel", "conference"],
+      "description": "Weekend expenses generally not allowed unless pre-approved"
+    },
+    "duplicateDetection": {
+      "enabled": true,
+      "timeWindow": 24,
+      "description": "System checks for duplicate expenses within 24 hours"
+    }
+  }
+}

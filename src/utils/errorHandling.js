@@ -17,6 +17,16 @@ export const ErrorTypes = {
   VALIDATION: 'validation',
   FILE_SYSTEM: 'file_system',
   BROWSER_COMPATIBILITY: 'browser_compatibility',
+  // Image generation specific errors
+  IMAGE_GENERATION: 'image_generation',
+  IMAGE_MODEL_UNAVAILABLE: 'image_model_unavailable',
+  IMAGE_CONTENT_POLICY: 'image_content_policy',
+  IMAGE_PROMPT_INVALID: 'image_prompt_invalid',
+  IMAGE_PARAMETERS_INVALID: 'image_parameters_invalid',
+  IMAGE_PROCESSING: 'image_processing',
+  IMAGE_VERIFICATION: 'image_verification',
+  IMAGE_TIMEOUT: 'image_timeout',
+  IMAGE_RATE_LIMIT: 'image_rate_limit',
   UNKNOWN: 'unknown'
 }
 
@@ -124,6 +134,68 @@ function categorizeError(message, code) {
     return { type: ErrorTypes.STREAMING, severity: ErrorSeverity.MEDIUM }
   }
 
+  // Image generation specific errors
+  if (lowerMessage.includes('image generation failed') ||
+      lowerMessage.includes('image model unavailable') ||
+      lowerMessage.includes('image generation timeout') ||
+      lowerCode.includes('image_generation')) {
+    return { type: ErrorTypes.IMAGE_GENERATION, severity: ErrorSeverity.MEDIUM }
+  }
+
+  if (lowerMessage.includes('image model not available') ||
+      lowerMessage.includes('image model unavailable') ||
+      lowerMessage.includes('nova canvas unavailable') ||
+      lowerCode.includes('image_model_unavailable')) {
+    return { type: ErrorTypes.IMAGE_MODEL_UNAVAILABLE, severity: ErrorSeverity.HIGH }
+  }
+
+  if (lowerMessage.includes('content policy') ||
+      lowerMessage.includes('inappropriate content') ||
+      lowerMessage.includes('unsafe content') ||
+      lowerMessage.includes('content violation') ||
+      lowerCode.includes('content_policy')) {
+    return { type: ErrorTypes.IMAGE_CONTENT_POLICY, severity: ErrorSeverity.HIGH }
+  }
+
+  if (lowerMessage.includes('prompt too long') ||
+      lowerMessage.includes('prompt invalid') ||
+      lowerMessage.includes('empty prompt') ||
+      lowerCode.includes('prompt_invalid')) {
+    return { type: ErrorTypes.IMAGE_PROMPT_INVALID, severity: ErrorSeverity.LOW }
+  }
+
+  if (lowerMessage.includes('invalid parameters') ||
+      lowerMessage.includes('unsupported dimensions') ||
+      lowerMessage.includes('invalid quality') ||
+      lowerCode.includes('parameters_invalid')) {
+    return { type: ErrorTypes.IMAGE_PARAMETERS_INVALID, severity: ErrorSeverity.LOW }
+  }
+
+  if (lowerMessage.includes('image processing') ||
+      lowerMessage.includes('image decode') ||
+      lowerMessage.includes('image format') ||
+      lowerCode.includes('image_processing')) {
+    return { type: ErrorTypes.IMAGE_PROCESSING, severity: ErrorSeverity.MEDIUM }
+  }
+
+  if (lowerMessage.includes('image verification') ||
+      lowerMessage.includes('verification failed') ||
+      lowerCode.includes('image_verification')) {
+    return { type: ErrorTypes.IMAGE_VERIFICATION, severity: ErrorSeverity.LOW }
+  }
+
+  if (lowerMessage.includes('image generation timeout') ||
+      lowerMessage.includes('generation timed out') ||
+      lowerCode.includes('image_timeout')) {
+    return { type: ErrorTypes.IMAGE_TIMEOUT, severity: ErrorSeverity.MEDIUM }
+  }
+
+  if (lowerMessage.includes('image rate limit') ||
+      lowerMessage.includes('too many image requests') ||
+      lowerCode.includes('image_rate_limit')) {
+    return { type: ErrorTypes.IMAGE_RATE_LIMIT, severity: ErrorSeverity.MEDIUM }
+  }
+
   // AWS Service errors
   if (lowerMessage.includes('bedrock') ||
       lowerMessage.includes('throttling') ||
@@ -201,6 +273,33 @@ function generateUserFriendlyMessage(type, originalMessage, errorCode) {
 
     case ErrorTypes.VALIDATION:
       return `Input validation failed: ${originalMessage}`
+
+    case ErrorTypes.IMAGE_GENERATION:
+      return 'Image generation failed. Please check your prompt and parameters and try again.'
+
+    case ErrorTypes.IMAGE_MODEL_UNAVAILABLE:
+      return 'The selected image generation model is currently unavailable. Please try a different model or try again later.'
+
+    case ErrorTypes.IMAGE_CONTENT_POLICY:
+      return 'Your prompt contains content that violates our content policy. Please modify your prompt and try again.'
+
+    case ErrorTypes.IMAGE_PROMPT_INVALID:
+      return `Invalid image prompt: ${originalMessage}`
+
+    case ErrorTypes.IMAGE_PARAMETERS_INVALID:
+      return `Invalid image parameters: ${originalMessage}`
+
+    case ErrorTypes.IMAGE_PROCESSING:
+      return 'Error processing the generated image. The image may be corrupted or in an unsupported format.'
+
+    case ErrorTypes.IMAGE_VERIFICATION:
+      return 'Image verification encountered an issue. The image was generated successfully but verification failed.'
+
+    case ErrorTypes.IMAGE_TIMEOUT:
+      return 'Image generation timed out. This may be due to complex prompts or high server load. Please try again with a simpler prompt.'
+
+    case ErrorTypes.IMAGE_RATE_LIMIT:
+      return 'You have exceeded the image generation rate limit. Please wait a moment before generating more images.'
 
     case ErrorTypes.FILE_SYSTEM:
       if (originalMessage.includes('quota')) {
@@ -287,6 +386,69 @@ function generateSuggestedActions(type, errorCode, context) {
       actions.push('Check that all required fields are filled')
       actions.push('Verify your input meets the specified requirements')
       actions.push('Try using a shorter prompt or smaller dataset')
+      break
+
+    case ErrorTypes.IMAGE_GENERATION:
+      actions.push('Check your internet connection')
+      actions.push('Verify your prompt is appropriate and clear')
+      actions.push('Try simplifying your prompt')
+      actions.push('Wait a moment and try again')
+      break
+
+    case ErrorTypes.IMAGE_MODEL_UNAVAILABLE:
+      actions.push('Try selecting a different image generation model')
+      actions.push('Wait a few minutes and try again')
+      actions.push('Check AWS service status for Bedrock')
+      actions.push('Verify your AWS region supports the selected model')
+      break
+
+    case ErrorTypes.IMAGE_CONTENT_POLICY:
+      actions.push('Remove any inappropriate or explicit content from your prompt')
+      actions.push('Use more general, family-friendly descriptions')
+      actions.push('Avoid references to violence, adult content, or copyrighted material')
+      actions.push('Try rephrasing your prompt with different words')
+      break
+
+    case ErrorTypes.IMAGE_PROMPT_INVALID:
+      actions.push('Ensure your prompt is not empty')
+      actions.push('Check that your prompt is within the character limit')
+      actions.push('Remove any special characters that might cause issues')
+      actions.push('Try using a simpler, more descriptive prompt')
+      break
+
+    case ErrorTypes.IMAGE_PARAMETERS_INVALID:
+      actions.push('Check that image dimensions are supported by the model')
+      actions.push('Verify quality settings are valid for the selected model')
+      actions.push('Ensure number of images is between 1 and 4')
+      actions.push('Reset parameters to default values and try again')
+      break
+
+    case ErrorTypes.IMAGE_PROCESSING:
+      actions.push('Try generating the image again')
+      actions.push('Use different image parameters (size, quality)')
+      actions.push('Check your browser supports modern image formats')
+      actions.push('Clear browser cache and try again')
+      break
+
+    case ErrorTypes.IMAGE_VERIFICATION:
+      actions.push('The image was generated successfully despite verification issues')
+      actions.push('Try refreshing the page and generating again')
+      actions.push('Check your internet connection for verification services')
+      actions.push('Continue using the generated image if it looks correct')
+      break
+
+    case ErrorTypes.IMAGE_TIMEOUT:
+      actions.push('Try using a shorter, simpler prompt')
+      actions.push('Reduce image dimensions to speed up generation')
+      actions.push('Wait a few minutes and try again during off-peak hours')
+      actions.push('Check your internet connection stability')
+      break
+
+    case ErrorTypes.IMAGE_RATE_LIMIT:
+      actions.push('Wait 1-2 minutes before generating more images')
+      actions.push('Reduce the number of images generated per request')
+      actions.push('Consider upgrading your AWS account limits if needed')
+      actions.push('Try again during off-peak hours')
       break
 
     case ErrorTypes.FILE_SYSTEM:

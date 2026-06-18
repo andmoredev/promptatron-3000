@@ -1,14 +1,26 @@
 import React, { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import { bedrockService } from '../services/bedrockService'
+import { imageModelRegistry } from '../services/imageModelRegistry'
 import LoadingSpinner from './LoadingSpinner'
 import Tooltip from './Tooltip'
 
-const ModelSelector = ({ selectedModel, onModelSelect, validationError, externalError, isCollapsed, onToggleCollapse }) => {
+const ModelSelector = ({
+  selectedModel,
+  onModelSelect,
+  validationError,
+  externalError,
+  isCollapsed,
+  onToggleCollapse,
+  generationMode = 'text',
+  onGenerationModeChange
+}) => {
   const [models, setModels] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
   const [credentialStatus, setCredentialStatus] = useState(null)
+  const [filteredModels, setFilteredModels] = useState([])
+  const [modelCapabilities, setModelCapabilities] = useState({})
 
   // Fallback models in case AWS API is not available
   const fallbackModels = [
@@ -23,6 +35,28 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError, external
   useEffect(() => {
     loadModels()
   }, [])
+
+  // Filter models based on generation mode
+  useEffect(() => {
+    if (generationMode === 'image') {
+      const imageModels = models.filter(model => bedrockService.isImageGenerationModel(model.id))
+      setFilteredModels(imageModels)
+
+      // Load model capabilities for image models
+      const capabilities = {}
+      imageModels.forEach(model => {
+        const modelInfo = imageModelRegistry.getModel(model.id)
+        if (modelInfo) {
+          capabilities[model.id] = modelInfo.capabilities
+        }
+      })
+      setModelCapabilities(capabilities)
+    } else {
+      // For text mode, show all models
+      setFilteredModels(models)
+      setModelCapabilities({})
+    }
+  }, [models, generationMode])
 
   const loadModels = async () => {
     setIsLoading(true)
@@ -92,7 +126,9 @@ const ModelSelector = ({ selectedModel, onModelSelect, validationError, external
                 d="M9 5l7 7-7 7"
               />
             </svg>
-            <span id="model-selector-header">Select Model</span>
+            <span id="model-selector-header">
+              Select Model {generationMode === 'image' ? '(Image Generation)' : '(Text Generation)'}
+            </span>
           </button>
           {/* AWS Credential Status Icon */}
           {credentialStatus === 'valid' && !externalError ? (
@@ -152,7 +188,10 @@ Credential validation will occur when loading models."
             })()}>
               {(() => {
                 const m = models.find(m => m.id === selectedModel);
-                return m ? `${m.name}${m.provider ? ` (${m.provider})` : ''}` : selectedModel;
+                const modelName = m ? `${m.name}${m.provider ? ` (${m.provider})` : ''}` : selectedModel;
+                const imageIcon = bedrockService.isImageGenerationModel(selectedModel) ? ' 🎨' : '';
+                const streamingIcon = bedrockService.isStreamingSupported(selectedModel) ? ' ⚡' : '';
+                return `${modelName}${imageIcon}${streamingIcon}`;
               })()}
             </span>
           )}
@@ -178,6 +217,37 @@ Credential validation will occur when loading models."
         aria-hidden={isCollapsed}
       >
         <div className="space-y-4">
+          {/* Generation Mode Toggle */}
+          {onGenerationModeChange && (
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Generation Mode
+              </label>
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => onGenerationModeChange('text')}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
+                    generationMode === 'text'
+                      ? 'bg-primary-600 text-white'
+                      : 'text-gray-600 hover:text-gray-900 border border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  📝 Text Generation
+                </button>
+                <button
+                  onClick={() => onGenerationModeChange('image')}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
+                    generationMode === 'image'
+                      ? 'bg-primary-600 text-white'
+                      : 'text-gray-600 hover:text-gray-900 border border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  🎨 Image Generation
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Loading State */}
           {isLoading && (
             <div className="py-4">
@@ -198,15 +268,68 @@ Credential validation will occur when loading models."
               }`}
               disabled={isLoading}
             >
-              <option value="">Choose a model...</option>
-              {models.map((model) => (
+              <option value="">
+                {generationMode === 'image' ? 'Choose an image generation model...' : 'Choose a model...'}
+              </option>
+              {filteredModels.map((model) => (
                 <option key={model.id} value={model.id}>
                   {model.name} {model.provider && `(${model.provider})`}
+                  {bedrockService.isImageGenerationModel(model.id) ? ' 🎨' : ''}
                   {bedrockService.isStreamingSupported(model.id) ? ' ⚡' : ''}
                 </option>
               ))}
             </select>
           </div>
+
+          {/* Model Capabilities Display for Image Generation */}
+          {generationMode === 'image' && selectedModel && modelCapabilities[selectedModel] && (
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+              <h4 className="text-sm font-medium text-blue-800 mb-2 flex items-center space-x-1">
+                <span>🎨</span>
+                <span>Model Capabilities</span>
+              </h4>
+              <div className="space-y-2 text-xs text-blue-700">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="font-medium">Max Prompt:</span> {modelCapabilities[selectedModel].maxPromptLength} chars
+                  </div>
+                  <div>
+                    <span className="font-medium">Qualities:</span> {modelCapabilities[selectedModel].supportedQualities?.join(', ')}
+                  </div>
+                </div>
+                <div>
+                  <span className="font-medium">Supported Dimensions:</span>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {modelCapabilities[selectedModel].supportedDimensions?.map((dim, index) => (
+                      <span key={index} className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                        {dim.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {modelCapabilities[selectedModel].supportsNegativePrompt && (
+                    <span className="flex items-center space-x-1">
+                      <span>✅</span>
+                      <span>Negative prompts</span>
+                    </span>
+                  )}
+                  {modelCapabilities[selectedModel].supportsBatchGeneration && (
+                    <span className="flex items-center space-x-1">
+                      <span>✅</span>
+                      <span>Batch generation (up to {modelCapabilities[selectedModel].maxBatchSize})</span>
+                    </span>
+                  )}
+                  {modelCapabilities[selectedModel].supportsSeeds && (
+                    <span className="flex items-center space-x-1">
+                      <span>✅</span>
+                      <span>Seed control</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Validation Error */}
           {validationError && (
@@ -214,19 +337,38 @@ Credential validation will occur when loading models."
           )}
 
           {/* Model Count Info */}
-          {!isLoading && models.length > 0 && (
+          {!isLoading && filteredModels.length > 0 && (
             <div className="mt-2 space-y-1">
               <div className="text-xs text-gray-500">
-                {models.length} model{models.length !== 1 ? 's' : ''} available
+                {filteredModels.length} model{filteredModels.length !== 1 ? 's' : ''} available
+                {generationMode === 'image' && (
+                  <span> for image generation</span>
+                )}
               </div>
-              <div className="text-xs text-gray-500 flex items-center space-x-4">
-                <span className="flex items-center space-x-1">
-                  <span>⚡</span>
-                  <span>Streaming supported</span>
-                </span>
-                <span className="text-gray-400">•</span>
-                <span>{models.filter(m => bedrockService.isStreamingSupported(m.id)).length} of {models.length} models support streaming</span>
-              </div>
+              {generationMode === 'text' && (
+                <>
+                  <div className="text-xs text-gray-500 flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <span className="flex items-center space-x-1">
+                      <span>🎨</span>
+                      <span>Image generation</span>
+                    </span>
+                    <span className="flex items-center space-x-1">
+                      <span>⚡</span>
+                      <span>Streaming supported</span>
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500 flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <span>{models.filter(m => bedrockService.isImageGenerationModel(m.id)).length} of {models.length} models support image generation</span>
+                    <span className="text-gray-400">•</span>
+                    <span>{models.filter(m => bedrockService.isStreamingSupported(m.id)).length} of {models.length} models support streaming</span>
+                  </div>
+                </>
+              )}
+              {generationMode === 'image' && filteredModels.length === 0 && (
+                <div className="text-xs text-yellow-600 bg-yellow-50 border border-yellow-200 rounded p-2">
+                  No image generation models available. Please ensure you have access to Amazon Nova Canvas or other supported image models.
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -241,7 +383,9 @@ ModelSelector.propTypes = {
   validationError: PropTypes.string,
   externalError: PropTypes.string,
   isCollapsed: PropTypes.bool,
-  onToggleCollapse: PropTypes.func
+  onToggleCollapse: PropTypes.func,
+  generationMode: PropTypes.oneOf(['text', 'image']),
+  onGenerationModeChange: PropTypes.func
 }
 
 export default ModelSelector
