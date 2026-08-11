@@ -48,3 +48,19 @@ jobs:
       - run: npx tsc --noEmit
 
       - run: npm test
+
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv sync --dev
+
+      - run: uv run ruff check .
+
+      - run: uv run pytest
