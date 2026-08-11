@@ -25,7 +25,6 @@ const ScenarioBuilder = lazy(() => import('./components/ScenarioBuilder'));
 const ToolExecutionMonitor = lazy(() => import('./components/ToolExecutionMonitor'));
 const GuardrailsSection = lazy(() => import('./components/GuardrailsSection'));
 import { bedrockService } from "./services/bedrockService";
-import { datasetToolIntegrationService } from "./services/datasetToolIntegrationService";
 import { scenarioToolIntegrationService } from "./services/scenarioToolIntegrationService";
 import { scenarioService } from "./services/scenarioService";
 import { toolExecutionService } from "./services/toolExecutionService";
@@ -1458,12 +1457,6 @@ function App() {
 
               // Use scenario-based tool configuration
               toolConfigResult = await scenarioToolIntegrationService.getToolConfigurationForScenario(selectedScenario);
-            } else {
-              // Fallback to dataset-based tool configuration
-              toolConfigResult =
-                await datasetToolIntegrationService.getToolConfigurationForDataset(
-                  selectedDataset
-                );
             }
 
             toolConfigurationStatus = toolConfigResult;
