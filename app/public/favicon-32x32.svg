@@ -1,0 +1,36 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- Robot head -->
+  <rect x="2" y="2" width="28" height="28" rx="4" ry="4" fill="#f0f9f0" stroke="#5c8c5a" stroke-width="1"/>
+
+  <!-- Panel lines -->
+  <line x1="5" y1="5" x2="27" y2="5" stroke="#5c8c5a" stroke-width="0.5" opacity="0.3"/>
+  <line x1="5" y1="27" x2="27" y2="27" stroke="#5c8c5a" stroke-width="0.5" opacity="0.3"/>
+
+  <!-- Eyes -->
+  <rect x="8" y="11" width="4" height="2.5" rx="1" fill="#0f172a" stroke="#5c8c5a" stroke-width="0.5"/>
+  <rect x="20" y="11" width="4" height="2.5" rx="1" fill="#0f172a" stroke="#5c8c5a" stroke-width="0.5"/>
+
+  <!-- Eye LEDs -->
+  <circle cx="9" cy="12" r="0.4" fill="#5c8c5a"/>
+  <circle cx="11" cy="12" r="0.4" fill="#5c8c5a"/>
+  <circle cx="21" cy="12" r="0.4" fill="#5c8c5a"/>
+  <circle cx="23" cy="12" r="0.4" fill="#5c8c5a"/>
+
+  <!-- Happy mouth -->
+  <rect x="10" y="20" width="12" height="2.5" rx="1.25" fill="#5c8c5a"/>
+
+  <!-- Mouth segments -->
+  <rect x="11" y="20.5" width="1.5" height="1.5" fill="#ffffff" opacity="0.8"/>
+  <rect x="13" y="20.5" width="1.5" height="1.5" fill="#ffffff" opacity="0.6"/>
+  <rect x="15" y="20.5" width="1.5" height="1.5" fill="#ffffff" opacity="0.8"/>
+  <rect x="17" y="20.5" width="1.5" height="1.5" fill="#ffffff" opacity="0.6"/>
+  <rect x="19" y="20.5" width="1.5" height="1.5" fill="#ffffff" opacity="0.8"/>
+
+  <!-- Status LEDs -->
+  <circle cx="6" cy="6" r="0.8" fill="#5c8c5a"/>
+  <circle cx="26" cy="6" r="0.8" fill="#5c8c5a"/>
+
+  <!-- Antenna -->
+  <rect x="15" y="0" width="2" height="3" fill="#5c8c5a"/>
+  <circle cx="16" cy="0" r="0.8" fill="#5c8c5a"/>
+</svg>

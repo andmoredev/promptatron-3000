@@ -1,0 +1,419 @@
+{
+  "id": "fraud-detection-comprehensive",
+  "name": "Fraud Detection",
+  "description": "Complete fraud detection scenario with multiple transaction datasets, specialized prompts, and comprehensive fraud action tools for enterprise-level fraud prevention and risk management",
+  "datasets": [
+    {
+      "id": "retail-transactions",
+      "name": "Retail Transaction Data",
+      "description": "Sample retail transaction data for basic fraud analysis with standard transaction fields",
+      "file": "datasets/retail-transactions.csv"
+    },
+    {
+      "id": "international-transactions",
+      "name": "International Transaction Data",
+      "description": "Crosssaction data with enhanced fraud indicators, anomaly detection, and risk scoring",
+      "file": "datasets/international.csv"
+    },
+    {
+      "id": "mixed-transactions",
+      "name": "Mixed Transaction Dataset",
+      "description": "Combined transaction data with various transaction types and risk profiles",
+      "file": "datasets/mixed.csv"
+    },
+    {
+      "id": "retail-basic",
+      "name": "Basic Retail Data",
+      "description": "Simplified retail transaction dataset for initial fraud detection training",
+      "file": "datasets/retail.csv"
+    }
+  ],
+  "systemPrompts": [
+    {
+      "id": "fraud-analyst",
+      "name": "Expert Fraud Detection Analyst",
+      "content": "You are an expert fraud detection analyst with 10+ years of experience in financial crime prevention. Analyze transaction data to identify suspicious patterns, unusual behaviors, and potential fraud indicators. Focus on velocity checks, geographic anomalies, merchant risk factors, and behavioral analysis. Use your expertise to recommend appropriate actions based on risk levels and fraud indicators. Always provide detailed reasoning for your assessments and consider the impact on customer experience when recommending actions."
+    },
+    {
+      "id": "risk-manager",
+      "name": "Senior Risk Management Specialist",
+      "content": "You are a senior risk management specialist focused on minimizing financial losses while maintaining optimal customer experience. Evaluate transactions for risk levels and recommend appropriate actions based on established risk thresholds, business policies, and regulatory requirements. Consider the balance between fraud prevention and customer friction. Provide risk scores and detailed justifications for all recommendations."
+    },
+    {
+      "id": "investigation-specialist",
+      "name": "Fraud Investigation Specialist",
+      "content": "You are a fraud investigation specialist with expertise in complex fraud schemes and pattern recognition. Analyze transaction data for sophisticated fraud patterns including account takeover, identity theft, synthetic identity fraud, and organized crime activities. Focus on identifying relationships between transactions, accounts, and potential fraud networks. Provide detailed investigation notes and recommended next steps."
+    },
+    {
+      "id": "compliance-officer",
+      "name": "AML/Compliance Officer",
+      "content": "You are an Anti-Money Laundering (AML) and compliance officer responsible for detecting suspicious activities that may indicate money laundering, terrorist financing, or other financial crimes. Analyze transaction patterns for compliance violations, unusual structuring, and suspicious behavioral indicators. Ensure all recommendations align with regulatory requirements and reporting obligations."
+    }
+  ],
+  "userPrompts": [
+    {
+      "id": "analyze-transactions",
+      "name": "Comprehensive Fraud Pattern Analysis",
+      "content": "Analyze the provided transaction data for potential fraud indicators and suspicious patterns. Look for unusual patterns in amounts, locations, timing, merchant categories, velocity, and behavioral anomalies. Identify any transactions or accounts that warrant further investigation and explain your reasoning. Provide risk scores and recommended actions for each identified issue."
+    },
+    {
+      "id": "risk-assessment",
+      "name": "Enterprise Risk Assessment",
+      "content": "Perform a comprehensive risk assessment of the transaction data. Calculate risk scores for each account and transaction based on multiple fraud indicators. Identify high-risk accounts that may require enhanced monitoring, immediate action, or account restrictions. Provide detailed risk profiles and monitoring recommendations."
+    },
+    {
+      "id": "investigation-analysis",
+      "name": "Fraud Investigation Analysis",
+      "content": "Conduct a detailed fraud investigation analysis of the transaction data. Look for complex fraud schemes, account takeover indicators, identity theft patterns, and potential fraud networks. Identify relationships between suspicious transactions and accounts. Provide investigation priorities and recommended next steps for the fraud investigation team."
+    },
+    {
+      "id": "compliance-review",
+      "name": "AML/Compliance Review",
+      "content": "Review the transaction data for Anti-Money Laundering (AML) compliance and suspicious activity indicators. Identify transactions that may require Suspicious Activity Reports (SARs), Currency Transaction Reports (CTRs), or other regulatory reporting. Analyze for structuring, unusual patterns, and compliance violations. Provide compliance recommendations and reporting requirements."
+    },
+    {
+      "id": "real-time-monitoring",
+      "name": "Real-Time Transaction Monitoring",
+      "content": "Analyze the transaction data as if monitoring transactions in real-time. Identify transactions that should be blocked, flagged for review, or allowed to proceed. Consider customer impact, false positive rates, and business rules. Provide immediate action recommendations with justifications for each decision."
+    }
+  ],
+  "tools": [
+    {
+      "name": "freeze_account",
+      "description": "Immediately freeze an account to prevent further transactions due to suspected fraudulent activity. This action should be taken when there is strong evidence of fraud or when multiple risk indicators are present.",
+      "handler": "tools/freezeAccount.freezeAccount",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^A[0-9]{4}$",
+            "description": "Account ID in format A1234"
+          },
+          "transaction_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^T[0-9]{4}$"
+            },
+            "minItems": 1,
+            "description": "List of suspicious transaction IDs that triggered this action"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 20,
+            "description": "Detailed reason for account freeze including specific fraud indicators"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "description": "Severity level of the suspected fraud"
+          },
+          "freeze_duration": {
+            "type": "string",
+            "enum": [
+              "temporary",
+              "pending_review",
+              "permanent"
+            ],
+            "description": "Duration type for the account freeze"
+          },
+          "notify_customer": {
+            "type": "boolean",
+            "description": "Whether to notify the customer about the account freeze"
+          }
+        },
+        "required": [
+          "account_id",
+          "transaction_ids",
+          "reason",
+          "severity",
+          "freeze_duration"
+        ]
+      }
+    },
+    {
+      "name": "flag_suspicious_transaction",
+      "description": "Flag individual transactions for review without freezing the entire account. Use this for transactions that show potential fraud indicators but don't warrant immediate account suspension.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "pattern": "^T[0-9]{4}$",
+            "description": "Transaction ID in format T1234"
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^A[0-9]{4}$",
+            "description": "Associated account ID in format A1234"
+          },
+          "fraud_indicators": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "unusual_amount",
+                "unusual_location",
+                "unusual_time",
+                "velocity_check_failed",
+                "merchant_risk",
+                "device_fingerprint_mismatch",
+                "behavioral_anomaly",
+                "blacklist_match"
+              ]
+            },
+            "minItems": 1,
+            "description": "Specific fraud indicators detected in this transaction"
+          },
+          "risk_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Calculated risk score for this transaction (0-100)"
+          },
+          "confidence_level": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "description": "Confidence level in the fraud detection"
+          },
+          "recommended_action": {
+            "type": "string",
+            "enum": [
+              "monitor",
+              "review",
+              "block",
+              "verify_with_customer"
+            ],
+            "description": "Recommended action for this transaction"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Additional notes about the suspicious activity"
+          }
+        },
+        "required": [
+          "transaction_id",
+          "account_id",
+          "fraud_indicators",
+          "risk_score",
+          "confidence_level",
+          "recommended_action"
+        ]
+      },
+      "handler": "tools/flagTransaction.flagSuspiciousTransaction"
+    },
+    {
+      "name": "create_fraud_alert",
+      "description": "Create a fraud alert for patterns or behaviors that require immediate attention from the fraud investigation team. Use this for complex fraud schemes or when multiple accounts may be involved.",
+      "handler": "tools/createAlert.createFraudAlert",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "alert_type": {
+            "type": "string",
+            "enum": [
+              "account_takeover",
+              "identity_theft",
+              "card_testing",
+              "money_laundering",
+              "organized_fraud",
+              "synthetic_identity"
+            ],
+            "description": "Type of fraud pattern detected"
+          },
+          "affected_accounts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^A[0-9]{4}$"
+            },
+            "minItems": 1,
+            "description": "List of accounts involved in the fraud pattern"
+          },
+          "related_transactions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^T[0-9]{4}$"
+            },
+            "description": "List of transactions related to this fraud pattern"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "description": "Priority level for investigation"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 50,
+            "description": "Detailed description of the fraud pattern and evidence"
+          },
+          "estimated_loss": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Estimated financial loss in USD"
+          },
+          "investigation_notes": {
+            "type": "string",
+            "description": "Initial investigation notes and recommended next steps"
+          }
+        },
+        "required": [
+          "alert_type",
+          "affected_accounts",
+          "priority",
+          "description"
+        ]
+      }
+    },
+    {
+      "name": "update_risk_profile",
+      "description": "Update the risk profile for an account based on new information or behavioral changes. This helps maintain accurate risk assessments for future transaction monitoring.",
+      "handler": "tools/updateRisk.updateRiskProfile",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^A[0-9]{4}$",
+            "description": "Account ID to update"
+          },
+          "risk_level": {
+            "type": "string",
+            "enum": [
+              "very_low",
+              "low",
+              "medium",
+              "high",
+              "very_high"
+            ],
+            "description": "New risk level for the account"
+          },
+          "risk_factors": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "high_velocity_transactions",
+                "unusual_geographic_activity",
+                "new_device_usage",
+                "behavioral_changes",
+                "merchant_category_changes",
+                "time_pattern_changes",
+                "amount_pattern_changes"
+              ]
+            },
+            "description": "Risk factors that influenced the profile update"
+          },
+          "monitoring_level": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "enhanced",
+              "intensive"
+            ],
+            "description": "Level of monitoring required for this account"
+          },
+          "update_reason": {
+            "type": "string",
+            "minLength": 20,
+            "description": "Reason for updating the risk profile"
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date",
+            "description": "Date until which this risk profile is valid (YYYY-MM-DD)"
+          }
+        },
+        "required": [
+          "account_id",
+          "risk_level",
+          "risk_factors",
+          "monitoring_level",
+          "update_reason"
+        ]
+      }
+    }
+  ],
+  "configuration": {
+    "allowCustomPrompts": true,
+    "allowDatasetModification": false,
+    "defaultStreamingEnabled": true,
+    "maxIterations": 15,
+    "recommendedModels": [
+      "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      "amazon.nova-pro-v1:0",
+      "anthropic.claude-3-5-haiku-20241022-v1:0"
+    ],
+    "toolExecutionMode": "detection_and_execution",
+    "riskThresholds": {
+      "low": 25,
+      "medium": 50,
+      "high": 75,
+      "critical": 90
+    }
+  },
+  "examples": [
+    {
+      "name": "Basic Fraud Detection",
+      "description": "Simple fraud detection analysis with account freezing for retail transactions",
+      "systemPrompt": "fraud-analyst",
+      "userPrompt": "analyze-transactions",
+      "dataset": "retail-transactions",
+      "expectedOutcome": "Identification of suspicious transactions and potential account actions"
+    },
+    {
+      "name": "International Risk Assessment",
+      "description": "Comprehensive risk assessment of international transactions with enhanced monitoring",
+      "systemPrompt": "risk-manager",
+      "userPrompt": "risk-assessment",
+      "dataset": "international-transactions",
+      "expectedOutcome": "Risk scores, monitoring recommendations, and compliance actions"
+    },
+    {
+      "name": "Complex Fraud Investigation",
+      "description": "Advanced fraud investigation analysis for complex fraud patterns",
+      "systemPrompt": "investigation-specialist",
+      "userPrompt": "investigation-analysis",
+      "dataset": "mixed-transactions",
+      "expectedOutcome": "Fraud network identification and investigation priorities"
+    },
+    {
+      "name": "AML Compliance Review",
+      "description": "Anti-Money Laundering compliance review with regulatory reporting",
+      "systemPrompt": "compliance-officer",
+      "userPrompt": "compliance-review",
+      "dataset": "international-transactions",
+      "expectedOutcome": "Compliance violations and reporting requirements"
+    }
+  ],
+  "metadata": {
+    "documentation": "https://docs.example.com/fraud-detection-scenario",
+    "changelog": {
+      "2.1.0": "Added comprehensive scenario structure with multiple datasets and enhanced tools",
+      "2.0.0": "Enhanced account freezing with severity levels and investigation tools",
+      "1.0.0": "Initial fraud detection scenario"
+    },
+    "datasetSources": {
+      "retail-transactions.csv": "Basic retail transaction data with standard fields",
+      "international.csv": "International transactions with anomaly detection and risk scoring",
+      "mixed.csv": "Combined transaction dataset with various risk profiles",
+      "retail.csv": "Simplified retail data for training purposes"
+    }
+  }
+}

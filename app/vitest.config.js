@@ -8,6 +8,6 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./vitest.setup.js'],
     css: true,
-    exclude: ['node_modules/**', 'dist/**', 'api/**', '.kiro/**']
+    exclude: ['node_modules/**', 'dist/**']
   }
 })

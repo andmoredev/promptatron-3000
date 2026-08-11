@@ -1,0 +1,69 @@
+{
+  "orders": {
+    "B456": {
+      "orderId": "B456",
+      "created": "2025-09-28T14:22:00Z",
+      "customerId": "C8821",
+      "destination": {
+        "address": "742 Evergreen Terrace, Springfield, OR 97475",
+        "deliveryInstructions": "Leave on porch if no answer"
+      },
+      "sla": {
+        "tier": "2-day",
+        "promisedDeliveryBy": "2025-09-30T20:00:00Z",
+        "currentStatus": "exception",
+        "hoursUntilDeadline": 8,
+        "penaltyPerDay": 200
+      },
+      "package": {
+        "contents": [
+          {
+            "sku": "MEAT-WAGU-8OZ",
+            "name": "Wagyu Beef Steaks",
+            "quantity": 2,
+            "requiresRefrigeration": true
+          }
+        ],
+        "isPerishable": true,
+        "isHazmat": false,
+        "weight": 3.2,
+        "declared_value": 340
+      },
+      "carrier": {
+        "name": "RegionalExpress",
+        "trackingNumber": "RX8829912847",
+        "currentStatus": "delivery_exception",
+        "lastUpdate": "2025-09-30T11:15:00Z",
+        "exceptionNote": "Box felt warm to touch. Customer not home. Returned to depot.",
+        "attemptsRemaining": 1
+      },
+      "customer": {
+        "customerId": "C8821",
+        "name": "Margaret Thompson",
+        "tier": "VIP",
+        "accountValue": 12400,
+        "joinDate": "2019-03-15",
+        "satisfactionScore": 4.8
+      },
+      "expediteOptions": [
+        {
+          "speed": "overnight",
+          "carrier": "PremiumAir",
+          "cost": 47,
+          "eta": "2025-09-30T18:00:00Z"
+        },
+        {
+          "speed": "same-day",
+          "carrier": "PremiumAir",
+          "cost": 95,
+          "eta": "2025-09-30T15:00:00Z"
+        }
+      ],
+      "operationalNotes": [
+        "Customer called twice today asking about delivery",
+        "Warehouse notes: Dry ice pack included, good for 48hrs from ship time",
+        "Shipped 2025-09-28 16:00 - ice pack expires 2025-09-30 16:00"
+      ]
+    }
+  }
+}

@@ -9,8 +9,6 @@ export default [
     ignores: [
       'dist/**',
       'node_modules/**',
-      'api/**',
-      '.kiro/**',
       'coverage/**',
       // Pre-existing hard syntax error (`typeof export`) that the parser cannot
       // recover from, so even an inline eslint-disable can't suppress it.
