@@ -48,3 +48,4 @@ server/data/
 data/
 history.json
 templates.json
+dist/
