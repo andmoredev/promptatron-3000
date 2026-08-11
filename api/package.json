@@ -1,11 +1,26 @@
 {
+  "name": "promptatron-3000-api",
+  "version": "1.0.0",
+  "private": true,
   "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.600.0",
-    "@aws-sdk/lib-dynamodb": "^3.600.0",
-    "crypto": "^1.0.1"
+    "@aws-lambda-powertools/event-handler": "^2.34.0",
+    "@aws-lambda-powertools/logger": "^2.34.0",
+    "@aws-lambda-powertools/metrics": "^2.34.0",
+    "@aws-lambda-powertools/tracer": "^2.34.0",
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0"
   },
   "devDependencies": {
-    "@aws-sdk/util-dynamodb": "^3.914.0"
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.10.0",
+    "aws-sdk-client-mock": "^4.1.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   }
 }

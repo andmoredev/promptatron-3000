@@ -1,11 +1,14 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Serverless CRUD API for scenarios using API Gateway, Lambda, and DynamoDB
+Description: >
+  Serverless config store for Promptatron 3000 (scenarios, prompts, tools, datasets) --
+  API Gateway REST API + Lambda (Node.js 22, TypeScript via esbuild, Powertools for AWS Lambda) + single-table DynamoDB.
 
 Parameters:
   CORSOrigin:
     Type: String
     Default: '*'
+    Description: Value used for Access-Control-Allow-Origin. Set to a specific origin in production.
 
 Metadata:
   esbuild-properties: &esbuild-properties
@@ -13,10 +16,10 @@ Metadata:
     Minify: true
     OutExtension:
       - .js=.mjs
-    Target: es2020
+    Target: es2022
     Sourcemap: false
     EntryPoints:
-      - index.mjs
+      - index.ts
     Banner:
       - js=import { createRequire } from 'module'; const require = createRequire(import.meta.url);
     External:
@@ -37,18 +40,26 @@ Globals:
         AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
         ORIGIN: !Ref CORSOrigin
         TABLE_NAME: !Ref ScenariosTable
-  Api:
-    Cors:
-      AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-      AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
-      AllowOrigin: !Sub "'${CORSOrigin}'"
+        POWERTOOLS_LOG_LEVEL: INFO
+        POWERTOOLS_LOGGER_LOG_EVENT: 'false'
+  # Note: no `Globals.Api.Cors` here -- when `DefinitionBody` comes from an
+  # external file via `Fn::Transform`/`AWS::Include` (as it does below), SAM
+  # cannot introspect/merge a Cors config into it and `sam validate` fails
+  # with "Unable to add Cors configuration because 'DefinitionBody' does not
+  # contain a valid Swagger definition." CORS is instead handled explicitly
+  # in openapi.yaml: the `cors()` middleware in every Router (see
+  # functions/*/index.ts) sets Access-Control-Allow-* headers on real
+  # responses and answers OPTIONS preflight requests directly, and each path
+  # below has an explicit `options:` operation wired to the same Lambda so
+  # API Gateway forwards preflight requests instead of rejecting them.
 
 Resources:
   Api:
     Type: AWS::Serverless::Api
     Properties:
       StageName: api
-      EndpointConfiguration: REGIONAL
+      EndpointConfiguration:
+        Type: REGIONAL
       DefinitionBody:
         Fn::Transform:
           Name: AWS::Include
@@ -83,16 +94,27 @@ Resources:
           Projection:
             ProjectionType: ALL
 
-  ListScenariosFunction:
+  # ---------------------------------------------------------------------------
+  # Functions
+  #
+  # One Lambda per resource (scenarios / prompts / datasets / tools), each
+  # internally routed with the Powertools for AWS Lambda Event Handler HTTP
+  # Router. Every route the function serves is also declared as an explicit
+  # `Events` entry -- routing itself comes entirely from openapi.yaml (the
+  # Api resource's DefinitionBody), the Events entries exist so SAM emits the
+  # matching AWS::Lambda::Permission grants for API Gateway to invoke it.
+  # ---------------------------------------------------------------------------
+
+  ScenariosFunction:
     Type: AWS::Serverless::Function
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
         <<: *esbuild-properties
         EntryPoints:
-          - scenarios/list-scenarios.mjs
+          - scenarios/index.ts
     Properties:
-      Handler: scenarios/list-scenarios.handler
+      Handler: scenarios/index.handler
       Policies:
         - AWSLambdaBasicExecutionRole
         - Version: 2012-10-17
@@ -101,239 +123,274 @@ Resources:
               Action:
                 - dynamodb:Query
               Resource: !Sub "${ScenariosTable.Arn}/index/GSI1"
-    Events:
-      List:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios
-          Method: GET
-
-  CreateScenarioFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - scenarios/create-scenario.mjs
-    Properties:
-      Handler: scenarios/create-scenario.handler
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Version: 2012-10-17
-          Statement:
             - Effect: Allow
               Action:
-                - dynamodb:PutItem
-              Resource: !GetAtt ScenariosTable.Arn
-    Events:
-      Create:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios
-          Method: POST
-
-  GetScenarioFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - scenarios/get-scenario.mjs
-    Properties:
-      Handler: scenarios/get-scenario.handler
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
+                - dynamodb:Query
                 - dynamodb:GetItem
-              Resource: !GetAtt ScenariosTable.Arn
-            - Effect: Allow
-              Action:
-                - dynamodb:Query
-              Resource: !Sub "${ScenariosTable.Arn}/index/GSI1"
-    Events:
-      Get:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}
-          Method: GET
-
-  UpdateScenarioFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - scenarios/update-scenario.mjs
-    Properties:
-      Handler: scenarios/update-scenario.handler
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
+                - dynamodb:PutItem
                 - dynamodb:UpdateItem
-              Resource: !GetAtt ScenariosTable.Arn
-    Events:
-      Update:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}
-          Method: PUT
-
-  DeleteScenarioFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - scenarios/delete-scenario.mjs
-    Properties:
-      Handler: scenarios/delete-scenario.handler
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
                 - dynamodb:DeleteItem
               Resource: !GetAtt ScenariosTable.Arn
-            - Effect: Allow
-              Action:
-                - dynamodb:Query
-              Resource: !Sub "${ScenariosTable.Arn}/index/GSI1"
-    Events:
-      Delete:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}
-          Method: DELETE
+      Events:
+        ListScenarios:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios
+            Method: GET
+        ListScenariosOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios
+            Method: OPTIONS
+        CreateScenario:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios
+            Method: POST
+        GetScenario:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}
+            Method: GET
+        GetScenarioOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}
+            Method: OPTIONS
+        UpdateScenario:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}
+            Method: PUT
+        DeleteScenario:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}
+            Method: DELETE
 
-  ListPromptsFunction:
+  PromptsFunction:
     Type: AWS::Serverless::Function
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
         <<: *esbuild-properties
         EntryPoints:
-          - prompts/list-prompts.mjs
+          - prompts/index.ts
     Properties:
-      Handler: prompts/list-prompts.handler
+      Handler: prompts/index.handler
       Policies:
         - AWSLambdaBasicExecutionRole
         - Version: 2012-10-17
           Statement:
-            - Effect: Allow
-              Action:
-                - dynamodb:GetItem
-              Resource: !GetAtt ScenariosTable.Arn
             - Effect: Allow
               Action:
                 - dynamodb:Query
-              Resource: !Sub "${ScenariosTable.Arn}/index/GSI1"
-    Events:
-      List:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}/prompts
-          Method: GET
-
-  CreatePromptFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - prompts/create-prompt.mjs
-    Properties:
-      Handler: prompts/create-prompt.handler
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
                 - dynamodb:GetItem
-              Resource: !GetAtt ScenariosTable.Arn
-            - Effect: Allow
-              Action:
                 - dynamodb:PutItem
-              Resource: !GetAtt ScenariosTable.Arn
-    Events:
-      Create:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}/prompts
-          Method: POST
-
-  DeletePromptFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - prompts/delete-prompt.mjs
-    Properties:
-      Handler: prompts/delete-prompt.handler
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
+                - dynamodb:UpdateItem
                 - dynamodb:DeleteItem
               Resource: !GetAtt ScenariosTable.Arn
-    Events:
-      Delete:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}/prompts/{promptId}
-          Method: DELETE
+      Events:
+        ListPrompts:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/prompts
+            Method: GET
+        ListPromptsOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/prompts
+            Method: OPTIONS
+        CreatePrompt:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/prompts
+            Method: POST
+        UpdatePrompt:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/prompts/{promptId}
+            Method: PUT
+        UpdatePromptOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/prompts/{promptId}
+            Method: OPTIONS
+        DeletePrompt:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/prompts/{promptId}
+            Method: DELETE
 
-  UpdatePromptFunction:
+  DatasetsFunction:
     Type: AWS::Serverless::Function
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
         <<: *esbuild-properties
         EntryPoints:
-          - prompts/update-prompt.mjs
+          - datasets/index.ts
     Properties:
-      Handler: prompts/update-prompt.handler
+      Handler: datasets/index.handler
       Policies:
         - AWSLambdaBasicExecutionRole
         - Version: 2012-10-17
           Statement:
             - Effect: Allow
               Action:
+                - dynamodb:Query
+                - dynamodb:GetItem
+                - dynamodb:PutItem
                 - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
               Resource: !GetAtt ScenariosTable.Arn
-    Events:
-      Update:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}/prompts/{promptId}
-          Method: PUT
+      Events:
+        ListDatasets:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets
+            Method: GET
+        ListDatasetsOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets
+            Method: OPTIONS
+        CreateDataset:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets
+            Method: POST
+        GetDataset:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets/{datasetId}
+            Method: GET
+        GetDatasetOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets/{datasetId}
+            Method: OPTIONS
+        UpdateDataset:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets/{datasetId}
+            Method: PUT
+        DeleteDataset:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets/{datasetId}
+            Method: DELETE
+
+  ToolsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        <<: *esbuild-properties
+        EntryPoints:
+          - tools/index.ts
+    Properties:
+      Handler: tools/index.handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Query
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+              Resource: !GetAtt ScenariosTable.Arn
+      Events:
+        ListTools:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/tools
+            Method: GET
+        ListToolsOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/tools
+            Method: OPTIONS
+        GetTool:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/tools/{toolName}
+            Method: GET
+        GetToolOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/tools/{toolName}
+            Method: OPTIONS
+        PutTool:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/tools/{toolName}
+            Method: PUT
+
+  # ---------------------------------------------------------------------------
+  # API key / usage plan
+  # ---------------------------------------------------------------------------
+
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub ${AWS::StackName}-key
+      Description: API key required by all Promptatron 3000 config-store endpoints (see openapi.yaml `security`).
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref Api
+          StageName: !Ref Api.Stage
+
+  ApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: !Sub ${AWS::StackName}-usage-plan
+      ApiStages:
+        - ApiId: !Ref Api
+          Stage: !Ref Api.Stage
+      Throttle:
+        RateLimit: 50
+        BurstLimit: 100
+
+  ApiUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ApiUsagePlan
 
 Outputs:
   ApiUrl:
     Description: API endpoint URL
     Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/api
+  ApiKeyId:
+    Description: >
+      AWS::ApiGateway::ApiKey resource id. Fetch the key value with:
+      aws apigateway get-api-key --api-key <id> --include-value
+    Value: !Ref ApiKey
