@@ -1,0 +1,11 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "promptatron-config"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM"
+# Change this to the AWS region you actually want to deploy into.
+region = "us-east-1"
+# Non-interactive so `make deploy-api` / `sam deploy` can run unattended.
+confirm_changeset = false
+fail_on_empty_changeset = false

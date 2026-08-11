@@ -389,8 +389,14 @@ Outputs:
   ApiUrl:
     Description: API endpoint URL
     Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/api
+  ApiEndpoint:
+    Description: API endpoint URL (alias of ApiUrl; matches the name scripting/tooling looks up by convention)
+    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/api
   ApiKeyId:
     Description: >
       AWS::ApiGateway::ApiKey resource id. Fetch the key value with:
       aws apigateway get-api-key --api-key <id> --include-value
     Value: !Ref ApiKey
+  TableName:
+    Description: DynamoDB table name (pass to the seeder as --table or $TABLE_NAME)
+    Value: !Ref ScenariosTable

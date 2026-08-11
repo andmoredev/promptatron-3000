@@ -6,7 +6,9 @@
   "scripts": {
     "build": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "seed": "node seed/seed.mjs",
+    "seed:dry": "node seed/seed.mjs --dry-run"
   },
   "dependencies": {
     "@aws-lambda-powertools/event-handler": "^2.34.0",
