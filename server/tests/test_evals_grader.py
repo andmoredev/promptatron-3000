@@ -8,6 +8,7 @@ without touching AWS.
 
 import pytest
 
+from promptatron.config import Settings
 from promptatron.engine.fake_model import Error, Text
 from promptatron.evals import grader, metrics, rubrics
 from promptatron.evals.judge import (
@@ -17,7 +18,6 @@ from promptatron.evals.judge import (
 )
 from promptatron.evals.outcomes import RunOutcome
 from promptatron.evals.schemas import GraderConfig
-from promptatron.config import Settings
 
 
 def outcome(index: int, output: str, transcript: list | None = None) -> RunOutcome:

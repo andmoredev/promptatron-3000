@@ -351,8 +351,12 @@ async def test_a_mid_run_subscriber_sees_the_whole_event_sequence(client):
     assert kinds.count("grading_started") == 1
     assert kinds.count("grading_completed") == 1
 
-    start = events[0]
-    assert start == {"type": "eval_start", "evaluation_id": evaluation_id, "kind": "determinism", "n": 4}
+    assert events[0] == {
+        "type": "eval_start",
+        "evaluation_id": evaluation_id,
+        "kind": "determinism",
+        "n": 4,
+    }
 
     completed = [event for event in events if event["type"] == "run_completed"]
     assert sorted(event["index"] for event in completed) == [0, 1, 2, 3]
