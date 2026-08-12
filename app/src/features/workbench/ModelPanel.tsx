@@ -103,15 +103,23 @@ export default function ModelPanel() {
         </p>
       )}
 
-      {error && (
+      {(error || (!loading && models.length === 0)) && (
         <div className="mt-2">
-          <p className="text-xs text-red-600" role="alert">
-            Could not load models: {error.message}
-          </p>
-          {/* Dev-mode affordance: without AWS creds the catalog never loads
-              (e.g. PROMPTATRON_FAKE_MODEL runs), so let a model id be typed
-              directly rather than blocking on the dropdown. A provider select
-              sits next to it since a manually-typed id carries no `source`. */}
+          {error ? (
+            <p className="text-xs text-red-600" role="alert">
+              Could not load models: {error.message}
+            </p>
+          ) : (
+            <p className="text-xs text-gray-600">
+              No models available from any configured provider.
+            </p>
+          )}
+          {/* Fallback affordance: the catalog degrades to empty rather than
+              erroring when a provider listing fails (expired AWS session,
+              PROMPTATRON_FAKE_MODEL runs, no providers configured), so let a
+              model id be typed directly rather than blocking on the dropdown.
+              A provider select sits next to it since a manually-typed id
+              carries no `source`. */}
           <div className="mt-2 flex gap-2 items-end">
             <div className="flex-1">
               <label htmlFor="model-id-manual" className="block text-xs font-medium text-gray-700 mb-1">
@@ -147,9 +155,6 @@ export default function ModelPanel() {
         </div>
       )}
 
-      {!loading && !error && models.length === 0 && (
-        <p className="mt-2 text-xs text-gray-500">No models available.</p>
-      )}
     </section>
   )
 }
