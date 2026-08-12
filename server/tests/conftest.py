@@ -33,6 +33,30 @@ def isolated_providers(monkeypatch):
     models_catalog.catalog.clear()
 
 
+@pytest.fixture(autouse=True)
+def isolated_tool_state():
+    """Reset the ported tools' module-level "in-memory database" dicts.
+
+    ``fraud_detection._ACCOUNT_RISK`` and ``shipping_logistics._ACTIONS`` are
+    intentional process-lifetime state (they mirror what the legacy JS tools
+    kept in memory), so a plain single ``pytest`` process never notices: every
+    test's account/idempotency-key literal is exercised at most once per run.
+    That assumption breaks under anything that re-executes the suite within
+    one interpreter without restarting it -- e.g. mutmut's in-process test
+    runner, which runs a "gather stats" pass and then a "clean run" pass back
+    to back -- surfacing as a test seeing another run's leftover state under
+    the same literal id. Clearing both before every test removes the
+    dependency on process lifetime entirely.
+    """
+    from promptatron.tools import fraud_detection, shipping_logistics
+
+    fraud_detection._ACCOUNT_RISK.clear()
+    shipping_logistics._ACTIONS.clear()
+    yield
+    fraud_detection._ACCOUNT_RISK.clear()
+    shipping_logistics._ACTIONS.clear()
+
+
 @pytest.fixture
 def app() -> FastAPI:
     """A fresh FastAPI app instance for each test, with a test-only error route."""

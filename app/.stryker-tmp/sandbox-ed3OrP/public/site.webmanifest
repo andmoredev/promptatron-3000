@@ -1,0 +1,31 @@
+{
+  "name": "Promptatron 3000",
+  "short_name": "Promptatron",
+  "description": "Bedrock LLM Analyzer - Test and compare AI models",
+  "icons": [
+    {
+      "src": "/favicon-16x16.svg",
+      "sizes": "16x16",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/favicon-32x32.svg",
+      "sizes": "32x32",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/robot-favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/apple-touch-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml"
+    }
+  ],
+  "theme_color": "#5c8c5a",
+  "background_color": "#f0f9f0",
+  "display": "standalone",
+  "start_url": "/"
+}

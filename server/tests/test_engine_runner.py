@@ -559,6 +559,64 @@ async def test_a_custom_session_factory_is_used_for_persistence(initialized_db, 
     assert stored_run(events[0].run_id).status == "completed"
 
 
+# --------------------------------------------------------------------------- #
+# Tool-result content-block unwrapping (promptatron.engine.runner._tool_output
+# / _tool_error / _stringify): the mapping from a Strands ToolResult's content
+# blocks onto the flat value the transcript actually stores.
+# --------------------------------------------------------------------------- #
+
+
+def test_tool_output_prefers_a_json_content_block():
+    assert runner._tool_output({"content": [{"json": {"a": 1}}]}) == {"a": 1}
+
+
+def test_tool_output_decodes_a_json_looking_text_block():
+    assert runner._tool_output({"content": [{"text": '{"b": 2}'}]}) == {"b": 2}
+
+
+def test_tool_output_keeps_non_json_text_verbatim():
+    assert runner._tool_output({"content": [{"text": "plain text, not json"}]}) == (
+        "plain text, not json"
+    )
+
+
+def test_tool_output_falls_back_to_the_raw_block_for_unknown_shapes():
+    block = {"unknownField": "whatever"}
+    assert runner._tool_output({"content": [block]}) == block
+
+
+def test_tool_output_of_no_content_blocks_is_none():
+    assert runner._tool_output({"content": []}) is None
+    assert runner._tool_output({}) is None
+
+
+def test_tool_output_of_multiple_blocks_is_a_list():
+    result = runner._tool_output({"content": [{"json": 1}, {"json": 2}]})
+    assert result == [1, 2]
+
+
+def test_tool_error_prefers_the_raised_exception():
+    exc = ValueError("bad input")
+    error = runner._tool_error({"status": "success"}, exc)
+    assert error == {"type": "ValueError", "message": "bad input"}
+
+
+def test_tool_error_reads_an_error_status_result_when_no_exception():
+    result = {"status": "error", "content": [{"text": "not found"}]}
+    error = runner._tool_error(result, None)
+    assert error == {"type": "tool_error", "message": "not found"}
+
+
+def test_tool_error_is_none_on_a_successful_result():
+    assert runner._tool_error({"status": "success", "content": []}, None) is None
+
+
+def test_stringify_passes_strings_through_and_json_encodes_everything_else():
+    assert runner._stringify("already a string") == "already a string"
+    assert runner._stringify({"a": 1}) == '{"a": 1}'
+    assert runner._stringify([1, 2, 3]) == "[1, 2, 3]"
+
+
 def test_build_model_builds_a_bedrock_model_without_calling_aws(monkeypatch):
     captured = {}
 

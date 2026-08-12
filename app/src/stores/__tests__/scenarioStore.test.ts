@@ -25,7 +25,7 @@ vi.mock('../../api', async (importOriginal) => {
   }
 })
 
-const { ApiError } = await import('../../api')
+const { ApiError, StreamAbortedError } = await import('../../api')
 const {
   useScenarioStore,
   findModel,
@@ -139,6 +139,16 @@ describe('loadScenarios', () => {
     expect(useScenarioStore.getState().scenariosError).toBeNull()
     expect(useScenarioStore.getState().scenarios).toHaveLength(1)
   })
+
+  it('tolerates an abort, clearing loading without recording an error', async () => {
+    scenariosListMock.mockRejectedValueOnce(new StreamAbortedError())
+
+    await useScenarioStore.getState().loadScenarios()
+
+    expect(useScenarioStore.getState().scenariosLoading).toBe(false)
+    expect(useScenarioStore.getState().scenariosError).toBeNull()
+    expect(useScenarioStore.getState().scenariosLoaded).toBe(false)
+  })
 })
 
 describe('loadModels', () => {
@@ -172,6 +182,25 @@ describe('loadModels', () => {
     await useScenarioStore.getState().loadModels()
 
     expect(useScenarioStore.getState().modelProviders).toBeNull()
+  })
+
+  it('tolerates an abort, clearing loading without recording an error', async () => {
+    modelsListMock.mockRejectedValueOnce(new StreamAbortedError())
+
+    await useScenarioStore.getState().loadModels()
+
+    expect(useScenarioStore.getState().modelsLoading).toBe(false)
+    expect(useScenarioStore.getState().modelsError).toBeNull()
+    expect(useScenarioStore.getState().modelsLoaded).toBe(false)
+  })
+
+  it('records a real loadModels failure as modelsError', async () => {
+    modelsListMock.mockRejectedValueOnce(new ApiError('down', { code: 'http_error' }))
+
+    await useScenarioStore.getState().loadModels()
+
+    expect(useScenarioStore.getState().modelsError).toEqual({ code: 'http_error', message: 'down' })
+    expect(useScenarioStore.getState().modelsLoading).toBe(false)
   })
 })
 

@@ -283,6 +283,48 @@ describe('HistoryPage: compare', () => {
     fireEvent.click(screen.getByTestId('compare-close-btn'))
     expect(screen.queryByTestId('compare-view')).not.toBeInTheDocument()
   })
+
+  it('unchecking a selected row drops it from the compare set instead of toggling the other one', () => {
+    render(<HistoryPage />)
+    const checkboxes = screen.getAllByTestId('history-compare-checkbox')
+
+    fireEvent.click(checkboxes[0])
+    fireEvent.click(checkboxes[0]) // uncheck it again
+    expect(checkboxes[0]).not.toBeChecked()
+
+    // Still only one selected overall, so compare stays closed.
+    fireEvent.click(checkboxes[1])
+    expect(screen.queryByTestId('compare-view')).not.toBeInTheDocument()
+  })
+
+  it('a third selection bumps the oldest one out, keeping the compare set at two', () => {
+    useHistoryStore.setState({
+      items: [summary('r1'), summary('r2'), summary('r3')],
+      details: { r1: detail('r1'), r2: detail('r2'), r3: detail('r3') }
+    })
+    render(<HistoryPage />)
+    const checkboxes = screen.getAllByTestId('history-compare-checkbox')
+
+    fireEvent.click(checkboxes[0])
+    fireEvent.click(checkboxes[1])
+    fireEvent.click(checkboxes[2])
+
+    // r1 (index 0) was bumped; r2 and r3 remain selected.
+    expect(checkboxes[0]).not.toBeChecked()
+    expect(checkboxes[1]).toBeChecked()
+    expect(checkboxes[2]).toBeChecked()
+    const compareView = screen.getByTestId('compare-view')
+    const runDetails = within(compareView).getAllByTestId('run-detail-view')
+    expect(runDetails.map((el) => el.getAttribute('data-run-id'))).toEqual(['r2', 'r3'])
+  })
+})
+
+describe('HistoryPage: list load error', () => {
+  it('renders the store error message inline', () => {
+    useHistoryStore.setState({ error: { code: 'internal_error', message: 'database is locked' } })
+    render(<HistoryPage />)
+    expect(screen.getByRole('alert')).toHaveTextContent('database is locked')
+  })
 })
 
 describe('HistoryPage: NDJSON export', () => {
@@ -379,5 +421,42 @@ describe('HistoryPage: Cloud runs filter', () => {
     fireEvent.click(screen.getByTestId('history-cloud-filter'))
 
     expect(await screen.findByText('cloud unreachable')).toBeInTheDocument()
+  })
+
+  it('shows Load more with a cursor, appends the next page on click, and surfaces a load-more failure', async () => {
+    runsListMock.mockResolvedValueOnce({
+      items: [summary('cr1')],
+      next_cursor: 'cursor-1'
+    })
+
+    render(<HistoryPage />)
+    fireEvent.click(screen.getByTestId('history-cloud-filter'))
+
+    const loadMore = await screen.findByTestId('cloud-runs-load-more-btn')
+    expect(loadMore).toHaveTextContent('Load more')
+
+    runsListMock.mockResolvedValueOnce({ items: [summary('cr2')], next_cursor: null })
+    fireEvent.click(loadMore)
+
+    await waitFor(() => expect(runsListMock).toHaveBeenLastCalledWith({
+      execution: 'cloud',
+      cursor: 'cursor-1'
+    }))
+    expect(await screen.findAllByTestId('cloud-run-row')).toHaveLength(2)
+    // Cursor exhausted: the button disappears.
+    expect(screen.queryByTestId('cloud-runs-load-more-btn')).not.toBeInTheDocument()
+  })
+
+  it('surfaces a load-more failure without losing the already-loaded rows', async () => {
+    runsListMock.mockResolvedValueOnce({ items: [summary('cr1')], next_cursor: 'cursor-1' })
+    render(<HistoryPage />)
+    fireEvent.click(screen.getByTestId('history-cloud-filter'))
+    const loadMore = await screen.findByTestId('cloud-runs-load-more-btn')
+
+    runsListMock.mockRejectedValueOnce(new Error('page 2 unreachable'))
+    fireEvent.click(loadMore)
+
+    expect(await screen.findByText('page 2 unreachable')).toBeInTheDocument()
+    expect(screen.getAllByTestId('cloud-run-row')).toHaveLength(1)
   })
 })

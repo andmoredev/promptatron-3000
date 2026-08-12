@@ -239,3 +239,126 @@ def test_list_evaluations_filters_by_status(session):
     _make_evaluation(session, status="pending")
     items, _ = history.list_evaluations(session, status="completed")
     assert [e.status for e in items] == ["completed"]
+
+
+def test_list_evaluations_paginates_by_cursor(session):
+    created_ids = {_make_evaluation(session, run_ids=[f"r{i}"]).id for i in range(5)}
+
+    first, cursor = history.list_evaluations(session, limit=3)
+    assert len(first) == 3
+    assert cursor is not None
+
+    second, next_cursor = history.list_evaluations(session, cursor=cursor, limit=3)
+    assert len(second) == 2
+    assert next_cursor is None
+    assert {e.id for e in first} | {e.id for e in second} == created_ids
+
+
+# --------------------------------------------------------------------------- #
+# Cursor decoding
+# --------------------------------------------------------------------------- #
+
+
+def test_an_invalid_run_cursor_is_a_bad_request(session):
+    from promptatron.errors import BadRequestError
+
+    with pytest.raises(BadRequestError):
+        history.list_runs(session, cursor="!!!not-base64!!!")
+
+
+def test_an_invalid_evaluation_cursor_is_a_bad_request(session):
+    from promptatron.errors import BadRequestError
+
+    with pytest.raises(BadRequestError):
+        history.list_evaluations(session, cursor="!!!not-base64!!!")
+
+
+# --------------------------------------------------------------------------- #
+# Explicit id/ts overrides (create_run / create_evaluation)
+# --------------------------------------------------------------------------- #
+
+
+def test_create_run_accepts_an_explicit_id_and_ts(session):
+    explicit_ts = datetime(2020, 1, 1, tzinfo=UTC)
+    created = _make_run(session, id="run-explicit-id", ts=explicit_ts)
+    assert created.id == "run-explicit-id"
+    assert created.ts.replace(tzinfo=UTC) == explicit_ts
+    assert history.get_run(session, "run-explicit-id").id == "run-explicit-id"
+
+
+def test_create_evaluation_accepts_an_explicit_id_and_ts(session):
+    explicit_ts = datetime(2020, 1, 1, tzinfo=UTC)
+    created = _make_evaluation(session, id="eval-explicit-id", ts=explicit_ts)
+    assert created.id == "eval-explicit-id"
+    assert created.ts.replace(tzinfo=UTC) == explicit_ts
+    assert history.get_evaluation(session, "eval-explicit-id").id == "eval-explicit-id"
+
+
+# --------------------------------------------------------------------------- #
+# update_run / update_evaluation: every remaining partial-update field
+# --------------------------------------------------------------------------- #
+
+
+def test_update_run_can_change_model_id_and_prompts(session):
+    created = _make_run(session)
+    updated = history.update_run(
+        session,
+        created.id,
+        model_id="new-model",
+        system_prompt="new system",
+        user_prompt="new user prompt",
+    )
+    assert updated.model_id == "new-model"
+    assert updated.system_prompt == "new system"
+    assert updated.user_prompt == "new user prompt"
+
+
+def test_update_run_can_change_dataset_fields_and_config(session):
+    created = _make_run(session)
+    updated = history.update_run(
+        session,
+        created.id,
+        dataset_id="ds-1",
+        dataset_hash="abc123",
+        config={"temperature": 0.9},
+    )
+    assert updated.dataset_id == "ds-1"
+    assert updated.dataset_hash == "abc123"
+    assert updated.config == {"temperature": 0.9}
+
+
+def test_update_evaluation_can_change_kind_and_config(session):
+    created = _make_evaluation(session)
+    updated = history.update_evaluation(
+        session, created.id, kind="grade", config={"n": 9}
+    )
+    assert updated.kind == "grade"
+    assert updated.config == {"n": 9}
+
+
+# --------------------------------------------------------------------------- #
+# iter_runs_export: the filters list_runs shares
+# --------------------------------------------------------------------------- #
+
+
+def test_iter_runs_export_filters_by_scenario_id(session):
+    _make_run(session, scenario_id="scenario-a")
+    _make_run(session, scenario_id="scenario-b")
+    exported = list(history.iter_runs_export(session, scenario_id="scenario-a"))
+    assert [r.scenario_id for r in exported] == ["scenario-a"]
+
+
+def test_iter_runs_export_filters_by_status(session):
+    _make_run(session, status="completed")
+    _make_run(session, status="error")
+    exported = list(history.iter_runs_export(session, status="error"))
+    assert [r.status for r in exported] == ["error"]
+
+
+def test_iter_runs_export_filters_by_since(session):
+    old = _make_run(session, ts=datetime.now(UTC) - timedelta(days=1))
+    recent = _make_run(session)
+    since = datetime.now(UTC) - timedelta(hours=1)
+    exported = {r.id for r in history.iter_runs_export(session, since=since)}
+    assert recent.id in exported
+    assert old.id not in exported

@@ -142,6 +142,79 @@ describe('GuardrailEditor PII rows', () => {
   })
 })
 
+describe('GuardrailEditor denied topics', () => {
+  it('adds a denied topic row, fills it out, and builds the cleaned config (examples split on comma/newline, capped at 5)', () => {
+    render(<GuardrailEditor guardrailId={null} onClose={vi.fn()} />)
+
+    fillName('topic-guardrail')
+    fireEvent.click(screen.getByRole('button', { name: 'Add denied topic' }))
+
+    const row = within(screen.getByTestId('denied-topic-row-0'))
+    fireEvent.change(row.getByLabelText('Denied topic 1 name'), {
+      target: { value: 'Legal advice' }
+    })
+    fireEvent.change(row.getByLabelText('Denied topic 1 definition'), {
+      target: { value: 'Requests for legal advice.' }
+    })
+    fireEvent.change(row.getByLabelText('Denied topic 1 examples'), {
+      target: { value: 'a, b\nc,d,e,f' }
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(createGuardrail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deniedTopics: [
+          {
+            name: 'Legal advice',
+            definition: 'Requests for legal advice.',
+            examples: ['a', 'b', 'c', 'd', 'e']
+          }
+        ]
+      })
+    )
+  })
+
+  it('drops a denied topic row that is missing a name or definition, and removing a row via "Remove" discards it', () => {
+    render(<GuardrailEditor guardrailId={null} onClose={vi.fn()} />)
+
+    fillName('topic-guardrail')
+    fireEvent.click(screen.getByRole('button', { name: 'Add denied topic' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add denied topic' }))
+    expect(screen.getByTestId('denied-topic-row-0')).toBeInTheDocument()
+    expect(screen.getByTestId('denied-topic-row-1')).toBeInTheDocument()
+
+    // Row 0 is filled in fully; row 1 is left blank (name/definition empty).
+    const row0 = within(screen.getByTestId('denied-topic-row-0'))
+    fireEvent.change(row0.getByLabelText('Denied topic 1 name'), { target: { value: 'Topic' } })
+    fireEvent.change(row0.getByLabelText('Denied topic 1 definition'), {
+      target: { value: 'Def' }
+    })
+
+    // Remove row 1 instead of filling it in, to also exercise removeDeniedTopic.
+    fireEvent.click(within(screen.getByTestId('denied-topic-row-1')).getByRole('button', { name: 'Remove' }))
+    expect(screen.queryByTestId('denied-topic-row-1')).not.toBeInTheDocument()
+
+    fillName('topic-guardrail')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(createGuardrail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deniedTopics: [{ name: 'Topic', definition: 'Def', examples: [] }]
+      })
+    )
+  })
+})
+
+describe('GuardrailEditor save error', () => {
+  it('renders the store save error inline when a save attempt fails', () => {
+    useGuardrailStore.setState({ saveError: { code: 'validation_error', message: 'name taken' } })
+    render(<GuardrailEditor guardrailId={null} onClose={vi.fn()} />)
+
+    expect(screen.getByTestId('save-error')).toHaveTextContent('Could not save: name taken')
+  })
+})
+
 describe('GuardrailEditor edit mode', () => {
   const DETAIL: GuardrailDetail = {
     id: 'gr-1',

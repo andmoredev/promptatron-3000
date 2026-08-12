@@ -91,6 +91,21 @@ describe('setters', () => {
     expect(next.user_prompt_id).toBe('up-2')
   })
 
+  it('selectSystemPrompt/selectUserPrompt update only the id and leave prompt text alone when content is omitted', () => {
+    const state = useRunConfigStore.getState()
+    state.setSystemPrompt('Existing system text')
+    state.setUserPrompt('Existing user text')
+
+    state.selectSystemPrompt('sp-3')
+    state.selectUserPrompt('up-3')
+
+    const next = useRunConfigStore.getState()
+    expect(next.system_prompt_id).toBe('sp-3')
+    expect(next.system_prompt).toBe('Existing system text')
+    expect(next.user_prompt_id).toBe('up-3')
+    expect(next.user_prompt).toBe('Existing user text')
+  })
+
   it('reset() restores the defaults', () => {
     const state = useRunConfigStore.getState()
     state.setModelId('m')

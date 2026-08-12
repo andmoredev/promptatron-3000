@@ -1,0 +1,898 @@
+/**
+ * @fileoverview CSS animations for RobotFace component
+ * Provides smooth transitions and micro-animations for different robot expressions
+ */
+
+/* Base animation styles with performance optimizations */
+.robot-face-svg {
+  transition: all 300ms ease-in-out;
+  will-change: auto;
+}
+
+.robot-animated .robot-head {
+  transition: fill 300ms ease-in-out;
+  will-change: fill;
+}
+
+/* Performance optimization for animated elements */
+.robot-animated .robot-eye-blink,
+.robot-animated .robot-thinking-pulse,
+.robot-animated .robot-gear-rotate,
+.robot-animated .robot-gear-rotate-reverse,
+.robot-animated .robot-mouth-animate,
+.robot-animated .robot-speech-wave-1,
+.robot-animated .robot-speech-wave-2,
+.robot-animated .robot-speech-wave-3,
+.robot-animated .robot-error-pulse {
+  will-change: transform, opacity;
+}
+
+/* Eye blinking animation - updated for rectangular robot eyes */
+@keyframes robot-blink {
+  0%, 90%, 100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+
+.robot-eye-blink {
+  animation: robot-blink 3s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* LED pulsing animations */
+@keyframes robot-led-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.robot-eye-led {
+  animation: robot-led-pulse 2s infinite ease-in-out;
+}
+
+/* CPU processing animation */
+@keyframes robot-cpu-pulse {
+  0%, 100% {
+    fill: var(--robot-thinking-bg, #fefce8);
+  }
+  50% {
+    fill: var(--robot-thinking-color, #d97706);
+  }
+}
+
+.robot-cpu-pulse {
+  animation: robot-cpu-pulse 1.5s infinite ease-in-out;
+}
+
+/* Memory access animation */
+@keyframes robot-memory-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scaleX(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1.1);
+  }
+}
+
+.robot-memory-pulse {
+  animation: robot-memory-pulse 0.8s infinite ease-in-out;
+}
+
+/* Data flow animation */
+@keyframes robot-data-flow {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -10;
+  }
+}
+
+.robot-data-flow {
+  animation: robot-data-flow 2s linear infinite;
+}
+
+/* Antenna pulse animation */
+@keyframes robot-antenna-pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.robot-antenna-pulse {
+  animation: robot-antenna-pulse 2s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* Thinking animations */
+@keyframes robot-thinking-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.robot-thinking-pulse {
+  animation: robot-thinking-pulse 1.5s infinite ease-in-out;
+}
+
+.robot-thinking-pulse-delayed {
+  animation: robot-thinking-pulse 1.5s infinite ease-in-out;
+  animation-delay: 0.3s;
+}
+
+.robot-thinking-pulse-delayed-2 {
+  animation: robot-thinking-pulse 1.5s infinite ease-in-out;
+  animation-delay: 0.6s;
+}
+
+/* Rotating gear animation for thinking state */
+@keyframes robot-gear-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.robot-gear-rotate {
+  animation: robot-gear-rotate 3s linear infinite;
+  transform-origin: center;
+}
+
+.robot-gear-rotate-reverse {
+  animation: robot-gear-rotate 4s linear infinite reverse;
+  transform-origin: center;
+}
+
+/* Talking animations - updated for robotic speaker */
+@keyframes robot-speaker-animate {
+  0%, 100% {
+    transform: scaleY(1);
+  }
+  25% {
+    transform: scaleY(0.8);
+  }
+  50% {
+    transform: scaleY(1.1);
+  }
+  75% {
+    transform: scaleY(0.9);
+  }
+}
+
+.robot-speaker-animate {
+  animation: robot-speaker-animate 0.6s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* Digital wave animations */
+@keyframes robot-digital-wave {
+  0%, 100% {
+    transform: scaleY(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scaleY(1.5);
+    opacity: 1;
+  }
+}
+
+.robot-wave-1 {
+  animation: robot-digital-wave 0.8s infinite ease-in-out;
+}
+
+.robot-wave-2 {
+  animation: robot-digital-wave 0.8s infinite ease-in-out;
+  animation-delay: 0.1s;
+}
+
+.robot-wave-3 {
+  animation: robot-digital-wave 0.8s infinite ease-in-out;
+  animation-delay: 0.2s;
+}
+
+.robot-wave-4 {
+  animation: robot-digital-wave 0.8s infinite ease-in-out;
+  animation-delay: 0.3s;
+}
+
+/* Talking LED blink */
+@keyframes robot-talking-blink {
+  0%, 70%, 100% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 0.3;
+  }
+}
+
+.robot-talking-blink {
+  animation: robot-talking-blink 1.2s infinite ease-in-out;
+}
+
+.robot-talking-blink-delayed {
+  animation: robot-talking-blink 1.2s infinite ease-in-out;
+  animation-delay: 0.2s;
+}
+
+/* Transmission pulse */
+@keyframes robot-transmission-pulse {
+  0%, 100% {
+    stroke-width: 1;
+    opacity: 0.6;
+  }
+  50% {
+    stroke-width: 2;
+    opacity: 1;
+  }
+}
+
+.robot-transmission-pulse {
+  animation: robot-transmission-pulse 1s infinite ease-in-out;
+}
+
+/* Talking status pulse */
+@keyframes robot-talking-pulse {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.robot-talking-pulse {
+  animation: robot-talking-pulse 1s infinite ease-in-out;
+  transform-origin: center;
+}
+
+.robot-talking-pulse-delayed {
+  animation: robot-talking-pulse 1s infinite ease-in-out;
+  animation-delay: 0.3s;
+  transform-origin: center;
+}
+
+/* Active antenna */
+@keyframes robot-antenna-active {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+}
+
+.robot-antenna-active {
+  animation: robot-antenna-active 0.8s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* Speech wave animations */
+@keyframes robot-speech-wave {
+  0%, 100% {
+    opacity: 0.3;
+    transform: translateX(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-2px);
+  }
+}
+
+.robot-speech-wave-1 {
+  animation: robot-speech-wave 2s infinite ease-in-out;
+}
+
+.robot-speech-wave-2 {
+  animation: robot-speech-wave 2s infinite ease-in-out;
+  animation-delay: 0.3s;
+}
+
+.robot-speech-wave-3 {
+  animation: robot-speech-wave 2s infinite ease-in-out;
+  animation-delay: 0.6s;
+}
+
+/* Error indicator animation */
+@keyframes robot-error-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+}
+
+.robot-error-pulse {
+  animation: robot-error-pulse 1s ease-in-out infinite;
+}
+
+/* Error LED blink */
+@keyframes robot-error-blink {
+  0%, 50%, 100% {
+    opacity: 1;
+  }
+  25%, 75% {
+    opacity: 0.2;
+  }
+}
+
+.robot-error-blink {
+  animation: robot-error-blink 1.5s infinite ease-in-out;
+}
+
+.robot-error-blink-delayed {
+  animation: robot-error-blink 1.5s infinite ease-in-out;
+  animation-delay: 0.3s;
+}
+
+/* Error antenna */
+@keyframes robot-antenna-error {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.robot-antenna-error {
+  animation: robot-antenna-error 0.8s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* Expression transition animations */
+.robot-expression-happy .robot-head {
+  fill: var(--robot-happy-bg, #f8fafc);
+}
+
+.robot-expression-thinking .robot-head {
+  fill: var(--robot-thinking-bg, #fefce8);
+}
+
+.robot-expression-talking .robot-head {
+  fill: var(--robot-talking-bg, #eff6ff);
+}
+
+.robot-expression-concerned .robot-head {
+  fill: var(--robot-error-bg, #fef2f2);
+}
+
+/* Subtle breathing animation for idle state - updated for rectangular head */
+@keyframes robot-subtle-breathing {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.01);
+  }
+}
+
+.robot-animated.robot-expression-happy .robot-head {
+  animation: robot-subtle-breathing 4s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* Status LED pulse */
+@keyframes robot-status-pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.robot-status-led {
+  animation: robot-status-pulse 2s infinite ease-in-out;
+}
+
+/* Enhanced animation timing functions for smoother motion */
+.robot-eye-blink {
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.robot-thinking-pulse,
+.robot-thinking-pulse-delayed,
+.robot-thinking-pulse-delayed-2 {
+  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.robot-gear-rotate,
+.robot-gear-rotate-reverse {
+  animation-timing-function: linear;
+}
+
+.robot-mouth-animate {
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.robot-speech-wave-1,
+.robot-speech-wave-2,
+.robot-speech-wave-3 {
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.robot-error-pulse {
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Accessibility: Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  /* Disable all animations including Chad reveal animations */
+  .robot-eye-blink,
+  .robot-thinking-pulse,
+  .robot-thinking-pulse-delayed,
+  .robot-thinking-pulse-delayed-2,
+  .robot-gear-rotate,
+  .robot-gear-rotate-reverse,
+  .robot-mouth-animate,
+  .robot-speech-wave-1,
+  .robot-speech-wave-2,
+  .robot-speech-wave-3,
+  .robot-error-pulse,
+  .robot-animated.robot-expression-happy .robot-head,
+  .floating-chad-entered,
+  .floating-chad-bounce-entered,
+  .floating-chad-face,
+  .floating-chad-glow,
+  .chad-revealing,
+  .chad-personality-emerging,
+  .chad-reveal-button-hiding {
+    animation: none !important;
+  }
+
+  /* Disable all transitions including Chad reveal transitions */
+  .robot-face-svg,
+  .robot-animated .robot-head,
+  .robot-animated *,
+  .robot-animated *::before,
+  .robot-animated *::after,
+  .floating-chad,
+  .robot-to-chad-transition,
+  .chad-revealing,
+  .chad-personality-emerging {
+    transition: none !important;
+  }
+
+  /* Remove will-change for reduced motion to improve performance */
+  .robot-animated .robot-eye-blink,
+  .robot-animated .robot-thinking-pulse,
+  .robot-animated .robot-gear-rotate,
+  .robot-animated .robot-gear-rotate-reverse,
+  .robot-animated .robot-mouth-animate,
+  .robot-animated .robot-speech-wave-1,
+  .robot-animated .robot-speech-wave-2,
+  .robot-animated .robot-speech-wave-3,
+  .robot-animated .robot-error-pulse,
+  .floating-chad,
+  .chad-revealing,
+  .chad-personality-emerging {
+    will-change: auto !important;
+  }
+
+  /* Provide alternative visual feedback for state changes without animation */
+  .robot-state-thinking .robot-head {
+    filter: brightness(0.95);
+  }
+
+  .robot-state-talking .robot-head {
+    filter: brightness(1.05);
+  }
+
+  .robot-state-error .robot-head {
+    filter: saturate(1.2);
+  }
+
+  /* Chad reveal reduced motion alternatives */
+  .chad-revealing {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  .chad-personality-emerging {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  .chad-reveal-button-hiding {
+    opacity: 0 !important;
+    transform: none !important;
+  }
+
+  /* Floating Chad reduced motion alternatives */
+  .floating-chad-no-animations {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .floating-chad-state-thinking {
+    filter: brightness(0.95);
+  }
+
+  .floating-chad-state-talking {
+    filter: brightness(1.05);
+  }
+
+  .floating-chad-state-error {
+    filter: saturate(1.2);
+  }
+
+  /* Instant reveal for reduced motion */
+  .floating-chad-entered,
+  .floating-chad-bounce-entered {
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+}
+
+/* Chad reveal transition animations */
+@keyframes chad-reveal-transform {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    opacity: 0.7;
+    transform: scale(1.1) rotate(2deg);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(0.9) rotate(-1deg);
+  }
+  75% {
+    opacity: 0.7;
+    transform: scale(1.05) rotate(1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes chad-reveal-button-fade {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+@keyframes chad-personality-emerge {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+    filter: blur(2px);
+  }
+  30% {
+    opacity: 0.6;
+    transform: scale(1.05) translateY(-2px);
+    filter: blur(1px);
+  }
+  70% {
+    opacity: 0.9;
+    transform: scale(0.98) translateY(1px);
+    filter: blur(0.5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* Floating Chad animations */
+@keyframes floating-chad-entrance {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.8);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translateY(-5px) scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes floating-chad-idle {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes floating-chad-glow-pulse {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes floating-chad-bounce-in {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scale(0.6) rotate(-5deg);
+  }
+  60% {
+    opacity: 0.8;
+    transform: translateY(-8px) scale(1.1) rotate(2deg);
+  }
+  80% {
+    opacity: 0.95;
+    transform: translateY(2px) scale(0.95) rotate(-1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+}
+
+/* Chad reveal animation classes */
+.chad-revealing {
+  animation: chad-reveal-transform 0.8s ease-in-out;
+  will-change: transform, opacity;
+}
+
+.chad-personality-emerging {
+  animation: chad-personality-emerge 0.6s ease-out;
+  animation-delay: 0.2s;
+  animation-fill-mode: both;
+}
+
+.chad-reveal-button-hiding {
+  animation: chad-reveal-button-fade 0.4s ease-in-out forwards;
+  pointer-events: none;
+}
+
+/* Robot to Chad transition */
+.robot-to-chad-transition {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.robot-to-chad-transition.transitioning {
+  transform: scale(1.05);
+  filter: brightness(1.1);
+}
+
+/* Floating Chad base styles */
+.floating-chad {
+  transition: all 0.3s ease-in-out;
+  will-change: transform, opacity;
+}
+
+/* Draggable Chad styles */
+.floating-chad-draggable {
+  cursor: grab;
+}
+
+.floating-chad-draggable:hover {
+  filter: brightness(1.05);
+}
+
+.floating-chad-draggable:focus {
+  outline: 2px solid var(--color-primary-500, #3b82f6);
+  outline-offset: 2px;
+}
+
+.floating-chad-dragging {
+  cursor: grabbing !important;
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.3)) brightness(1.1);
+  z-index: 9999 !important;
+  transition: none !important; /* Disable transitions during drag */
+}
+
+.floating-chad-dragging .floating-chad-glow {
+  opacity: 0.8 !important;
+  animation: none !important;
+}
+
+.floating-chad-entered {
+  animation: floating-chad-entrance 0.6s ease-out;
+}
+
+.floating-chad-bounce-entered {
+  animation: floating-chad-bounce-in 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.floating-chad-entered:not(.floating-chad-no-animations) .floating-chad-face {
+  animation: floating-chad-idle 3s ease-in-out infinite;
+  animation-delay: 0.6s; /* Start after entrance completes */
+}
+
+.floating-chad-glow {
+  animation: floating-chad-glow-pulse 2s ease-in-out infinite;
+  animation-delay: 1s; /* Start after entrance and settle */
+}
+
+/* State-specific floating Chad animations */
+.floating-chad-state-thinking .floating-chad-face {
+  animation: floating-chad-idle 2s ease-in-out infinite;
+}
+
+.floating-chad-state-talking .floating-chad-face {
+  animation: floating-chad-idle 1.5s ease-in-out infinite;
+}
+
+.floating-chad-state-error .floating-chad-face {
+  animation: floating-chad-idle 1s ease-in-out infinite;
+}
+
+/* Responsive positioning and scaling for floating Chad */
+@media (max-width: 1024px) {
+  .floating-chad {
+  }
+}
+
+@media (max-width: 768px) {
+  .floating-chad {
+    transform: scale(0.9) !important;
+  }
+
+  .floating-chad-sm {
+    transform: scale(0.8) !important;
+  }
+
+  /* Adjust entrance animation for mobile */
+  .floating-chad-entered {
+    animation: floating-chad-entrance 0.5s ease-out;
+  }
+
+  .floating-chad-bounce-entered {
+    animation: floating-chad-bounce-in 0.7s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+  .floating-chad {
+    transform: scale(0.8) !important;
+  }
+
+  .floating-chad-sm {
+    transform: scale(0.7) !important;
+  }
+
+  /* Faster animations on small screens */
+  .floating-chad-entered {
+    animation: floating-chad-entrance 0.4s ease-out;
+  }
+
+  .floating-chad-bounce-entered {
+    animation: floating-chad-bounce-in 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+
+  .floating-chad-entered:not(.floating-chad-no-animations) .floating-chad-face {
+    animation: floating-chad-idle 2.5s ease-in-out infinite;
+    animation-delay: 0.4s;
+  }
+}
+
+/* Large screens - more prominent positioning */
+@media (min-width: 1200px) {
+  .floating-chad {
+    /* Removed fixed positioning so draggable X/Y can update */
+  }
+
+  .floating-chad-md {
+    transform: scale(1.1) !important;
+  }
+
+  .floating-chad-lg {
+    transform: scale(1.2) !important;
+  }
+}
+
+/* Theme integration - CSS custom properties for colors */
+.robot-face-svg {
+  --robot-body-color: var(--color-primary-50, #f8fafc);
+  --robot-stroke-color: var(--color-gray-500, #64748b);
+  --robot-happy-color: var(--color-primary-600, #059669);
+  --robot-thinking-color: var(--color-secondary-600, #d97706);
+  --robot-talking-color: var(--color-primary-500, #3b82f6);
+  --robot-error-color: var(--color-tertiary-600, #dc2626);
+}
+
+/* Size-specific adjustments */
+.robot-size-sm .robot-face-svg {
+  --animation-scale: 0.8;
+}
+
+.robot-size-md .robot-face-svg {
+  --animation-scale: 1.0;
+}
+
+.robot-size-lg .robot-face-svg {
+  --animation-scale: 1.2;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .robot-face-svg {
+    --robot-stroke-color: #000000;
+    --robot-happy-color: #006600;
+    --robot-thinking-color: #cc6600;
+    --robot-talking-color: #0066cc;
+    --robot-error-color: #cc0000;
+  }
+
+  .robot-head {
+    stroke-width: 3 !important;
+  }
+
+  .robot-mouth,
+  .robot-eyebrows line,
+  .robot-speech-wave,
+  .robot-thinking-indicators circle,
+  .robot-error-indicator {
+    stroke-width: 2.5 !important;
+  }
+
+  .robot-eye {
+    fill: #000000 !important;
+  }
+}
+
+/* Forced colors mode (Windows High Contrast) */
+@media (forced-colors: active) {
+  .robot-face-svg {
+    forced-color-adjust: none;
+  }
+
+  .robot-head {
+    fill: Canvas !important;
+    stroke: CanvasText !important;
+    stroke-width: 2px !important;
+  }
+
+  .robot-eye {
+    fill: CanvasText !important;
+  }
+
+  .robot-mouth,
+  .robot-eyebrows line,
+  .robot-speech-wave,
+  .robot-thinking-indicators *,
+  .robot-error-indicator {
+    stroke: Highlight !important;
+    fill: Highlight !important;
+  }
+}

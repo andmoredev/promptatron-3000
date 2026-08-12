@@ -30,7 +30,7 @@ vi.mock('../../api', async (importOriginal) => {
   }
 })
 
-const { ApiError } = await import('../../api')
+const { ApiError, StreamAbortedError } = await import('../../api')
 const { useGuardrailStore, guardrailCacheKey, toSummary, readyGuardrails } = await import(
   '../guardrailStore'
 )
@@ -99,6 +99,16 @@ describe('list', () => {
     const rows = [toSummary(detail), { ...toSummary(detail), id: 'gr-2', status: 'CREATING' as const }]
     expect(readyGuardrails(rows).map((row) => row.id)).toEqual(['gr-1'])
   })
+
+  it('tolerates an abort, clearing loading without recording an error', async () => {
+    listMock.mockRejectedValueOnce(new StreamAbortedError())
+
+    await useGuardrailStore.getState().loadGuardrails()
+
+    expect(useGuardrailStore.getState().loading).toBe(false)
+    expect(useGuardrailStore.getState().error).toBeNull()
+    expect(useGuardrailStore.getState().loaded).toBe(false)
+  })
 })
 
 describe('detail cache', () => {
@@ -125,6 +135,26 @@ describe('detail cache', () => {
 
     useGuardrailStore.getState().invalidateGuardrail('gr-1')
     expect(useGuardrailStore.getState().details).toEqual({})
+  })
+
+  it('records a non-aborted loadGuardrail failure and returns null', async () => {
+    getMock.mockRejectedValueOnce(new ApiError('not found', { code: 'not_found', status: 404 }))
+
+    const result = await useGuardrailStore.getState().loadGuardrail('missing')
+
+    expect(result).toBeNull()
+    expect(useGuardrailStore.getState().detailLoading[guardrailCacheKey('missing')]).toBe(false)
+    expect(useGuardrailStore.getState().error).toEqual({ code: 'not_found', message: 'not found' })
+  })
+
+  it('leaves the existing error untouched on an aborted loadGuardrail', async () => {
+    useGuardrailStore.setState({ error: { code: 'stale', message: 'stale error' } })
+    getMock.mockRejectedValueOnce(new StreamAbortedError())
+
+    const result = await useGuardrailStore.getState().loadGuardrail('gr-1')
+
+    expect(result).toBeNull()
+    expect(useGuardrailStore.getState().error).toEqual({ code: 'stale', message: 'stale error' })
   })
 })
 
@@ -186,6 +216,54 @@ describe('CRUD', () => {
     expect(state.details).toEqual({})
     expect(state.versions).toEqual({})
   })
+
+  it('removing a single version drops only that version\'s cache entry, keeping the guardrail row', async () => {
+    createMock.mockResolvedValueOnce(detail)
+    await useGuardrailStore.getState().createGuardrail({ name: 'pii-blocker' })
+    getMock.mockResolvedValueOnce({ ...detail, version: '2' })
+    await useGuardrailStore.getState().loadGuardrail('gr-1', '2')
+    versionsListMock.mockResolvedValueOnce({ versions: [publishedVersion] })
+    await useGuardrailStore.getState().loadVersions('gr-1')
+    removeMock.mockResolvedValueOnce(undefined)
+
+    const ok = await useGuardrailStore.getState().removeGuardrail('gr-1', '2')
+
+    expect(ok).toBe(true)
+    const state = useGuardrailStore.getState()
+    // The guardrail row itself and its DRAFT detail survive; only @2 and the
+    // versions list entry are gone.
+    expect(state.guardrails.map((row) => row.id)).toEqual(['gr-1'])
+    expect(state.details[guardrailCacheKey('gr-1')]).toBeDefined()
+    expect(state.details[guardrailCacheKey('gr-1', '2')]).toBeUndefined()
+    expect(state.versions['gr-1']).toBeUndefined()
+  })
+
+  it('records a remove failure as saveError and returns false, leaving caches intact', async () => {
+    createMock.mockResolvedValueOnce(detail)
+    await useGuardrailStore.getState().createGuardrail({ name: 'pii-blocker' })
+    removeMock.mockRejectedValueOnce(new ApiError('in use', { code: 'conflict', status: 409 }))
+
+    const ok = await useGuardrailStore.getState().removeGuardrail('gr-1')
+
+    expect(ok).toBe(false)
+    const state = useGuardrailStore.getState()
+    expect(state.saving).toBe(false)
+    expect(state.saveError).toEqual({ code: 'conflict', message: 'in use' })
+    expect(state.guardrails.map((row) => row.id)).toEqual(['gr-1'])
+  })
+
+  it('records an update failure as saveError without touching the cached detail', async () => {
+    createMock.mockResolvedValueOnce(detail)
+    await useGuardrailStore.getState().createGuardrail({ name: 'pii-blocker' })
+    updateMock.mockRejectedValueOnce(new ApiError('bad config', { code: 'validation_error' }))
+
+    const updated = await useGuardrailStore.getState().updateGuardrail('gr-1', { name: 'x' })
+
+    expect(updated).toBeNull()
+    const state = useGuardrailStore.getState()
+    expect(state.saveError).toEqual({ code: 'validation_error', message: 'bad config' })
+    expect(state.details['gr-1']).toBe(detail)
+  })
 })
 
 describe('versions', () => {
@@ -211,5 +289,30 @@ describe('versions', () => {
     expect(useGuardrailStore.getState().versions['gr-1']).toEqual([publishedVersion])
     // the list row's version/status moved on
     expect(useGuardrailStore.getState().loaded).toBe(false)
+  })
+
+  it('records a loadVersions failure and returns an empty list, without setting error on abort', async () => {
+    versionsListMock.mockRejectedValueOnce(new StreamAbortedError())
+    expect(await useGuardrailStore.getState().loadVersions('gr-1')).toEqual([])
+    expect(useGuardrailStore.getState().error).toBeNull()
+
+    versionsListMock.mockRejectedValueOnce(new ApiError('nope', { code: 'http_error' }))
+    expect(await useGuardrailStore.getState().loadVersions('gr-2')).toEqual([])
+    expect(useGuardrailStore.getState().error).toEqual({ code: 'http_error', message: 'nope' })
+  })
+
+  it('records a publishVersion failure as saveError', async () => {
+    versionsCreateMock.mockRejectedValueOnce(
+      new ApiError('too many versions', { code: 'conflict' })
+    )
+
+    const version = await useGuardrailStore.getState().publishVersion('gr-1', 'oops')
+
+    expect(version).toBeNull()
+    expect(useGuardrailStore.getState().saveError).toEqual({
+      code: 'conflict',
+      message: 'too many versions'
+    })
+    expect(useGuardrailStore.getState().saving).toBe(false)
   })
 })

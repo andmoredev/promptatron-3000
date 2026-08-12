@@ -39,7 +39,8 @@ const {
   reduceEvalEvent,
   progressFraction,
   selectIsEvaluating,
-  INITIAL_EVAL_STATE
+  INITIAL_EVAL_STATE,
+  activeEvalController
 } = await import('../evalStore')
 const { useHistoryStore } = await import('../historyStore')
 
@@ -296,6 +297,23 @@ describe('followEvaluation', () => {
     expect(useEvalStore.getState().status).toBe('running')
     expect(useEvalStore.getState().error).toBeNull()
   })
+
+  it('activeEvalController exposes the live subscription controller while attached, then clears it', async () => {
+    expect(activeEvalController()).toBeNull()
+
+    let capturedSignal: AbortSignal | undefined
+    eventsMock.mockImplementation(
+      async (_id: string, options: { signal?: AbortSignal }) => {
+        capturedSignal = options.signal
+        expect(activeEvalController()?.signal).toBe(capturedSignal)
+      }
+    )
+
+    await useEvalStore.getState().followEvaluation('eval-1')
+
+    // Cleared once the subscription settles.
+    expect(activeEvalController()).toBeNull()
+  })
 })
 
 describe('cancelEvaluation', () => {
@@ -338,6 +356,50 @@ describe('cancelEvaluation', () => {
 
     expect(useEvalStore.getState().status).toBe('completed')
     expect(useEvalStore.getState().error).toBeNull()
+  })
+
+  it('records a non-conflict cancel failure as an error, still marking cancelled', async () => {
+    useEvalStore.setState({ activeEvaluationId: 'eval-1', status: 'running' })
+    cancelMock.mockRejectedValueOnce(new ApiError('server exploded', { code: 'http_error' }))
+
+    await useEvalStore.getState().cancelEvaluation()
+
+    expect(useEvalStore.getState().status).toBe('cancelled')
+    expect(useEvalStore.getState().error).toEqual({ code: 'http_error', message: 'server exploded' })
+  })
+
+  it('goes straight to cancelled without calling the API when there is no active evaluation', async () => {
+    useEvalStore.setState({ activeEvaluationId: null, status: 'idle' })
+
+    await useEvalStore.getState().cancelEvaluation()
+
+    expect(cancelMock).not.toHaveBeenCalled()
+    expect(useEvalStore.getState().status).toBe('cancelled')
+  })
+})
+
+describe('clearActive', () => {
+  it('resets the active evaluation, its log, and progress back to idle', () => {
+    useEvalStore.setState({
+      activeEvaluationId: 'eval-1',
+      activeEvaluation: createdRow,
+      status: 'error',
+      events: [{ type: 'grading_started' }],
+      progress: { completed: 3, failed: 1, total: 4 },
+      result,
+      error: { code: 'http_error', message: 'nope' }
+    })
+
+    useEvalStore.getState().clearActive()
+
+    const state = useEvalStore.getState()
+    expect(state.activeEvaluationId).toBeNull()
+    expect(state.activeEvaluation).toBeNull()
+    expect(state.status).toBe('idle')
+    expect(state.events).toEqual([])
+    expect(state.progress).toEqual({ completed: 0, failed: 0, total: 0 })
+    expect(state.result).toBeNull()
+    expect(state.error).toBeNull()
   })
 })
 
@@ -397,5 +459,68 @@ describe('list ops', () => {
 
     expect(refreshed?.status).toBe('completed')
     expect(useEvalStore.getState().evaluations[0].status).toBe('completed')
+  })
+
+  it('refreshEvaluation returns null and records listError on a real failure', async () => {
+    getMock.mockRejectedValueOnce(new ApiError('gone', { code: 'not_found' }))
+
+    const refreshed = await useEvalStore.getState().refreshEvaluation('missing')
+
+    expect(refreshed).toBeNull()
+    expect(useEvalStore.getState().listError).toEqual({ code: 'not_found', message: 'gone' })
+  })
+
+  it('refreshEvaluation swallows an abort without recording an error', async () => {
+    getMock.mockRejectedValueOnce(new StreamAbortedError())
+
+    const refreshed = await useEvalStore.getState().refreshEvaluation('e1')
+
+    expect(refreshed).toBeNull()
+    expect(useEvalStore.getState().listError).toBeNull()
+  })
+
+  it('loadEvaluations tolerates an abort, clearing listLoading without setting listError', async () => {
+    listMock.mockRejectedValueOnce(new StreamAbortedError())
+
+    await useEvalStore.getState().loadEvaluations()
+
+    expect(useEvalStore.getState().listLoading).toBe(false)
+    expect(useEvalStore.getState().listError).toBeNull()
+    expect(useEvalStore.getState().listLoaded).toBe(false)
+  })
+
+  it('loadEvaluations records a real failure as listError', async () => {
+    listMock.mockRejectedValueOnce(new ApiError('server exploded', { code: 'http_error' }))
+
+    await useEvalStore.getState().loadEvaluations()
+
+    expect(useEvalStore.getState().listLoading).toBe(false)
+    expect(useEvalStore.getState().listError).toEqual({
+      code: 'http_error',
+      message: 'server exploded'
+    })
+  })
+
+  it('loadMoreEvaluations is a no-op when there is no nextCursor or a load is already in flight', async () => {
+    useEvalStore.setState({ nextCursor: null, listLoading: false })
+    await useEvalStore.getState().loadMoreEvaluations()
+    expect(listMock).not.toHaveBeenCalled()
+
+    useEvalStore.setState({ nextCursor: 'c1', listLoading: true })
+    await useEvalStore.getState().loadMoreEvaluations()
+    expect(listMock).not.toHaveBeenCalled()
+  })
+
+  it('loadMoreEvaluations tolerates an abort and records a real failure as listError', async () => {
+    useEvalStore.setState({ nextCursor: 'c1', listLoading: false })
+    listMock.mockRejectedValueOnce(new StreamAbortedError())
+    await useEvalStore.getState().loadMoreEvaluations()
+    expect(useEvalStore.getState().listLoading).toBe(false)
+    expect(useEvalStore.getState().listError).toBeNull()
+
+    useEvalStore.setState({ nextCursor: 'c1', listLoading: false })
+    listMock.mockRejectedValueOnce(new ApiError('nope', { code: 'http_error' }))
+    await useEvalStore.getState().loadMoreEvaluations()
+    expect(useEvalStore.getState().listError).toEqual({ code: 'http_error', message: 'nope' })
   })
 })

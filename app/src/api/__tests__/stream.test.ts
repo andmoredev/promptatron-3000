@@ -206,6 +206,22 @@ describe('streamNdjson: failures before the stream', () => {
     })
   })
 
+  it('falls back to the status text when reading a non-2xx body itself throws', async () => {
+    mockFetch({
+      ok: false,
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { get: () => null },
+      text: () => Promise.reject(new Error('body already consumed'))
+    } as unknown as Response)
+
+    const error = await streamNdjson('/runs', {}, { onEvent: () => undefined }).catch(e => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).status).toBe(503)
+    expect((error as ApiError).message).toBe('Service Unavailable')
+  })
+
   it('throws an ApiError when the response has no readable body', async () => {
     mockFetch(fakeResponse({ status: 200, statusText: 'OK', body: null }))
 

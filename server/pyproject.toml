@@ -29,6 +29,7 @@ worker = [
 
 [dependency-groups]
 dev = [
+    "mutmut>=3.7.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pytest-cov>=7.1.0",
@@ -46,6 +47,10 @@ packages = ["promptatron"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# mutmut's mutation sandbox (see [tool.mutmut] below): a disposable copy of the
+# source tree, littered with generated `_mutmut_N` variants of every mutated
+# function. Not source we own or want linted.
+extend-exclude = ["mutants"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -55,3 +60,62 @@ ignore = ["B008"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+# Coverage is opt-in via the CLI (`uv run pytest --cov=promptatron ...`), not
+# wired into addopts here, so a plain `uv run pytest` during local dev stays at
+# its normal (faster) speed. CI's coverage step passes --cov explicitly; see
+# docs/testing.md / the CI workflow for the exact invocation.
+[tool.coverage.run]
+source = ["promptatron"]
+
+[tool.coverage.report]
+# Ratchet, not a target: set to the actual post-gap-fill percentage (97.4%),
+# rounded down. Bump it only when real coverage climbs past the next percent
+# point -- never round up speculatively.
+fail_under = 97
+exclude_also = [
+    # Type-checking-only branches never execute at runtime.
+    "if TYPE_CHECKING:",
+    # An abstract/unsupported-by-design method body; the interesting behavior
+    # is that it raises, which is what a caller-side test (if any) covers.
+    "raise NotImplementedError",
+    # The AgentCore SDK bootstrap in promptatron/worker/agentcore_app.py
+    # (module-level `app = BedrockAgentCoreApp()` / `@app.entrypoint` wiring
+    # and the `if __name__ == "__main__":` boot path) cannot run without the
+    # optional `worker` extra installed *and* a real AgentCore Runtime
+    # container -- promptatron.worker.agentcore_app imports cleanly without
+    # either, and `dispatch`/`execute` (everything actually worth testing) are
+    # exercised directly. That block is marked inline with the standard
+    # `# pragma: no cover` comment (already covered by coverage.py's default
+    # exclude pattern) rather than duplicated as a regex here, since the
+    # existing per-line pragma *is* the general-purpose mechanism, not a
+    # one-off exception to it.
+]
+
+# Mutation testing, scoped to the pure-logic core (installed: mutmut 3.7.0).
+#
+# mutmut 3.x renamed the config keys the task brief described for older
+# releases: `paths_to_mutate` -> `source_paths` (still accepted but warns) and
+# `tests_dir` -> `pytest_add_cli_args_test_selection`. `source_paths` must be a
+# walkable *directory* (mutmut os.walks it to build the sandboxed `mutants/`
+# copy), so the actual file-level scoping happens through `only_mutate` glob
+# patterns -- the modern equivalent of listing individual files.
+#
+# Every file below is business logic with no boto3/AWS/network call in it
+# (translation, parsing, cursor math, cache-key arithmetic) so a surviving
+# mutant is informative rather than "the mock didn't notice". `run` with these
+# nine files took ~2.5 minutes end to end (measured; see the coverage report).
+[tool.mutmut]
+source_paths = ["promptatron"]
+only_mutate = [
+    "promptatron/evals/metrics.py",
+    "promptatron/evals/rubrics.py",
+    "promptatron/engine/mapper.py",
+    "promptatron/engine/events.py",
+    "promptatron/store/history.py",
+    "promptatron/worker/ddb.py",
+    "promptatron/guardrails/translator.py",
+    "promptatron/models_catalog.py",
+    "promptatron/configstore/client.py",
+]
+pytest_add_cli_args_test_selection = ["tests/"]

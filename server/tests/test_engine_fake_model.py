@@ -120,6 +120,35 @@ async def test_dict_and_string_shorthand_steps_are_accepted():
     )
 
 
+async def test_tool_use_dict_shorthand_is_accepted():
+    model = FakeModel(
+        script=[{"tool_use": {"name": "getSla", "input": {"order_id": "B1"}, "id": "tu-7"}}]
+    )
+
+    chunks = await _chunks(model)
+
+    starts = [c["contentBlockStart"] for c in chunks if "contentBlockStart" in c]
+    tool_use_start = next(c for c in starts if "toolUse" in c.get("start", {}))
+    assert tool_use_start["start"]["toolUse"]["toolUseId"] == "tu-7"
+    assert tool_use_start["start"]["toolUse"]["name"] == "getSla"
+
+
+async def test_error_dict_shorthand_raises_mid_stream():
+    model = FakeModel(script=[{"error": RuntimeError("boom via dict shorthand")}])
+
+    with pytest.raises(RuntimeError, match="boom via dict shorthand"):
+        await _chunks(model)
+
+
+async def test_guardrail_trace_dict_shorthand_rides_on_the_metadata_chunk():
+    model = FakeModel(script=[Text("hi"), {"guardrail_trace": {"blocked": True}}])
+
+    chunks = await _chunks(model)
+
+    metadata = next(c["metadata"] for c in chunks if "metadata" in c)
+    assert metadata["trace"]["guardrail"] == {"blocked": True}
+
+
 def test_unrecognized_step_is_rejected():
     with pytest.raises(ValueError, match="Unrecognized"):
         FakeModel(script=[object()])
@@ -250,3 +279,43 @@ def test_mapper_ignores_metadata_without_a_guardrail_trace():
     mapper = EventMapper()
 
     assert mapper.map({"event": {"metadata": {"usage": {"inputTokens": 1}}}}) == []
+
+
+def test_mapper_ignores_citation_deltas():
+    mapper = EventMapper()
+
+    events = mapper.map(
+        {"event": {"contentBlockDelta": {"delta": {"citation": {"foo": "bar"}}}}}
+    )
+
+    assert events == []
+    assert mapper.unknown_count == 0
+
+
+def test_mapper_result_without_metrics_yields_no_event():
+    mapper = EventMapper()
+
+    class _NoMetricsResult:
+        pass
+
+    assert mapper.map({"result": _NoMetricsResult()}) == []
+
+
+def test_mapper_result_with_metrics_emits_a_metrics_event():
+    mapper = EventMapper()
+
+    class _Metrics:
+        accumulated_usage = {"inputTokens": 3, "outputTokens": 4, "totalTokens": 7}
+        accumulated_metrics = {"latencyMs": 42}
+        cycle_count = 2
+
+    class _Result:
+        metrics = _Metrics()
+
+    events = mapper.map({"result": _Result()})
+
+    assert len(events) == 1
+    assert events[0].type == "metrics"
+    assert events[0].total_tokens == 7
+    assert events[0].latency_ms == 42
+    assert events[0].cycle_count == 2

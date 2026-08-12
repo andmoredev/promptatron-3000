@@ -13,11 +13,11 @@ from pathlib import Path
 import pytest
 
 from promptatron.tools import registry
+from tests._repo_paths import find_upward
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-FRAUD_SCENARIO = REPO_ROOT / "api" / "seed" / "fixtures" / "fraud-detection" / "scenario.json"
-SHIPPING_SCENARIO = (
-    REPO_ROOT / "api" / "seed" / "fixtures" / "shipping-logistics" / "scenario.json"
+FRAUD_SCENARIO = find_upward("api", "seed", "fixtures", "fraud-detection", "scenario.json")
+SHIPPING_SCENARIO = find_upward(
+    "api", "seed", "fixtures", "shipping-logistics", "scenario.json"
 )
 
 

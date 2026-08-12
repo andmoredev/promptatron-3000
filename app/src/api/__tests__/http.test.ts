@@ -74,6 +74,15 @@ describe('request', () => {
 
     expect(spy.mock.calls[0][1]?.signal).toBe(controller.signal)
   })
+
+  it('sends a PATCH with a JSON body', async () => {
+    const spy = mockFetch(jsonResponse({ id: 'r1' }))
+
+    await http.patch('/runs/r1', { status: 'cancelled' })
+
+    expect(spy.mock.calls[0][1]?.method).toBe('PATCH')
+    expect(bodyOf(spy)).toEqual({ status: 'cancelled' })
+  })
 })
 
 describe('error handling', () => {
@@ -166,6 +175,24 @@ describe('error handling', () => {
     const error = (await http.get('/models').catch(e => e)) as ApiError
 
     expect(error.code).toBe('invalid_response')
+  })
+
+  it('falls back to the status text when reading the error body itself throws', async () => {
+    const brokenResponse = {
+      ok: false,
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { get: () => null },
+      text: () => Promise.reject(new Error('body already consumed')),
+      json: () => Promise.reject(new Error('body already consumed'))
+    } as unknown as Response
+    mockFetch(brokenResponse)
+
+    const error = (await http.get('/models').catch(e => e)) as ApiError
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.status).toBe(503)
+    expect(error.message).toBe('Service Unavailable')
   })
 
   it('wraps a network failure as an ApiError', async () => {

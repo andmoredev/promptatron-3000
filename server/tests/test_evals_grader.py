@@ -231,6 +231,20 @@ async def test_a_judge_that_fails_mid_stream_degrades_to_judge_error():
     assert "judge exploded" in result.error
 
 
+def test_judge_failure_with_no_rows_at_all_is_a_dedicated_message():
+    """Distinct from ``_rows_for`` returning isolated-evaluator-error rows: this is
+    the case where the evaluator produced no rows for this run whatsoever."""
+    assert grader._judge_failure([]) == "The judge produced no results"
+
+
+def test_judge_failure_is_none_when_at_least_one_row_is_not_an_evaluator_error():
+    rows = [
+        (0.0, "Evaluator error: boom", "run-1"),
+        (0.8, "looks fine", "run-2"),
+    ]
+    assert grader._judge_failure(rows) is None
+
+
 async def test_no_successful_runs_is_a_judge_error_not_a_grade():
     result = await grader.judge(
         [],

@@ -694,3 +694,54 @@ async def test_a_half_configured_lane_is_not_configured():
     assert cloud.is_configured(Settings(eval_runtime_arn=RUNTIME_ARN)) is False
     assert cloud.is_configured(Settings(eval_table=TABLE_NAME)) is False
     assert cloud.is_configured(Settings(eval_runtime_arn=RUNTIME_ARN, eval_table=TABLE_NAME))
+
+
+# --------------------------------------------------------------------------- #
+# Item -> response mapping edge cases
+# --------------------------------------------------------------------------- #
+
+
+async def test_the_cloud_listing_can_be_narrowed_by_status_alone(client, table):
+    table.add(eval_meta("eval-0", kind="determinism", status="completed"))
+    table.add(eval_meta("eval-1", kind="determinism", status="error", ts=TS + timedelta(minutes=1)))
+
+    response = await client.get("/api/v1/evaluations?execution=cloud&status=error")
+
+    assert [item["id"] for item in response.json()["items"]] == ["eval-1"]
+
+
+async def test_a_native_json_value_in_config_is_passed_through_unparsed(client, table):
+    """A permissive writer may store config/result as a native map instead of a
+    JSON string; ``_json`` must accept both instead of only ``json.loads``-ing."""
+    item = eval_meta("eval-native", status="completed", result={"grade": "A"})
+    item["config"] = {"kind": "determinism", "n": 1, "run_config": None, "rubric": None}
+    table.add(item)
+
+    response = await client.get("/api/v1/evaluations/eval-native")
+
+    assert response.json()["config"]["n"] == 1
+
+
+def test_get_invoker_reuses_the_same_instance_for_the_same_settings():
+    settings = Settings(eval_runtime_arn=RUNTIME_ARN, aws_region="us-east-1")
+
+    first = cloud.get_invoker(settings)
+    second = cloud.get_invoker(settings)
+
+    assert first is not None
+    assert first is second
+
+
+def test_get_invoker_builds_a_distinct_instance_per_runtime_arn():
+    settings_a = Settings(eval_runtime_arn=RUNTIME_ARN, aws_region="us-east-1")
+    other_arn = RUNTIME_ARN.replace("promptatron-evals-abc", "promptatron-evals-xyz")
+    settings_b = Settings(eval_runtime_arn=other_arn, aws_region="us-east-1")
+
+    first = cloud.get_invoker(settings_a)
+    second = cloud.get_invoker(settings_b)
+
+    assert first is not second
+
+
+def test_get_invoker_is_none_when_unconfigured():
+    assert cloud.get_invoker(Settings()) is None

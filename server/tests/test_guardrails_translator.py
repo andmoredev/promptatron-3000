@@ -246,6 +246,23 @@ def test_round_trip_minimal_single_policy_configs(config):
     assert reconstructed == config
 
 
+def test_from_bedrock_contextual_grounding_with_no_recognized_thresholds_is_none():
+    """Filters are present but none of them are GROUNDING/RELEVANCE -- e.g. a
+    guardrail whose grounding policy Bedrock reports as an empty/foreign
+    filter set. Neither threshold resolves, so the whole policy is dropped
+    rather than reconstructed as an empty shell."""
+    response = {
+        "name": "no-recognized-filters",
+        "contextualGroundingPolicy": {
+            "filters": [{"type": "SOME_FUTURE_FILTER_TYPE", "threshold": 0.5}]
+        },
+    }
+
+    reconstructed = from_bedrock(response)
+
+    assert reconstructed.contextual_grounding is None
+
+
 def test_from_bedrock_accepts_get_guardrail_response_shape():
     """from_bedrock must also parse the bare (non-Config-suffixed) GetGuardrail shape."""
     response = {

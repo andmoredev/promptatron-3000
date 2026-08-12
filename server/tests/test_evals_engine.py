@@ -122,6 +122,36 @@ async def test_backoff_is_actually_awaited_between_attempts(initialized_db, monk
     assert slept == [5.0, 10.0]
 
 
+async def test_a_setup_failure_before_run_start_is_reported_as_the_outcomes_error(
+    initialized_db,
+):
+    """dataset_id without scenario_id raises BadRequestError before the runner
+    ever yields ``run_start`` -- this is the AppError branch of ``_execute_once``,
+    not the generic ``classify_error`` one that in-band run failures take."""
+    models = SequencedModels([Text("unused")])
+    bad_request = EvaluationRequest.model_validate(
+        {
+            "kind": "determinism",
+            "n": 1,
+            "run_config": {
+                "model_id": "m",
+                "user_prompt": "hi",
+                "dataset_id": "orders-csv",
+            },
+        }
+    )
+
+    outcome = await evals_engine._execute_once(0, bad_request, deps(models))
+
+    assert not outcome.succeeded
+    assert outcome.run_id is None
+    assert outcome.error["code"] == "bad_request"
+    assert outcome.error["retryable"] is False
+    assert "scenario_id" in outcome.error["message"]
+    # The model was never invoked -- the failure is entirely in setup.
+    assert models.calls == 0
+
+
 async def test_a_completed_run_reports_its_summary(initialized_db):
     models = SequencedModels([Text("hello")])
 

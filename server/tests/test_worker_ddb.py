@@ -584,3 +584,169 @@ def test_a_failed_cancel_read_does_not_cancel_the_evaluation(store, client):
 def test_table_name_is_required():
     with pytest.raises(ValueError, match="table_name is required"):
         DynamoEvalStore("", EVAL_ID)
+
+
+# --------------------------------------------------------------------------- #
+# Unexpected (non-conditional-check) failures propagate
+# --------------------------------------------------------------------------- #
+
+
+def test_begin_reraises_an_unexpected_put_item_failure(store, client):
+    client.fail_on["put_item"] = RuntimeError("table missing")
+    with pytest.raises(RuntimeError, match="table missing"):
+        store.begin(REQUEST)
+
+
+def test_mark_running_reraises_an_unexpected_update_item_failure(store, client):
+    store.begin(REQUEST)
+    client.fail_on["update_item"] = RuntimeError("throttled")
+    with pytest.raises(RuntimeError, match="throttled"):
+        store.mark_running()
+
+
+# --------------------------------------------------------------------------- #
+# emit() input validation
+# --------------------------------------------------------------------------- #
+
+
+def test_emit_rejects_a_non_dict_event(store):
+    with pytest.raises(TypeError, match="event must be a dict"):
+        store.emit("not-a-dict")
+
+
+# --------------------------------------------------------------------------- #
+# put_run: ts normalization
+# --------------------------------------------------------------------------- #
+
+
+def test_put_run_normalizes_a_datetime_ts_to_isoformat(store, client):
+    from datetime import UTC, datetime
+
+    ts = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+    store.put_run({"id": "run-dt", "status": "completed", "ts": ts})
+
+    item = client.item("RUN#run-dt", "META")
+    assert item["ts"] == {"S": ts.isoformat()}
+    assert item["GSI1SK"] == {"S": ts.isoformat()}
+
+
+def test_put_run_defaults_ts_to_now_when_absent(store, client):
+    store.put_run({"id": "run-no-ts", "status": "completed"})
+
+    item = client.item("RUN#run-no-ts", "META")
+    assert item["ts"]["S"]  # a non-empty ISO string was generated
+
+
+# --------------------------------------------------------------------------- #
+# get_run: malformed JSON columns
+# --------------------------------------------------------------------------- #
+
+
+def test_get_run_treats_malformed_json_columns_as_none(store, client):
+    store.put_run({"id": "run-bad-json", "status": "completed"})
+    client.items[("RUN#run-bad-json", "META")]["config"] = {"S": "{not valid json"}
+
+    loaded = store.get_run("run-bad-json")
+
+    assert loaded is not None
+    assert loaded["config"] is None
+    # Other JSON columns (still NULL) are unaffected.
+    assert loaded["metrics"] is None
+
+
+# --------------------------------------------------------------------------- #
+# load_run / _to_run_record: ts parsing from a raw dynamodb-shaped record
+# --------------------------------------------------------------------------- #
+
+
+def test_load_run_falls_back_to_now_for_an_unparseable_ts_string(store, monkeypatch):
+    monkeypatch.setattr(type(store), "_load_local_run", staticmethod(lambda run_id: None))
+    store.put_run({"id": "run-bad-ts", "status": "completed"})
+    client_items = store.client
+    # Corrupt the stored ts to something datetime.fromisoformat cannot parse.
+    client_items.items[("RUN#run-bad-ts", "META")]["ts"] = {"S": "not-a-timestamp"}
+
+    record = store.load_run("run-bad-ts")
+
+    from datetime import datetime
+
+    assert isinstance(record.ts, datetime)
+
+
+def test_load_run_defaults_to_now_when_ts_is_neither_str_nor_datetime(store, monkeypatch):
+    monkeypatch.setattr(
+        type(store),
+        "_load_local_run",
+        staticmethod(lambda run_id: None),
+    )
+    monkeypatch.setattr(
+        type(store),
+        "get_run",
+        lambda self, run_id: {"id": run_id, "ts": 12345, "status": "completed"},
+    )
+
+    record = store.load_run("run-weird-ts")
+
+    from datetime import datetime
+
+    assert isinstance(record.ts, datetime)
+
+
+# --------------------------------------------------------------------------- #
+# _load_local_run: the real (non-monkeypatched) SQLite path
+# --------------------------------------------------------------------------- #
+
+
+def test_save_run_mirrors_a_real_local_sqlite_row(store, client, tmp_path):
+    """Exercises the actual ``_load_local_run`` implementation (Session + history),
+    rather than the monkeypatched stand-in most other tests use."""
+    from sqlmodel import Session
+
+    from promptatron.store import db, history
+
+    db.init_db(str(tmp_path / "worker_ddb.db"))
+    with Session(db.get_engine()) as session:
+        created = history.create_run(
+            session,
+            model_id="some-model",
+            system_prompt="",
+            user_prompt="hi",
+            config={"tools_enabled": False},
+            status="completed",
+            output="done",
+        )
+
+    store.save_run(created.id)
+
+    item = client.item(f"RUN#{created.id}", "META")
+    assert item is not None
+    assert item["output"] == {"S": "done"}
+    assert store.saved_run_ids == [created.id]
+
+
+def test_save_run_with_a_real_db_but_an_unknown_run_id_is_a_no_op(store, client, tmp_path):
+    """The NotFoundError branch of the real ``_load_local_run``, not the monkeypatched one."""
+    from promptatron.store import db
+
+    db.init_db(str(tmp_path / "worker_ddb_empty.db"))
+
+    store.save_run("run-does-not-exist-locally")
+
+    assert client.item("RUN#run-does-not-exist-locally", "META") is None
+    assert store.saved_run_ids == []
+
+
+def test_save_run_with_no_local_db_configured_is_a_no_op(store, client, monkeypatch):
+    """A worker that only ever grades DynamoDB-resident runs never touches SQLite;
+    a lookup failure there must not be fatal."""
+    import promptatron.store.db as db_module
+
+    def _broken_engine():
+        raise RuntimeError("no local database configured")
+
+    monkeypatch.setattr(db_module, "get_engine", _broken_engine)
+
+    store.save_run("run-never-local")
+
+    assert client.item("RUN#run-never-local", "META") is None
+    assert store.saved_run_ids == []

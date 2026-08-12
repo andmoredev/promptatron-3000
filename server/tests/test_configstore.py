@@ -1,7 +1,6 @@
 """Tests for ConfigStoreClient against fixture-shaped upstream responses."""
 
 import json
-from pathlib import Path
 
 import httpx
 import pytest
@@ -10,12 +9,16 @@ import respx
 from promptatron.configstore.client import ConfigStoreClient
 from promptatron.errors import BadRequestError, NotFoundError, UpstreamError
 from promptatron.schemas.scenario import (
+    DatasetCreateRequest,
     DatasetUpdateRequest,
+    PromptUpdateRequest,
     ScenarioUpdateRequest,
+    ToolUpsertRequest,
 )
+from tests._repo_paths import find_upward
 
 BASE_URL = "https://configstore.test"
-FIXTURES_DIR = Path(__file__).resolve().parents[2] / "api" / "tests" / "fixtures"
+FIXTURES_DIR = find_upward("api", "tests", "fixtures")
 
 
 def _fixture(name: str) -> dict:
@@ -225,6 +228,25 @@ async def test_get_scenario_is_cached_across_calls(client: ConfigStoreClient):
 
 
 @respx.mock
+async def test_get_scenario_cache_expires_after_the_ttl(client: ConfigStoreClient, monkeypatch):
+    fixture = _fixture("scenario-hydrated.json")
+    route = respx.get(f"{BASE_URL}/scenarios/fraud-detection-comprehensive").mock(
+        return_value=httpx.Response(200, json=fixture)
+    )
+
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(
+        "promptatron.configstore.client.time.monotonic", lambda: clock["now"]
+    )
+
+    await client.get_scenario("fraud-detection-comprehensive")
+    clock["now"] += 31.0  # past the 30s TTL
+    await client.get_scenario("fraud-detection-comprehensive")
+
+    assert route.call_count == 2
+
+
+@respx.mock
 async def test_list_scenarios_is_cached_across_calls(client: ConfigStoreClient):
     fixture = _fixture("scenario-list.json")
     route = respx.get(f"{BASE_URL}/scenarios").mock(return_value=httpx.Response(200, json=fixture))
@@ -294,3 +316,241 @@ async def test_list_cache_invalidated_after_create_scenario(client: ConfigStoreC
     await client.list_scenarios()
 
     assert list_route.call_count == 2
+
+
+# --------------------------------------------------------------------------- #
+# Pagination params
+# --------------------------------------------------------------------------- #
+
+
+@respx.mock
+async def test_list_scenarios_sends_both_limit_and_next_token(client: ConfigStoreClient):
+    fixture = _fixture("scenario-list.json")
+    route = respx.get(f"{BASE_URL}/scenarios").mock(return_value=httpx.Response(200, json=fixture))
+
+    await client.list_scenarios(limit=5, next_token="page-2")
+
+    sent = route.calls.last.request.url.params
+    assert sent["limit"] == "5"
+    assert sent["nextToken"] == "page-2"
+
+
+# --------------------------------------------------------------------------- #
+# Every write route (delete/update on prompts, datasets, tools)
+# --------------------------------------------------------------------------- #
+
+
+@respx.mock
+async def test_delete_scenario_round_trip_and_cache_invalidation(client: ConfigStoreClient):
+    fixture = _fixture("scenario-hydrated.json")
+    get_route = respx.get(f"{BASE_URL}/scenarios/fraud-detection-comprehensive").mock(
+        return_value=httpx.Response(200, json=fixture)
+    )
+    delete_route = respx.delete(f"{BASE_URL}/scenarios/fraud-detection-comprehensive").mock(
+        return_value=httpx.Response(204)
+    )
+
+    await client.get_scenario("fraud-detection-comprehensive")
+    await client.delete_scenario("fraud-detection-comprehensive")
+    await client.get_scenario("fraud-detection-comprehensive")
+
+    assert delete_route.call_count == 1
+    # The detail cache was invalidated by the delete, so the second get_scenario
+    # is a real request rather than a cache hit.
+    assert get_route.call_count == 2
+
+
+@respx.mock
+async def test_update_prompt_round_trip_and_cache_invalidation(client: ConfigStoreClient):
+    fixture = _fixture("scenario-hydrated.json")
+    get_route = respx.get(f"{BASE_URL}/scenarios/fraud-detection-comprehensive").mock(
+        return_value=httpx.Response(200, json=fixture)
+    )
+    put_route = respx.put(
+        f"{BASE_URL}/scenarios/fraud-detection-comprehensive/prompts/fraud-analyst"
+    ).mock(return_value=httpx.Response(204))
+
+    await client.get_scenario("fraud-detection-comprehensive")
+    await client.update_prompt(
+        "fraud-detection-comprehensive", "fraud-analyst", PromptUpdateRequest(name="Renamed")
+    )
+    await client.get_scenario("fraud-detection-comprehensive")
+
+    assert put_route.call_count == 1
+    assert get_route.call_count == 2
+
+
+@respx.mock
+async def test_delete_prompt_round_trip_and_cache_invalidation(client: ConfigStoreClient):
+    fixture = _fixture("scenario-hydrated.json")
+    get_route = respx.get(f"{BASE_URL}/scenarios/fraud-detection-comprehensive").mock(
+        return_value=httpx.Response(200, json=fixture)
+    )
+    delete_route = respx.delete(
+        f"{BASE_URL}/scenarios/fraud-detection-comprehensive/prompts/fraud-analyst"
+    ).mock(return_value=httpx.Response(204))
+
+    await client.get_scenario("fraud-detection-comprehensive")
+    await client.delete_prompt("fraud-detection-comprehensive", "fraud-analyst")
+    await client.get_scenario("fraud-detection-comprehensive")
+
+    assert delete_route.call_count == 1
+    assert get_route.call_count == 2
+
+
+@respx.mock
+async def test_create_prompt_round_trip_and_cache_invalidation(client: ConfigStoreClient):
+    from promptatron.schemas.scenario import PromptCreateRequest
+
+    fixture = _fixture("scenario-hydrated.json")
+    get_route = respx.get(f"{BASE_URL}/scenarios/fraud-detection-comprehensive").mock(
+        return_value=httpx.Response(200, json=fixture)
+    )
+    post_route = respx.post(
+        f"{BASE_URL}/scenarios/fraud-detection-comprehensive/prompts"
+    ).mock(return_value=httpx.Response(201, json={"id": "new-prompt"}))
+
+    await client.get_scenario("fraud-detection-comprehensive")
+    result = await client.create_prompt(
+        "fraud-detection-comprehensive",
+        PromptCreateRequest(kind="SYSTEM", name="New Prompt", content="Be helpful."),
+    )
+    await client.get_scenario("fraud-detection-comprehensive")
+
+    assert result.id == "new-prompt"
+    assert post_route.call_count == 1
+    assert get_route.call_count == 2
+
+
+@respx.mock
+async def test_list_tools_round_trip(client: ConfigStoreClient):
+    tool_fixture = _fixture("tool.json")
+    route = respx.get(f"{BASE_URL}/scenarios/fraud-detection-comprehensive/tools").mock(
+        return_value=httpx.Response(200, json={"items": [tool_fixture], "count": 1})
+    )
+
+    result = await client.list_tools("fraud-detection-comprehensive")
+
+    assert result.count == 1
+    assert result.items[0].name == tool_fixture["name"]
+    assert route.called
+
+
+@respx.mock
+async def test_list_datasets_round_trip(client: ConfigStoreClient):
+    fixture = {"items": [], "count": 0}
+    route = respx.get(f"{BASE_URL}/scenarios/fraud-detection-comprehensive/datasets").mock(
+        return_value=httpx.Response(200, json=fixture)
+    )
+
+    result = await client.list_datasets("fraud-detection-comprehensive", limit=3)
+
+    assert result.count == 0
+    assert route.calls.last.request.url.params["limit"] == "3"
+
+
+@respx.mock
+async def test_create_dataset_round_trip_and_cache_invalidation(client: ConfigStoreClient):
+    fixture = _fixture("scenario-hydrated.json")
+    get_route = respx.get(f"{BASE_URL}/scenarios/fraud-detection-comprehensive").mock(
+        return_value=httpx.Response(200, json=fixture)
+    )
+    post_route = respx.post(
+        f"{BASE_URL}/scenarios/fraud-detection-comprehensive/datasets"
+    ).mock(return_value=httpx.Response(201, json={"id": "new-dataset"}))
+
+    await client.get_scenario("fraud-detection-comprehensive")
+    result = await client.create_dataset(
+        "fraud-detection-comprehensive",
+        DatasetCreateRequest(name="New", content_type="text/csv", content="a,b\n1,2\n"),
+    )
+    await client.get_scenario("fraud-detection-comprehensive")
+
+    assert result.id == "new-dataset"
+    assert post_route.call_count == 1
+    assert get_route.call_count == 2
+
+
+@respx.mock
+async def test_delete_dataset_round_trip_and_cache_invalidation(client: ConfigStoreClient):
+    fixture = _fixture("scenario-hydrated.json")
+    get_route = respx.get(f"{BASE_URL}/scenarios/fraud-detection-comprehensive").mock(
+        return_value=httpx.Response(200, json=fixture)
+    )
+    delete_route = respx.delete(
+        f"{BASE_URL}/scenarios/fraud-detection-comprehensive/datasets/retail-transactions"
+    ).mock(return_value=httpx.Response(204))
+
+    await client.get_scenario("fraud-detection-comprehensive")
+    await client.delete_dataset("fraud-detection-comprehensive", "retail-transactions")
+    await client.get_scenario("fraud-detection-comprehensive")
+
+    assert delete_route.call_count == 1
+    assert get_route.call_count == 2
+
+
+@respx.mock
+async def test_upsert_tool_round_trip_and_cache_invalidation(client: ConfigStoreClient):
+    fixture = _fixture("scenario-hydrated.json")
+    tool_fixture = _fixture("tool.json")
+    get_route = respx.get(f"{BASE_URL}/scenarios/fraud-detection-comprehensive").mock(
+        return_value=httpx.Response(200, json=fixture)
+    )
+    put_route = respx.put(
+        f"{BASE_URL}/scenarios/fraud-detection-comprehensive/tools/new_tool"
+    ).mock(return_value=httpx.Response(200, json=tool_fixture))
+
+    await client.get_scenario("fraud-detection-comprehensive")
+    result = await client.upsert_tool(
+        "fraud-detection-comprehensive",
+        "new_tool",
+        ToolUpsertRequest(description="x", input_schema={"type": "object"}, handler_key="h.f"),
+    )
+    await client.get_scenario("fraud-detection-comprehensive")
+
+    assert result.name == tool_fixture["name"]
+    assert put_route.call_count == 1
+    assert get_route.call_count == 2
+
+
+# --------------------------------------------------------------------------- #
+# Error message parsing edge cases
+# --------------------------------------------------------------------------- #
+
+
+@respx.mock
+async def test_a_non_json_error_body_falls_back_to_the_default_message(
+    client: ConfigStoreClient,
+):
+    respx.get(f"{BASE_URL}/scenarios/missing").mock(
+        return_value=httpx.Response(404, text="<html>not json</html>")
+    )
+
+    with pytest.raises(NotFoundError) as exc_info:
+        await client.get_scenario("missing")
+    assert exc_info.value.message == "Resource not found"
+
+
+@respx.mock
+async def test_a_json_error_body_without_a_message_key_falls_back_to_the_default(
+    client: ConfigStoreClient,
+):
+    respx.get(f"{BASE_URL}/scenarios/missing").mock(
+        return_value=httpx.Response(404, json={"detail": "gone"})
+    )
+
+    with pytest.raises(NotFoundError) as exc_info:
+        await client.get_scenario("missing")
+    assert exc_info.value.message == "Resource not found"
+
+
+@respx.mock
+async def test_an_unmapped_4xx_status_is_an_upstream_error(client: ConfigStoreClient):
+    """401/403/etc aren't retried and aren't 400/404 -- they surface as upstream_error."""
+    respx.get(f"{BASE_URL}/scenarios/x").mock(
+        return_value=httpx.Response(401, json={"message": "no api key"})
+    )
+
+    with pytest.raises(UpstreamError) as exc_info:
+        await client.get_scenario("x")
+    assert exc_info.value.message == "config store unreachable"

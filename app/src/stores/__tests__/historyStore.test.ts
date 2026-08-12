@@ -18,7 +18,7 @@ vi.mock('../../api', async (importOriginal) => {
   }
 })
 
-const { ApiError } = await import('../../api')
+const { ApiError, StreamAbortedError } = await import('../../api')
 const {
   useHistoryStore,
   selectHasMore,
@@ -101,6 +101,35 @@ describe('paging', () => {
     expect(state.error).toEqual({ code: 'internal_error', message: 'database is locked' })
     expect(state.loading).toBe(false)
     expect(state.items).toEqual([])
+  })
+
+  it('loadFirstPage tolerates an abort, clearing loading without recording an error', async () => {
+    listMock.mockRejectedValueOnce(new StreamAbortedError())
+
+    await useHistoryStore.getState().loadFirstPage()
+
+    const state = useHistoryStore.getState()
+    expect(state.loading).toBe(false)
+    expect(state.error).toBeNull()
+    expect(state.loaded).toBe(false)
+  })
+
+  it('loadMore records a real failure and tolerates an abort without recording an error', async () => {
+    listMock.mockResolvedValueOnce(page([summary('r1')], 'cursor-1'))
+    await useHistoryStore.getState().loadFirstPage()
+
+    listMock.mockRejectedValueOnce(new ApiError('boom', { code: 'internal_error' }))
+    await useHistoryStore.getState().loadMore()
+    expect(useHistoryStore.getState().error).toEqual({ code: 'internal_error', message: 'boom' })
+    expect(useHistoryStore.getState().loading).toBe(false)
+
+    // Still has a cursor (loadMore's failure didn't consume it), so a retry
+    // can go through the abort branch instead.
+    useHistoryStore.setState({ error: null })
+    listMock.mockRejectedValueOnce(new StreamAbortedError())
+    await useHistoryStore.getState().loadMore()
+    expect(useHistoryStore.getState().error).toBeNull()
+    expect(useHistoryStore.getState().loading).toBe(false)
   })
 })
 
@@ -204,6 +233,25 @@ describe('detail cache and removal', () => {
     await useHistoryStore.getState().getRunDetail('r1')
     await useHistoryStore.getState().getRunDetail('r1', true)
     expect(getMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('records a non-aborted getRunDetail failure and returns null, without caching', async () => {
+    getMock.mockRejectedValueOnce(new ApiError('gone', { code: 'not_found', status: 404 }))
+
+    const result = await useHistoryStore.getState().getRunDetail('missing')
+
+    expect(result).toBeNull()
+    expect(useHistoryStore.getState().error).toEqual({ code: 'not_found', message: 'gone' })
+    expect(useHistoryStore.getState().details.missing).toBeUndefined()
+  })
+
+  it('swallows an aborted getRunDetail without recording an error', async () => {
+    getMock.mockRejectedValueOnce(new StreamAbortedError())
+
+    const result = await useHistoryStore.getState().getRunDetail('r1')
+
+    expect(result).toBeNull()
+    expect(useHistoryStore.getState().error).toBeNull()
   })
 
   it('remove() drops the row and its cached detail', async () => {

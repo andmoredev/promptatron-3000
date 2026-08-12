@@ -241,6 +241,37 @@ async def test_execute_drives_the_engine_and_writes_the_terminal_state(
     assert client.item("RUN#run-1", "META") is not None
 
 
+async def test_execute_settles_from_the_outcome_when_the_engine_never_called_save_evaluation(
+    monkeypatch, client, store_factory
+):
+    """The other half of the ``finalize()`` contract: an engine that returns a
+    result *without* ever buffering a terminal ``save_evaluation`` (so
+    ``finalize()`` is a no-op) is settled by the worker itself, from the
+    returned outcome dict -- this is the real "engine returned without
+    settling at all" case the module's docstring describes."""
+    result = {"grade": "B", "score": 0.7, "run_ids": ["run-9"]}
+
+    async def fake_seam(request, emit, store, cancelled=None, **_kwargs):
+        emit({"type": "eval_start", "evaluation_id": EVAL_ID, "kind": "determinism", "n": 1})
+        # Deliberately never calls store.save_evaluation/finalize.
+        return {"status": "completed", "result": result, "error": None, "run_ids": ["run-9"]}
+
+    monkeypatch.setattr(interfaces, "load_seam", lambda: fake_seam)
+
+    store = store_factory(EVAL_ID)
+    store.begin(REQUEST)
+    store.mark_running()
+    await agentcore_app.execute(EVAL_ID, REQUEST, store)
+
+    item = meta(client)
+    assert item["status"] == {"S": "completed"}
+    assert json.loads(item["result"]["S"]) == result
+    assert json.loads(item["run_ids"]["S"]) == ["run-9"]
+    # complete() synthesizes the eval_complete event since the engine's own
+    # emit() calls never included one.
+    assert collected(client)[-1]["type"] == "eval_complete"
+
+
 async def test_execute_short_circuits_when_cancelled_before_it_starts(
     monkeypatch, client, store_factory
 ):
@@ -280,6 +311,43 @@ async def test_execute_records_an_engine_crash_as_a_terminal_error(
     }
     # The reader's stream still terminates.
     assert collected(client)[-1]["type"] == "eval_complete"
+
+
+async def test_execute_records_cancellation_and_reraises(monkeypatch, client, store_factory):
+    """A runtime shutdown mid-evaluation still leaves a terminal, readable row --
+    and the CancelledError itself must propagate, not be swallowed."""
+
+    async def cancelled(*_args, **_kwargs):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(interfaces, "load_seam", lambda: cancelled)
+
+    store = store_factory(EVAL_ID)
+    store.begin(REQUEST)
+
+    with pytest.raises(asyncio.CancelledError):
+        await agentcore_app.execute(EVAL_ID, REQUEST, store)
+
+    assert meta(client)["status"] == {"S": "cancelled"}
+    assert collected(client)[-1]["type"] == "eval_complete"
+
+
+async def test_execute_reports_an_invalid_payload_from_the_seam(monkeypatch, client, store_factory):
+    async def invalid(*_args, **_kwargs):
+        raise interfaces.InvalidPayload("run_config is required")
+
+    monkeypatch.setattr(interfaces, "load_seam", lambda: invalid)
+
+    store = store_factory(EVAL_ID)
+    store.begin(REQUEST)
+    await agentcore_app.execute(EVAL_ID, REQUEST, store)  # must not raise
+
+    item = meta(client)
+    assert item["status"] == {"S": "error"}
+    assert json.loads(item["error"]["S"]) == {
+        "code": "invalid_request",
+        "message": "run_config is required",
+    }
 
 
 async def test_execute_reports_a_missing_engine_seam(monkeypatch, client, store_factory):

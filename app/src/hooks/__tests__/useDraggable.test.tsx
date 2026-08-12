@@ -152,6 +152,41 @@ describe('useDraggable', () => {
     expect(target.style.top).toBe('45px')
   })
 
+  it('captures the pointer on pointerdown and releases it on pointerup, when the element supports it', () => {
+    const { result } = renderHook(() =>
+      useDraggable({ defaultPosition: { x: 100, y: 100 }, size: SIZE })
+    )
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const setPointerCapture = vi.fn()
+    const releasePointerCapture = vi.fn()
+    // jsdom does not implement these; stub them the way a real browser
+    // element would provide them, so the `?.()` call sites actually fire.
+    Object.assign(container, { setPointerCapture, releasePointerCapture })
+    Object.defineProperty(result.current.dragRef, 'current', {
+      value: container,
+      writable: true
+    })
+
+    act(() => {
+      result.current.onPointerDown({
+        clientX: 200,
+        clientY: 150,
+        pointerId: 7
+      } as unknown as ReactPointerEvent<HTMLDivElement>)
+    })
+
+    expect(setPointerCapture).toHaveBeenCalledWith(7)
+    expect(releasePointerCapture).not.toHaveBeenCalled()
+
+    act(() => {
+      document.dispatchEvent(pointerEvent('pointerup', 200, 150, 7))
+    })
+
+    expect(releasePointerCapture).toHaveBeenCalledWith(7)
+  })
+
   it('does nothing on pointerdown when disabled', () => {
     const { result } = renderHook(() =>
       useDraggable({ defaultPosition: { x: 50, y: 50 }, size: SIZE, disabled: true })

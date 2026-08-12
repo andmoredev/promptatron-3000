@@ -8,7 +8,6 @@ bodies from api/tests/fixtures/.
 
 import json
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 import httpx
 import pytest
@@ -18,9 +17,10 @@ from fastapi import FastAPI
 from promptatron.configstore.client import ConfigStoreClient
 from promptatron.errors import register_exception_handlers
 from promptatron.routers.scenarios import get_config_store_client, router
+from tests._repo_paths import find_upward
 
 BASE_URL = "https://configstore.test"
-FIXTURES_DIR = Path(__file__).resolve().parents[2] / "api" / "tests" / "fixtures"
+FIXTURES_DIR = find_upward("api", "tests", "fixtures")
 
 
 def _fixture(name: str) -> dict:

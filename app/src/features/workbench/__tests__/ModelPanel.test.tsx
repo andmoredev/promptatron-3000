@@ -150,6 +150,41 @@ describe('ModelPanel', () => {
     expect(state.provider).toBe('anthropic')
   })
 
+  it('clearing the selection back to "" writes an empty model_id without touching provider', () => {
+    useScenarioStore.setState({
+      models: MULTI_PROVIDER_MODELS,
+      modelsLoaded: true,
+      modelProviders: ALL_CONFIGURED
+    })
+    useRunConfigStore.setState({ model_id: 'claude-opus-4', provider: 'anthropic' })
+
+    render(<ModelPanel />)
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Model' }), {
+      target: { value: '' }
+    })
+
+    const state = useRunConfigStore.getState()
+    expect(state.model_id).toBe('')
+    expect(state.provider).toBe('anthropic')
+  })
+
+  it('shows a "cached" badge when the catalog came from the server cache', () => {
+    useScenarioStore.setState({ models: MODELS, modelsLoaded: true, modelsCached: true })
+    render(<ModelPanel />)
+    expect(screen.getByText('cached')).toBeInTheDocument()
+    expect(screen.getByText('cached')).toHaveAttribute(
+      'title',
+      "Served from the server's catalog cache"
+    )
+  })
+
+  it('shows no "cached" badge when the catalog was freshly fetched', () => {
+    useScenarioStore.setState({ models: MODELS, modelsLoaded: true, modelsCached: false })
+    render(<ModelPanel />)
+    expect(screen.queryByText('cached')).not.toBeInTheDocument()
+  })
+
   it('groups options by source with Bedrock / Anthropic / OpenAI / Ollama (local) labels', () => {
     useScenarioStore.setState({
       models: MULTI_PROVIDER_MODELS,

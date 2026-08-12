@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '../client'
@@ -16,7 +19,6 @@ import type {
   ToolResultEvent,
   ToolUseStartEvent
 } from '../types'
-import runStreamFixture from './fixtures/run-stream.ndjson?raw'
 import {
   bodyOf,
   fakeResponse,
@@ -31,6 +33,16 @@ import {
 } from './helpers'
 
 const BASE = 'http://localhost:8000/api/v1'
+
+// Read from disk rather than a Vite `?raw` import: the latter routes through
+// Vite's asset-transform pipeline, which some non-browser test runners
+// (Stryker's mutation test runner, in particular) don't apply consistently.
+// `readFileSync` is plain Node and behaves the same everywhere. Built via
+// `node:path`/`node:url` rather than `new URL(...)` directly — the jsdom test
+// environment replaces the global `URL` with its own implementation, which
+// Node's `fs` functions don't recognize as a `file:` URL.
+const FIXTURES_DIR = dirname(fileURLToPath(import.meta.url))
+const runStreamFixture = readFileSync(join(FIXTURES_DIR, 'fixtures/run-stream.ndjson'), 'utf8')
 
 const noContent = () => fakeResponse({ status: 204, statusText: 'No Content' })
 
@@ -170,6 +182,26 @@ describe('api.scenarios', () => {
     expect(created.id).toBe('p1')
   })
 
+  it('lists, updates and removes a prompt', async () => {
+    const spy = mockFetch(
+      jsonResponse({ items: [], count: 0, nextToken: null }),
+      noContent(),
+      noContent()
+    )
+
+    await api.scenarios.prompts.list('s1', { limit: 5, nextToken: 'tok' })
+    await api.scenarios.prompts.update('s1', 'p1', { name: 'Renamed', content: 'New text' })
+    await api.scenarios.prompts.remove('s1', 'p1')
+
+    expect(urlsOf(spy)).toEqual([
+      `${BASE}/scenarios/s1/prompts?limit=5&nextToken=tok`,
+      `${BASE}/scenarios/s1/prompts/p1`,
+      `${BASE}/scenarios/s1/prompts/p1`
+    ])
+    expect(methodsOf(spy)).toEqual(['GET', 'PUT', 'DELETE'])
+    expect(bodyOf(spy, 1)).toEqual({ name: 'Renamed', content: 'New text' })
+  })
+
   it('gets a dataset with its content', async () => {
     const spy = mockFetch(
       jsonResponse({
@@ -185,6 +217,59 @@ describe('api.scenarios', () => {
 
     expect(urlOf(spy)).toBe(`${BASE}/scenarios/s1/datasets/orders-csv`)
     expect(dataset.contentType).toBe('text/csv')
+  })
+
+  it('lists, creates, updates and removes a dataset', async () => {
+    const spy = mockFetch(
+      jsonResponse({ items: [], count: 0, nextToken: null }),
+      jsonResponse({ id: 'orders-csv' }, 201),
+      noContent(),
+      noContent()
+    )
+
+    await api.scenarios.datasets.list('s1')
+    await api.scenarios.datasets.create('s1', {
+      id: 'orders-csv',
+      name: 'Orders',
+      contentType: 'text/csv',
+      content: 'order_id\nB456\n'
+    })
+    await api.scenarios.datasets.update('s1', 'orders-csv', {
+      name: 'Orders v2',
+      contentType: 'text/csv',
+      content: 'order_id\nB457\n'
+    })
+    await api.scenarios.datasets.remove('s1', 'orders-csv')
+
+    expect(urlsOf(spy)).toEqual([
+      `${BASE}/scenarios/s1/datasets`,
+      `${BASE}/scenarios/s1/datasets`,
+      `${BASE}/scenarios/s1/datasets/orders-csv`,
+      `${BASE}/scenarios/s1/datasets/orders-csv`
+    ])
+    expect(methodsOf(spy)).toEqual(['GET', 'POST', 'PUT', 'DELETE'])
+    expect(bodyOf(spy, 1)).toEqual({
+      id: 'orders-csv',
+      name: 'Orders',
+      contentType: 'text/csv',
+      content: 'order_id\nB456\n'
+    })
+  })
+
+  it('gets a single tool definition by name', async () => {
+    const spy = mockFetch(
+      jsonResponse({
+        name: 'getCarrierStatus',
+        description: 'd',
+        inputSchema: { type: 'object' },
+        handlerKey: 'k'
+      })
+    )
+
+    const tool = await api.scenarios.tools.get('s1', 'getCarrierStatus')
+
+    expect(urlOf(spy)).toBe(`${BASE}/scenarios/s1/tools/getCarrierStatus`)
+    expect(tool.handlerKey).toBe('k')
   })
 
   it('lists tools with the snake_case handler_registered flag', async () => {

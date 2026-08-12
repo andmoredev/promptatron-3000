@@ -7,10 +7,25 @@
  * hand-written approximation.
  */
 
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-// The same NDJSON fixture the API-layer stream tests replay, loaded verbatim.
-import fixtureNdjson from '../../api/__tests__/fixtures/run-stream.ndjson?raw'
 import type { RunStreamEvent } from '../../api'
+
+// The same NDJSON fixture the API-layer stream tests replay, loaded verbatim.
+// Read from disk rather than a Vite `?raw` import: the latter routes through
+// Vite's asset-transform pipeline, which some non-browser test runners
+// (Stryker's mutation test runner, in particular) don't apply consistently.
+// `readFileSync` is plain Node and behaves the same everywhere. Built via
+// `node:path`/`node:url` rather than `new URL(...)` directly — the jsdom test
+// environment replaces the global `URL` with its own implementation, which
+// Node's `fs` functions don't recognize as a `file:` URL.
+const THIS_DIR = dirname(fileURLToPath(import.meta.url))
+const fixtureNdjson = readFileSync(
+  join(THIS_DIR, '../../api/__tests__/fixtures/run-stream.ndjson'),
+  'utf8'
+)
 
 const streamMock = vi.fn()
 
@@ -31,8 +46,11 @@ const {
   robotMoodFor,
   selectRobotMood,
   selectIsRunning,
+  selectHasOutput,
   elapsedMs,
   reduceRunEvent,
+  phaseForWireStatus,
+  activeRunController,
   INITIAL_RUN_STATE
 } = await import('../runStore')
 const { useHistoryStore } = await import('../historyStore')
@@ -369,5 +387,38 @@ describe('helpers', () => {
       final_text: ''
     })
     expect(useRunStore.getState().status).toBe('cancelled')
+  })
+
+  it('phaseForWireStatus maps completed/cancelled verbatim and anything else to error', () => {
+    expect(phaseForWireStatus('completed')).toBe('completed')
+    expect(phaseForWireStatus('cancelled')).toBe('cancelled')
+    expect(phaseForWireStatus('error')).toBe('error')
+    expect(phaseForWireStatus('some_unknown_status')).toBe('error')
+  })
+
+  it('reduceRunEvent returns an empty patch for an unrecognized event type', () => {
+    const state = { ...INITIAL_RUN_STATE }
+    // @ts-expect-error deliberately an event type reduceRunEvent doesn't know
+    expect(reduceRunEvent(state, { type: 'totally_unknown' })).toEqual({})
+  })
+
+  it('selectHasOutput is true once streamedText or finalText is non-empty', () => {
+    expect(selectHasOutput(INITIAL_RUN_STATE)).toBe(false)
+    expect(selectHasOutput({ ...INITIAL_RUN_STATE, streamedText: 'hi' })).toBe(true)
+    expect(selectHasOutput({ ...INITIAL_RUN_STATE, finalText: 'done' })).toBe(true)
+  })
+
+  it('activeRunController exposes the live stream controller only while a run is in flight', async () => {
+    expect(activeRunController()).toBeNull()
+
+    let sawControllerDuringStream = false
+    streamMock.mockImplementation(async (_body: unknown, options: { signal?: AbortSignal }) => {
+      sawControllerDuringStream = activeRunController()?.signal === options.signal
+    })
+
+    await useRunStore.getState().startRun({ model_id: 'm', user_prompt: 'hi' })
+
+    expect(sawControllerDuringStream).toBe(true)
+    expect(activeRunController()).toBeNull()
   })
 })
