@@ -1,5 +1,11 @@
 .PHONY: dev dev-server dev-app lint lint-app lint-server test test-app test-api test-server \
-	install install-app install-api install-server deploy-api seed-api e2e smoke
+	install install-app install-api install-server deploy-api seed-api e2e smoke \
+	package-eval-worker deploy-worker
+
+# CloudFormation stack the api/ SAM template deploys into (see api/samconfig.toml).
+STACK_NAME ?= promptatron-config
+# Where scripts/package-eval-worker.sh stages and zips the worker artifact.
+EVAL_WORKER_BUILD_DIR ?= $(CURDIR)/.build/eval-worker
 
 # --------------------------------------------------------------------------- #
 # dev
@@ -104,13 +110,78 @@ smoke:
 # --------------------------------------------------------------------------- #
 
 deploy-api:
-	cd api && npm ci && sam build && sam deploy && \
+	@set -e; \
+	CURRENT_WORKER_KEY=$$(aws cloudformation describe-stacks --stack-name promptatron-config \
+		--query "Stacks[0].Parameters[?ParameterKey=='EvalWorkerArtifactKey'].ParameterValue" \
+		--output text 2>/dev/null || true); \
+	if [ -n "$$CURRENT_WORKER_KEY" ] && [ "$$CURRENT_WORKER_KEY" != "None" ]; then \
+		echo "deploy-api: preserving deployed eval worker artifact $$CURRENT_WORKER_KEY"; \
+		WORKER_OVERRIDE="--parameter-overrides EvalWorkerArtifactKey=$$CURRENT_WORKER_KEY"; \
+	else \
+		WORKER_OVERRIDE=""; \
+	fi; \
+	cd api && npm ci && sam build && sam deploy $$WORKER_OVERRIDE && \
 	TABLE_NAME=$$(aws cloudformation describe-stacks --stack-name promptatron-config --query "Stacks[0].Outputs[?OutputKey=='TableName'].OutputValue" --output text) && \
 	if [ -z "$$TABLE_NAME" ] || [ "$$TABLE_NAME" = "None" ]; then \
 		echo "deploy-api: could not resolve TableName from stack 'promptatron-config' outputs" >&2; \
 		exit 1; \
 	fi && \
 	npm run seed -- --table "$$TABLE_NAME"
+
+# --------------------------------------------------------------------------- #
+# cloud eval worker
+#
+# `package-eval-worker` builds the AgentCore CodeZip artifact and nothing else
+# -- no AWS calls, safe to run anywhere. `deploy-worker` builds it, uploads it,
+# and deploys the whole api/ stack with the worker enabled.
+#
+# deploy-worker is a SUPERSET of deploy-api: it deploys the same stack plus the
+# AgentCore runtime. Once the worker exists, keep using it -- a bare
+# `make deploy-api` passes no EvalWorkerArtifactKey, so the parameter falls back
+# to its empty default and CloudFormation deletes the runtime. (See the
+# parameter's own comment in api/template.yaml.)
+#
+# Optional: pass the config store API key so the worker can resolve stored
+# scenarios/prompts/datasets (CloudFormation cannot read it out of the ApiKey
+# resource, so it has to come in from outside):
+#   EVAL_WORKER_CONFIG_API_KEY=$(aws apigateway get-api-key \
+#       --api-key <ApiKeyId> --include-value --query value --output text) \
+#     make deploy-worker
+# --------------------------------------------------------------------------- #
+
+package-eval-worker:
+	EVAL_WORKER_BUILD_DIR=$(EVAL_WORKER_BUILD_DIR) ./scripts/package-eval-worker.sh
+
+deploy-worker:
+	@set -e; \
+	resolve_output() { \
+		aws cloudformation describe-stacks --stack-name $(STACK_NAME) \
+			--query "Stacks[0].Outputs[?OutputKey=='$$1'].OutputValue" \
+			--output text 2>/dev/null || true; \
+	}; \
+	BUCKET=$$(resolve_output EvalWorkerArtifactBucket); \
+	if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
+		echo "deploy-worker: stack '$(STACK_NAME)' has no artifact bucket yet -- bootstrapping"; \
+		( cd api && npm ci && sam build && sam deploy ); \
+		BUCKET=$$(resolve_output EvalWorkerArtifactBucket); \
+	fi; \
+	if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
+		echo "deploy-worker: could not resolve EvalWorkerArtifactBucket from stack '$(STACK_NAME)'" >&2; \
+		exit 1; \
+	fi; \
+	EVAL_WORKER_BUILD_DIR=$(EVAL_WORKER_BUILD_DIR) ./scripts/package-eval-worker.sh; \
+	. $(EVAL_WORKER_BUILD_DIR)/artifact.env; \
+	echo "deploy-worker: uploading $$ARTIFACT_KEY to s3://$$BUCKET"; \
+	aws s3 cp "$$ARTIFACT_ZIP" "s3://$$BUCKET/$$ARTIFACT_KEY"; \
+	( cd api && npm ci && sam build && sam deploy --parameter-overrides \
+		"EvalWorkerArtifactKey=$$ARTIFACT_KEY" \
+		$${EVAL_WORKER_CONFIG_API_KEY:+"EvalWorkerConfigApiKey=$$EVAL_WORKER_CONFIG_API_KEY"} ); \
+	ARN=$$(resolve_output EvalWorkerRuntimeArn); \
+	TABLE=$$(resolve_output TableName); \
+	echo; \
+	echo "Cloud eval lane deployed. Point the server at it:"; \
+	echo "  PROMPTATRON_EVAL_RUNTIME_ARN=$$ARN"; \
+	echo "  PROMPTATRON_EVAL_TABLE=$$TABLE"
 
 # Runs just the seeder against an already-deployed table. Requires TABLE_NAME, e.g.:
 #   make seed-api TABLE_NAME=promptatron-config-ScenariosTable-XXXXXXXXXXXX

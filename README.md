@@ -202,6 +202,27 @@ The grader model, rubric, and system prompt are all configurable per request
 streams as NDJSON from `GET /api/v1/evaluations/{id}/events`; results and history live alongside
 runs in the server's SQLite database (`server/data/promptatron.db`).
 
+### Execution lanes: local vs cloud
+
+Evaluations run in one of two lanes, chosen per launch with the **Run location** toggle in the
+Evals tab (`execution: "local" | "cloud"` on the API):
+
+- **This machine** (default) — executed in-process by the FastAPI server; history stays in local
+  SQLite. Nothing leaves your machine except the Bedrock calls themselves.
+- **Cloud — persisted** — executed by a worker hosted on Amazon Bedrock AgentCore Runtime; job
+  state, progress events, and every run record are persisted to the config-store DynamoDB table,
+  so evaluations survive laptop/server restarts and are reviewable from any machine pointed at
+  the same stack. Cloud evaluations appear under the **Cloud** filters in the Evals and History
+  tabs.
+
+To enable the cloud lane: `make deploy-worker` (packages the Python worker as an AgentCore
+CodeZip artifact, uploads it, and deploys the runtime alongside the config store), then set
+`PROMPTATRON_EVAL_RUNTIME_ARN` and `PROMPTATRON_EVAL_TABLE` from the stack outputs. The UI
+disables the cloud option until the server reports the lane configured. After the worker exists,
+prefer `make deploy-worker` for stack updates (`make deploy-api` preserves the deployed worker
+artifact automatically). Full design and item shapes: `docs/cloud-evals.md`; infrastructure
+notes and first-deploy verification list: `docs/cloud-evals-infra.md`.
+
 ## Guardrails
 
 `server/promptatron/routers/guardrails.py` authors AWS Bedrock Guardrails directly: create/update
