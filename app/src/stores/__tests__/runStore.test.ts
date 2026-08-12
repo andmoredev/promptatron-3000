@@ -51,6 +51,7 @@ const {
   reduceRunEvent,
   phaseForWireStatus,
   activeRunController,
+  isTerminalPhase,
   INITIAL_RUN_STATE
 } = await import('../runStore')
 const { useHistoryStore } = await import('../historyStore')
@@ -151,6 +152,15 @@ describe('fixture replay through handleEvent', () => {
     expect(entry.inputJson).toBe('{"a": 1,"b": 2}')
     expect(entry.result).toBe('ok')
     expect(entry.duration_ms).toBe(7)
+  })
+
+  it('creates a fresh tool entry with an empty name when an input delta arrives with no prior tool_use_start', () => {
+    const { handleEvent } = useRunStore.getState()
+    handleEvent({ type: 'tool_input_delta', tool_use_id: 'orphan', json: '{"a":1}' })
+
+    expect(useRunStore.getState().toolEvents).toEqual([
+      { tool_use_id: 'orphan', name: '', inputJson: '{"a":1}' }
+    ])
   })
 
   it('keeps two concurrent tool calls apart and preserves their order', () => {
@@ -342,6 +352,50 @@ describe('startRun', () => {
     expect(state.toolEvents).toEqual([])
     expect(state.runId).toBe('r2')
   })
+
+  it('a stale startRun does not null out the controller for a newer, still-live run', async () => {
+    // Simulates two overlapping startRun calls: the first's `finally` must not
+    // clear the controller the second call just installed.
+    let releaseFirst!: () => void
+    streamMock.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { releaseFirst = resolve })
+    )
+    const firstPending = useRunStore.getState().startRun({ model_id: 'm', user_prompt: 'first' })
+
+    streamMock.mockImplementationOnce(() => new Promise<void>(() => {})) // never resolves
+    useRunStore.getState().startRun({ model_id: 'm', user_prompt: 'second' })
+    const controllerDuringSecond = activeRunController()
+
+    releaseFirst()
+    await firstPending
+
+    // The second run's controller must survive the first (stale) run's finally block.
+    expect(activeRunController()).toBe(controllerDuringSecond)
+  })
+})
+
+describe('cancelRun', () => {
+  it('is a no-op while idle', () => {
+    useRunStore.setState({ status: 'idle' })
+    useRunStore.getState().cancelRun()
+    expect(useRunStore.getState().status).toBe('idle')
+  })
+
+  it('is a no-op once the run already reached a terminal phase', () => {
+    for (const status of ['completed', 'error', 'cancelled'] as const) {
+      useRunStore.setState({ status, endedAt: null })
+      useRunStore.getState().cancelRun()
+      expect(useRunStore.getState().status).toBe(status)
+      expect(useRunStore.getState().endedAt).toBeNull()
+    }
+  })
+
+  it('marks an in-flight run cancelled and stamps endedAt', () => {
+    useRunStore.setState({ status: 'streaming', endedAt: null })
+    useRunStore.getState().cancelRun()
+    expect(useRunStore.getState().status).toBe('cancelled')
+    expect(useRunStore.getState().endedAt).not.toBeNull()
+  })
 })
 
 describe('helpers', () => {
@@ -367,6 +421,43 @@ describe('helpers', () => {
     const patch = reduceRunEvent(state, { type: 'text_delta', text: 'b' })
     expect(patch.streamedText).toBe('ab')
     expect(state.streamedText).toBe('a')
+  })
+
+  it('text_delta/reasoning_delta only promote "starting" to "streaming"; any other status passes through unchanged', () => {
+    const streaming = { ...INITIAL_RUN_STATE, status: 'streaming' as const }
+    expect(reduceRunEvent(streaming, { type: 'text_delta', text: 'x' }).status).toBe('streaming')
+
+    const idle = { ...INITIAL_RUN_STATE, status: 'idle' as const }
+    expect(reduceRunEvent(idle, { type: 'text_delta', text: 'x' }).status).toBe('idle')
+
+    const starting = { ...INITIAL_RUN_STATE, status: 'starting' as const }
+    expect(reduceRunEvent(starting, { type: 'reasoning_delta', text: 'x' }).status).toBe(
+      'streaming'
+    )
+    expect(reduceRunEvent(idle, { type: 'reasoning_delta', text: 'x' }).status).toBe('idle')
+  })
+
+  it('isTerminalPhase is true only for completed/error/cancelled', () => {
+    expect(isTerminalPhase('completed')).toBe(true)
+    expect(isTerminalPhase('error')).toBe(true)
+    expect(isTerminalPhase('cancelled')).toBe(true)
+    expect(isTerminalPhase('idle')).toBe(false)
+    expect(isTerminalPhase('starting')).toBe(false)
+    expect(isTerminalPhase('streaming')).toBe(false)
+  })
+
+  it('handleEvent invalidates history only on run_complete, not on other event types', () => {
+    useHistoryStore.setState({ stale: false })
+    useRunStore.getState().handleEvent({ type: 'text_delta', text: 'x' })
+    expect(useHistoryStore.getState().stale).toBe(false)
+
+    useRunStore.getState().handleEvent({
+      type: 'run_complete',
+      run_id: 'r1',
+      status: 'completed',
+      final_text: 'done'
+    })
+    expect(useHistoryStore.getState().stale).toBe(true)
   })
 
   it('falls back to run_complete.final_text when no deltas were streamed', () => {

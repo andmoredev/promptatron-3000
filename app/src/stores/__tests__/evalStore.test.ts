@@ -39,6 +39,7 @@ const {
   reduceEvalEvent,
   progressFraction,
   selectIsEvaluating,
+  phaseForEvalStatus,
   INITIAL_EVAL_STATE,
   activeEvalController
 } = await import('../evalStore')
@@ -204,6 +205,57 @@ describe('progress derivation', () => {
     for (const event of scriptedLog) useEvalStore.getState().handleEvent(event)
     expect(useHistoryStore.getState().stale).toBe(true)
   })
+
+  it('does not invalidate history for a non-eval_complete event', () => {
+    useHistoryStore.setState({ stale: false })
+    useEvalStore.getState().handleEvent(scriptedLog[0])
+    expect(useHistoryStore.getState().stale).toBe(false)
+  })
+
+  it('grading_completed sets the result immediately, without waiting for eval_complete', () => {
+    const patch = reduceEvalEvent(
+      { ...INITIAL_EVAL_STATE, events: [scriptedLog[0]] },
+      { type: 'grading_completed', result }
+    )
+    expect(patch.result).toBe(result)
+    expect(patch.status).toBeUndefined() // grading_completed alone doesn't change phase
+  })
+
+  it('eval_complete with a null result leaves result untouched (only a truthy result overwrites it)', () => {
+    const primed = reduceEvalEvent(INITIAL_EVAL_STATE, {
+      type: 'grading_completed',
+      result
+    })
+    const state = { ...INITIAL_EVAL_STATE, ...primed }
+    const patch = reduceEvalEvent(state, { type: 'eval_complete', status: 'completed', result: null })
+
+    expect(patch.result).toBeUndefined()
+    expect(state.result).toBe(result) // the previously-set result survives
+  })
+
+  it('reduceEvalEvent leaves status/result untouched for an unrecognized event type', () => {
+    const state = { ...INITIAL_EVAL_STATE, status: 'running' as const }
+    // @ts-expect-error deliberately an event type reduceEvalEvent doesn't know
+    const patch = reduceEvalEvent(state, { type: 'totally_unknown' })
+    expect(patch.status).toBeUndefined()
+    expect(patch.result).toBeUndefined()
+  })
+
+  it('phaseForEvalStatus maps completed/cancelled verbatim and anything else to error', () => {
+    expect(phaseForEvalStatus('completed')).toBe('completed')
+    expect(phaseForEvalStatus('cancelled')).toBe('cancelled')
+    expect(phaseForEvalStatus('error')).toBe('error')
+    expect(phaseForEvalStatus('some_unknown_status')).toBe('error')
+  })
+
+  it('selectIsEvaluating is true only for starting/running/grading', () => {
+    for (const status of ['starting', 'running', 'grading'] as const) {
+      expect(selectIsEvaluating({ ...INITIAL_EVAL_STATE, status })).toBe(true)
+    }
+    for (const status of ['idle', 'completed', 'error', 'cancelled'] as const) {
+      expect(selectIsEvaluating({ ...INITIAL_EVAL_STATE, status })).toBe(false)
+    }
+  })
 })
 
 describe('startEvaluation', () => {
@@ -247,6 +299,52 @@ describe('startEvaluation', () => {
       message: 'run_config is required'
     })
   })
+
+  it('seeds progress.total from the created row\'s config.n before any events arrive', async () => {
+    createMock.mockResolvedValueOnce(createdRow) // createdRow.config.n === 4
+    let eventsResolve!: () => void
+    eventsMock.mockImplementation(
+      () => new Promise<void>((resolve) => { eventsResolve = resolve })
+    )
+
+    const pending = useEvalStore
+      .getState()
+      .startEvaluation({ kind: 'determinism', n: 4, run_config: { model_id: 'm', user_prompt: 'p' } })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(useEvalStore.getState().progress.total).toBe(4)
+    eventsResolve()
+    await pending
+  })
+
+  it('seeds progress.total as 0 when the created row carries no config.n', async () => {
+    createMock.mockResolvedValueOnce({ ...createdRow, config: { ...createdRow.config, n: undefined } })
+    let eventsResolve!: () => void
+    eventsMock.mockImplementation(
+      () => new Promise<void>((resolve) => { eventsResolve = resolve })
+    )
+
+    const pending = useEvalStore.getState().startEvaluation({ kind: 'determinism' })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(useEvalStore.getState().progress.total).toBe(0)
+    eventsResolve()
+    await pending
+  })
+
+  it('de-dupes only the matching id, keeping unrelated rows, newest-first', async () => {
+    useEvalStore.setState({ evaluations: [createdRow, { ...createdRow, id: 'eval-99' }] })
+    createMock.mockResolvedValueOnce(createdRow) // id: 'eval-1', same as the stale row
+    eventsMock.mockResolvedValueOnce(undefined)
+
+    await useEvalStore
+      .getState()
+      .startEvaluation({ kind: 'determinism', run_config: { model_id: 'm', user_prompt: 'p' } })
+
+    expect(useEvalStore.getState().evaluations.map((row) => row.id)).toEqual(['eval-1', 'eval-99'])
+  })
 })
 
 describe('followEvaluation', () => {
@@ -275,6 +373,52 @@ describe('followEvaluation', () => {
 
     expect(useEvalStore.getState().events).toHaveLength(scriptedLog.length)
     expect(useEvalStore.getState().progress).toEqual({ completed: 3, failed: 1, total: 4 })
+  })
+
+  it('preserves progress.total when re-attaching to the SAME evaluation, but resets it for a DIFFERENT one', async () => {
+    eventsMock.mockImplementationOnce(
+      async (_id: string, options: { onEvent: (event: EvalStreamEvent) => void }) => {
+        options.onEvent({ type: 'eval_start', evaluation_id: 'eval-1', kind: 'determinism', n: 7 })
+      }
+    )
+    await useEvalStore.getState().followEvaluation('eval-1')
+    expect(useEvalStore.getState().progress.total).toBe(7)
+
+    // Re-attach to the same evaluation before any further events: total survives.
+    eventsMock.mockImplementationOnce(() => new Promise<void>(() => {}))
+    void useEvalStore.getState().followEvaluation('eval-1')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(useEvalStore.getState().progress.total).toBe(7)
+
+    // Attach to a *different* evaluation: total resets to 0 until its own eval_start.
+    eventsMock.mockImplementationOnce(() => new Promise<void>(() => {}))
+    void useEvalStore.getState().followEvaluation('eval-2')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(useEvalStore.getState().progress.total).toBe(0)
+  })
+
+  it('sets status "running" when attaching fresh (not already "starting")', async () => {
+    useEvalStore.setState({ status: 'idle' })
+    eventsMock.mockImplementationOnce(() => new Promise<void>(() => {}))
+
+    void useEvalStore.getState().followEvaluation('eval-1')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(useEvalStore.getState().status).toBe('running')
+  })
+
+  it('keeps status "starting" when followEvaluation is the continuation of startEvaluation', async () => {
+    useEvalStore.setState({ status: 'starting' })
+    eventsMock.mockImplementationOnce(() => new Promise<void>(() => {}))
+
+    void useEvalStore.getState().followEvaluation('eval-1')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(useEvalStore.getState().status).toBe('starting')
   })
 
   it('records a stream failure as an error', async () => {
@@ -522,5 +666,55 @@ describe('list ops', () => {
     listMock.mockRejectedValueOnce(new ApiError('nope', { code: 'http_error' }))
     await useEvalStore.getState().loadMoreEvaluations()
     expect(useEvalStore.getState().listError).toEqual({ code: 'http_error', message: 'nope' })
+  })
+
+  it('loadEvaluations sets listLoading:true (clearing a stale listError) synchronously, before the request resolves', async () => {
+    useEvalStore.setState({ listError: { code: 'stale', message: 'stale' } })
+    let resolveList!: (page: Page<EvaluationDetail>) => void
+    listMock.mockImplementationOnce(
+      () => new Promise<Page<EvaluationDetail>>((resolve) => { resolveList = resolve })
+    )
+
+    const pending = useEvalStore.getState().loadEvaluations()
+    expect(useEvalStore.getState().listLoading).toBe(true)
+    expect(useEvalStore.getState().listError).toBeNull()
+
+    resolveList({ items: rows(['e1']), next_cursor: null })
+    await pending
+    expect(useEvalStore.getState().listLoading).toBe(false)
+  })
+
+  it('loadMoreEvaluations sets listLoading:true synchronously, before the request resolves', async () => {
+    useEvalStore.setState({ nextCursor: 'c1', listLoading: false })
+    let resolveList!: (page: Page<EvaluationDetail>) => void
+    listMock.mockImplementationOnce(
+      () => new Promise<Page<EvaluationDetail>>((resolve) => { resolveList = resolve })
+    )
+
+    const pending = useEvalStore.getState().loadMoreEvaluations()
+    expect(useEvalStore.getState().listLoading).toBe(true)
+
+    resolveList({ items: rows(['e2']), next_cursor: null })
+    await pending
+    expect(useEvalStore.getState().listLoading).toBe(false)
+  })
+
+  it('refreshEvaluation replaces only the matching row and only updates activeEvaluation when it is the active one', async () => {
+    listMock.mockResolvedValueOnce({
+      items: rows(['e1', 'e2']),
+      next_cursor: null
+    } as Page<EvaluationDetail>)
+    await useEvalStore.getState().loadEvaluations()
+    useEvalStore.setState({ activeEvaluationId: 'e2', activeEvaluation: { ...createdRow, id: 'e2' } })
+
+    getMock.mockResolvedValueOnce({ ...createdRow, id: 'e1', status: 'completed' })
+    await useEvalStore.getState().refreshEvaluation('e1')
+
+    const state = useEvalStore.getState()
+    expect(state.evaluations.find((r) => r.id === 'e1')?.status).toBe('completed')
+    expect(state.evaluations.find((r) => r.id === 'e2')?.status).toBe('pending')
+    // e1 was refreshed, but the *active* evaluation is e2 — untouched.
+    expect(state.activeEvaluation?.id).toBe('e2')
+    expect(state.activeEvaluation?.status).toBe('pending')
   })
 })

@@ -34,6 +34,16 @@ describe('pickQuip', () => {
     expect(pickQuip('success', 'run-42')).toBe(pickQuip('success', 'run-42'))
   })
 
+  it('picks the exact variant the djb2 hash of the seed selects (pins the hash algorithm itself)', () => {
+    // Precomputed from the documented djb2 variant (hash = hash*33 + charCode,
+    // seeded at 5381, |0 each step) mod 3 — three seeds chosen to land on
+    // each of the three "thinking" variants, so a change to the loop bound,
+    // the accumulation operator, or the seed multiplier all show up here.
+    expect(pickQuip('thinking', 'run-1')).toBe('Crunching tokens…')
+    expect(pickQuip('thinking', 'a')).toBe('On it, boss.')
+    expect(pickQuip('thinking', 'ab')).toBe('Let me think on that.')
+  })
+
   it('includes the spec-named line as a variant for each category', () => {
     expect(QUIP_VARIANTS.thinking).toContain('Crunching tokens…')
     expect(QUIP_VARIANTS.success).toContain('Nailed it. 😎')

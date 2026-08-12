@@ -176,6 +176,49 @@ describe('streamNdjson: aborting', () => {
       StreamAbortedError
     )
   })
+
+  it('registers the abort listener as {once: true} on "abort" and removes it when the stream ends', async () => {
+    const source = controlledStream()
+    mockFetch(fakeResponse({ status: 200, statusText: 'OK', body: source.stream }))
+    const controller = new AbortController()
+    const addSpy = vi.spyOn(controller.signal, 'addEventListener')
+    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener')
+
+    const promise = streamNdjson(
+      '/runs',
+      {},
+      { signal: controller.signal, onEvent: () => undefined }
+    )
+    source.push('{"type":"text_delta","text":"a"}\n')
+    source.close()
+    await promise
+
+    expect(addSpy).toHaveBeenCalledWith('abort', expect.any(Function), { once: true })
+    expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function))
+  })
+
+  it('cancels the reader via the abort listener when the signal aborts while a read is pending', async () => {
+    const source = controlledStream()
+    mockFetch(fakeResponse({ status: 200, statusText: 'OK', body: source.stream }))
+    const controller = new AbortController()
+
+    // Nothing pushed yet: the very first `reader.read()` is pending when we
+    // abort. Let the microtask queue drain first so `consume()` has actually
+    // reached `readLines` and registered the abort listener before we fire it
+    // — otherwise the abort event dispatches into a listener that doesn't
+    // exist yet and the pending read() would hang forever.
+    const promise = streamNdjson(
+      '/runs',
+      {},
+      { signal: controller.signal, onEvent: () => undefined }
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    controller.abort()
+
+    await expect(promise).rejects.toBeInstanceOf(StreamAbortedError)
+    expect(source.cancelReasons).toHaveLength(1)
+    expect(source.cancelReasons[0]).toBeInstanceOf(StreamAbortedError)
+  })
 })
 
 describe('streamNdjson: failures before the stream', () => {
@@ -229,6 +272,7 @@ describe('streamNdjson: failures before the stream', () => {
 
     expect(error).toBeInstanceOf(ApiError)
     expect((error as ApiError).code).toBe('stream_unavailable')
+    expect((error as ApiError).message).toBe('Response carried no readable body')
   })
 
   it('throws an ApiError on a malformed NDJSON line', async () => {
@@ -239,7 +283,29 @@ describe('streamNdjson: failures before the stream', () => {
 
     expect(error).toBeInstanceOf(ApiError)
     expect((error as ApiError).code).toBe('invalid_stream_line')
+    expect((error as ApiError).message).toBe('Malformed NDJSON line in stream')
     expect(events).toHaveLength(1)
+  })
+
+  it('truncates the offending line to 500 characters in the error detail', async () => {
+    const longBadLine = 'x'.repeat(600)
+    mockFetch(ndjsonResponse([`${longBadLine}\n`]))
+
+    const error = await streamNdjson('/runs', {}, { onEvent: () => undefined }).catch(e => e)
+
+    expect((error as ApiError).detail).toEqual({ line: 'x'.repeat(500) })
+  })
+})
+
+describe('streamNdjson: line splitting', () => {
+  it('strips a trailing CR from CRLF line endings before parsing', async () => {
+    mockFetch(ndjsonResponse(['{"type":"text_delta","text":"a"}\r\n']))
+    const { events, onEvent } = collector()
+
+    await streamNdjson('/runs', {}, { onEvent })
+
+    expect(events).toHaveLength(1)
+    expect((events[0] as { text: string }).text).toBe('a')
   })
 })
 

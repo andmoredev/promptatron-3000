@@ -37,7 +37,7 @@ export default defineConfig({
       // reason (an excluded file, a removed test).
       thresholds: {
         statements: 96,
-        branches: 86,
+        branches: 87,
         functions: 92,
         lines: 96
       }

@@ -6,6 +6,7 @@ import { bodyOf, fakeResponse, headersOf, jsonResponse, mockFetch, urlOf } from 
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
   vi.restoreAllMocks()
 })
 
@@ -14,6 +15,27 @@ describe('url building', () => {
     expect(baseUrl()).toBe('http://localhost:8000')
     expect(apiUrl('/runs')).toBe('http://localhost:8000/api/v1/runs')
     expect(apiUrl('runs')).toBe('http://localhost:8000/api/v1/runs')
+  })
+
+  it('uses VITE_API_URL when set, trimming whitespace and a trailing slash', () => {
+    vi.stubEnv('VITE_API_URL', '  https://api.example.com/  ')
+    expect(baseUrl()).toBe('https://api.example.com')
+  })
+
+  it('strips multiple trailing slashes', () => {
+    vi.stubEnv('VITE_API_URL', 'https://api.example.com///')
+    expect(baseUrl()).toBe('https://api.example.com')
+  })
+
+  it('tolerates a configured base that already carries the /api/v1 prefix', () => {
+    vi.stubEnv('VITE_API_URL', 'https://api.example.com/api/v1')
+    expect(baseUrl()).toBe('https://api.example.com')
+    expect(apiUrl('/runs')).toBe('https://api.example.com/api/v1/runs')
+  })
+
+  it('falls back to the default when VITE_API_URL is set but blank', () => {
+    vi.stubEnv('VITE_API_URL', '   ')
+    expect(baseUrl()).toBe('http://localhost:8000')
   })
 
   it('drops undefined and null query values, keeps false and 0', () => {
@@ -60,10 +82,54 @@ describe('request', () => {
     await expect(http.delete('/runs/r1')).resolves.toBeUndefined()
   })
 
+  it('returns undefined for a 205 too (both no-content statuses)', async () => {
+    mockFetch(fakeResponse({ status: 205, statusText: 'Reset Content' }))
+
+    await expect(http.delete('/runs/r1')).resolves.toBeUndefined()
+  })
+
   it('returns undefined for a 200 with an empty body', async () => {
     mockFetch(fakeResponse({ status: 200, statusText: 'OK', text: '' }))
 
     await expect(http.get('/runs/r1')).resolves.toBeUndefined()
+  })
+
+  it('returns undefined for a 200 body that is only whitespace', async () => {
+    mockFetch(fakeResponse({ status: 200, statusText: 'OK', text: '   \n  ' }))
+
+    await expect(http.get('/runs/r1')).resolves.toBeUndefined()
+  })
+
+  it('returns undefined (not a parse attempt) when the body text is unreadable on a success status', async () => {
+    mockFetch({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => null },
+      text: () => Promise.reject(new Error('stream already consumed'))
+    } as unknown as Response)
+
+    await expect(http.get('/runs/r1')).resolves.toBeUndefined()
+  })
+
+  it('sends no body and no content-type header for a bodyless GET', async () => {
+    const spy = mockFetch(jsonResponse({ ok: true }))
+
+    await http.get('/runs')
+
+    expect(spy.mock.calls[0][1]?.body).toBeUndefined()
+    expect(headersOf(spy)['content-type']).toBeUndefined()
+  })
+
+  it('does not clobber a caller-supplied content-type header', async () => {
+    const spy = mockFetch(jsonResponse({ ok: true }))
+
+    await request('POST', '/scenarios', {
+      body: { a: 1 },
+      headers: { 'content-type': 'application/merge-patch+json' }
+    })
+
+    expect(headersOf(spy)['content-type']).toBe('application/merge-patch+json')
   })
 
   it('passes the AbortSignal through to fetch', async () => {

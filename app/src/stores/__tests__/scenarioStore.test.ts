@@ -282,7 +282,7 @@ describe('groupModelsBySource', () => {
     expect(anthropicGroup?.label).toBe('Anthropic (not configured)')
   })
 
-  it('disables and suffixes a configured-but-unreachable ollama', () => {
+  it('disables and suffixes a configured-but-unreachable ollama, without affecting other configured sources', () => {
     const { groups } = groupModelsBySource(models, {
       bedrock: { configured: true },
       anthropic: { configured: true },
@@ -293,6 +293,14 @@ describe('groupModelsBySource', () => {
     const ollamaGroup = groups.find((g) => g.source === 'ollama')
     expect(ollamaGroup?.disabled).toBe(true)
     expect(ollamaGroup?.label).toBe('Ollama (local) (unreachable)')
+
+    // Ollama's own unreachable flag must not leak into unrelated sources.
+    const bedrockGroup = groups.find((g) => g.source === 'bedrock')
+    expect(bedrockGroup?.disabled).toBe(false)
+    expect(bedrockGroup?.label).toBe('Bedrock')
+    const anthropicGroup = groups.find((g) => g.source === 'anthropic')
+    expect(anthropicGroup?.disabled).toBe(false)
+    expect(anthropicGroup?.label).toBe('Anthropic')
   })
 
   it('does not disable ollama when reachable is unknown (null)', () => {
@@ -380,5 +388,49 @@ describe('loadScenario', () => {
   it('selectScenarioDetail tolerates a null id', () => {
     expect(selectScenarioDetail(null)(useScenarioStore.getState())).toBeNull()
     expect(selectScenarioLoading(null)(useScenarioStore.getState())).toBe(false)
+  })
+
+  it('sets detailLoading[id]:true synchronously while the fetch is in flight, then clears it', async () => {
+    let resolveGet!: (d: ScenarioDetail) => void
+    scenariosGetMock.mockImplementationOnce(
+      () => new Promise<ScenarioDetail>((resolve) => { resolveGet = resolve })
+    )
+
+    const pending = useScenarioStore.getState().loadScenario('shipping')
+    expect(useScenarioStore.getState().detailLoading.shipping).toBe(true)
+
+    resolveGet(detail)
+    await pending
+    expect(useScenarioStore.getState().detailLoading.shipping).toBe(false)
+  })
+})
+
+describe('in-flight loading state', () => {
+  it('loadScenarios sets scenariosLoading:true synchronously, before the request resolves', async () => {
+    let resolveList!: (r: ScenarioListResponse) => void
+    scenariosListMock.mockImplementationOnce(
+      () => new Promise<ScenarioListResponse>((resolve) => { resolveList = resolve })
+    )
+
+    const pending = useScenarioStore.getState().loadScenarios()
+    expect(useScenarioStore.getState().scenariosLoading).toBe(true)
+
+    resolveList(listResponse)
+    await pending
+    expect(useScenarioStore.getState().scenariosLoading).toBe(false)
+  })
+
+  it('loadModels sets modelsLoading:true synchronously, before the request resolves', async () => {
+    let resolveModels!: (r: ModelListResponse) => void
+    modelsListMock.mockImplementationOnce(
+      () => new Promise<ModelListResponse>((resolve) => { resolveModels = resolve })
+    )
+
+    const pending = useScenarioStore.getState().loadModels()
+    expect(useScenarioStore.getState().modelsLoading).toBe(true)
+
+    resolveModels(modelsResponse)
+    await pending
+    expect(useScenarioStore.getState().modelsLoading).toBe(false)
   })
 })

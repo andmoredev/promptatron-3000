@@ -24,6 +24,7 @@ const {
   selectHasMore,
   selectNeedsRefresh,
   selectHasFilters,
+  listParams,
   INITIAL_HISTORY_STATE
 } = await import('../historyStore')
 
@@ -168,6 +169,32 @@ describe('filters', () => {
     expect(listMock).toHaveBeenLastCalledWith({ limit: 25, scenario_id: 'shipping' })
   })
 
+  it('listParams omits each filter field individually when falsy, and includes it when set', () => {
+    expect(listParams({}, null, 25)).toEqual({ limit: 25 })
+    expect(listParams({ model_id: '' }, null, 25)).toEqual({ limit: 25 })
+    expect(listParams({ scenario_id: '' }, null, 25)).toEqual({ limit: 25 })
+    expect(listParams({ status: '' }, null, 25)).toEqual({ limit: 25 })
+    expect(listParams({ model_id: 'nova' }, null, 25)).toEqual({ limit: 25, model_id: 'nova' })
+    expect(listParams({ scenario_id: 's1' }, null, 25)).toEqual({ limit: 25, scenario_id: 's1' })
+    expect(listParams({ status: 'completed' }, null, 25)).toEqual({
+      limit: 25,
+      status: 'completed'
+    })
+    expect(listParams({}, 'cursor-1', 25)).toEqual({ limit: 25, cursor: 'cursor-1' })
+    expect(listParams({}, null, 25)).not.toHaveProperty('cursor')
+  })
+
+  it('setFilters clears a key set to undefined or to an empty string, same as null', async () => {
+    listMock.mockResolvedValue(page([], null))
+
+    await useHistoryStore.getState().setFilters({ model_id: 'm1', scenario_id: 's1', status: 'error' })
+    await useHistoryStore.getState().setFilters({ model_id: undefined })
+    expect(useHistoryStore.getState().filters).toEqual({ scenario_id: 's1', status: 'error' })
+
+    await useHistoryStore.getState().setFilters({ scenario_id: '' })
+    expect(useHistoryStore.getState().filters).toEqual({ status: 'error' })
+  })
+
   it('carries filters into loadMore', async () => {
     listMock
       .mockResolvedValueOnce(page([summary('r1')], 'cursor-1'))
@@ -197,6 +224,46 @@ describe('invalidate', () => {
 
   it('reports a never-loaded list as needing a refresh', () => {
     expect(selectNeedsRefresh(INITIAL_HISTORY_STATE)).toBe(true)
+  })
+
+  it('selectHasFilters is false for an empty filter set and true once any key is present', () => {
+    expect(selectHasFilters({ ...INITIAL_HISTORY_STATE, filters: {} })).toBe(false)
+    expect(selectHasFilters({ ...INITIAL_HISTORY_STATE, filters: { model_id: 'm' } })).toBe(true)
+  })
+})
+
+describe('in-flight loading state', () => {
+  it('loadFirstPage sets loading:true (clearing a stale error) synchronously, before the request resolves', async () => {
+    useHistoryStore.setState({ error: { code: 'stale', message: 'stale' } })
+    let resolveList!: (p: ReturnType<typeof page>) => void
+    listMock.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveList = resolve })
+    )
+
+    const pending = useHistoryStore.getState().loadFirstPage()
+    expect(useHistoryStore.getState().loading).toBe(true)
+    expect(useHistoryStore.getState().error).toBeNull()
+
+    resolveList(page([], null))
+    await pending
+    expect(useHistoryStore.getState().loading).toBe(false)
+    expect(useHistoryStore.getState().loaded).toBe(true)
+  })
+
+  it('loadMore sets loading:true synchronously, before the request resolves', async () => {
+    listMock.mockResolvedValueOnce(page([summary('r1')], 'cursor-1'))
+    await useHistoryStore.getState().loadFirstPage()
+
+    let resolveList!: (p: ReturnType<typeof page>) => void
+    listMock.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveList = resolve })
+    )
+    const pending = useHistoryStore.getState().loadMore()
+    expect(useHistoryStore.getState().loading).toBe(true)
+
+    resolveList(page([summary('r2')], null))
+    await pending
+    expect(useHistoryStore.getState().loading).toBe(false)
   })
 })
 
@@ -243,6 +310,18 @@ describe('detail cache and removal', () => {
     expect(result).toBeNull()
     expect(useHistoryStore.getState().error).toEqual({ code: 'not_found', message: 'gone' })
     expect(useHistoryStore.getState().details.missing).toBeUndefined()
+  })
+
+  it('retries the API on a later call after a failed fetch, rather than replaying the stale in-flight request', async () => {
+    getMock.mockRejectedValueOnce(new ApiError('server exploded', { code: 'http_error' }))
+    const first = await useHistoryStore.getState().getRunDetail('r9')
+    expect(first).toBeNull()
+
+    getMock.mockResolvedValueOnce(detail)
+    const second = await useHistoryStore.getState().getRunDetail('r9')
+
+    expect(getMock).toHaveBeenCalledTimes(2)
+    expect(second).toBe(detail)
   })
 
   it('swallows an aborted getRunDetail without recording an error', async () => {

@@ -66,6 +66,16 @@ describe('defaults', () => {
     useRunConfigStore.getState().setUserPrompt('hello')
     expect(selectCanRun(useRunConfigStore.getState())).toBe(true)
   })
+
+  it('selectCanRun treats a whitespace-only model id or user prompt as unset', () => {
+    useRunConfigStore.getState().setModelId('   ')
+    useRunConfigStore.getState().setUserPrompt('hello')
+    expect(selectCanRun(useRunConfigStore.getState())).toBe(false)
+
+    useRunConfigStore.getState().setModelId('m')
+    useRunConfigStore.getState().setUserPrompt('  \t ')
+    expect(selectCanRun(useRunConfigStore.getState())).toBe(false)
+  })
 })
 
 describe('setters', () => {
@@ -207,6 +217,29 @@ describe('applyScenarioDefaults', () => {
     useRunConfigStore.getState().applyScenarioDefaults(scenario)
     expect(useRunConfigStore.getState().dataset_id).toBe('ds-other')
   })
+
+  it('treats whitespace-only prompt text as empty, so a scenario default still fills it in', () => {
+    useRunConfigStore.getState().setSystemPrompt('   ')
+    useRunConfigStore.getState().setUserPrompt('\t\n')
+    useRunConfigStore.getState().applyScenarioDefaults(scenario)
+
+    const state = useRunConfigStore.getState()
+    expect(state.system_prompt).toBe('You are a terse support agent.')
+    expect(state.user_prompt).toBe('Where is order B456?')
+  })
+
+  it('tolerates a scenario response missing the array fields entirely (defensive against a malformed server payload)', () => {
+    const malformed = {
+      ...scenario,
+      systemPrompts: undefined,
+      userPrompts: undefined,
+      tools: undefined,
+      datasets: undefined
+    } as unknown as ScenarioDetail
+
+    expect(() => scenarioDefaults(DEFAULT_RUN_CONFIG, malformed)).not.toThrow()
+    expect(scenarioDefaults(DEFAULT_RUN_CONFIG, malformed)).toEqual({ scenario_id: 'shipping' })
+  })
 })
 
 describe('toRunRequest', () => {
@@ -251,6 +284,15 @@ describe('toRunRequest', () => {
       provider: 'bedrock',
       stream: false
     })
+  })
+
+  it('omits a whitespace-only system prompt (trimmed to empty)', () => {
+    const state = useRunConfigStore.getState()
+    state.setModelId('m')
+    state.setUserPrompt('hi')
+    state.setSystemPrompt('   \n\t  ')
+
+    expect(toRunRequest(useRunConfigStore.getState())).not.toHaveProperty('system_prompt')
   })
 
   it('always includes provider, even the bedrock default', () => {

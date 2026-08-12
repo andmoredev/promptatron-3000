@@ -59,6 +59,15 @@ const publishedVersion: GuardrailVersionSummary = {
   description: 'first cut'
 }
 
+/** A promise plus its resolver, so a test can inspect mid-flight state. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
+
 beforeEach(() => {
   listMock.mockReset()
   getMock.mockReset()
@@ -314,5 +323,131 @@ describe('versions', () => {
       message: 'too many versions'
     })
     expect(useGuardrailStore.getState().saving).toBe(false)
+  })
+})
+
+describe('in-flight state', () => {
+  it('loadGuardrails sets loading:true (and clears a stale error) synchronously, before the request resolves', async () => {
+    useGuardrailStore.setState({ error: { code: 'stale', message: 'stale' } })
+    const d = deferred<{ guardrails: ReturnType<typeof toSummary>[] }>()
+    listMock.mockReturnValueOnce(d.promise)
+
+    const pending = useGuardrailStore.getState().loadGuardrails()
+
+    expect(useGuardrailStore.getState().loading).toBe(true)
+    expect(useGuardrailStore.getState().error).toBeNull()
+
+    d.resolve({ guardrails: [] })
+    await pending
+    expect(useGuardrailStore.getState().loading).toBe(false)
+  })
+
+  it('loadGuardrail sets detailLoading[key]:true synchronously, then clears it on success', async () => {
+    const d = deferred<GuardrailDetail>()
+    getMock.mockReturnValueOnce(d.promise)
+
+    const pending = useGuardrailStore.getState().loadGuardrail('gr-9')
+    const key = guardrailCacheKey('gr-9')
+    expect(useGuardrailStore.getState().detailLoading[key]).toBe(true)
+
+    d.resolve(detail)
+    await pending
+    expect(useGuardrailStore.getState().detailLoading[key]).toBe(false)
+  })
+
+  it('createGuardrail sets saving:true (clearing saveError) synchronously, then clears it', async () => {
+    useGuardrailStore.setState({ saveError: { code: 'stale', message: 'stale' } })
+    const d = deferred<GuardrailDetail>()
+    createMock.mockReturnValueOnce(d.promise)
+
+    const pending = useGuardrailStore.getState().createGuardrail({ name: 'x' })
+    expect(useGuardrailStore.getState().saving).toBe(true)
+    expect(useGuardrailStore.getState().saveError).toBeNull()
+
+    d.resolve(detail)
+    await pending
+    expect(useGuardrailStore.getState().saving).toBe(false)
+  })
+
+  it('updateGuardrail sets saving:true synchronously, then clears it', async () => {
+    const d = deferred<GuardrailDetail>()
+    updateMock.mockReturnValueOnce(d.promise)
+
+    const pending = useGuardrailStore.getState().updateGuardrail('gr-1', { name: 'x' })
+    expect(useGuardrailStore.getState().saving).toBe(true)
+
+    d.resolve(detail)
+    await pending
+    expect(useGuardrailStore.getState().saving).toBe(false)
+  })
+
+  it('removeGuardrail sets saving:true synchronously, then clears it', async () => {
+    const d = deferred<void>()
+    removeMock.mockReturnValueOnce(d.promise)
+
+    const pending = useGuardrailStore.getState().removeGuardrail('gr-1')
+    expect(useGuardrailStore.getState().saving).toBe(true)
+
+    d.resolve(undefined)
+    await pending
+    expect(useGuardrailStore.getState().saving).toBe(false)
+  })
+
+  it('publishVersion sets saving:true synchronously, then clears it', async () => {
+    const d = deferred<GuardrailVersionSummary>()
+    versionsCreateMock.mockReturnValueOnce(d.promise)
+
+    const pending = useGuardrailStore.getState().publishVersion('gr-1')
+    expect(useGuardrailStore.getState().saving).toBe(true)
+
+    d.resolve(publishedVersion)
+    await pending
+    expect(useGuardrailStore.getState().saving).toBe(false)
+  })
+})
+
+describe('CRUD cache precision', () => {
+  it('updateGuardrail replaces only the matching row, leaving other list rows untouched', async () => {
+    const other: GuardrailDetail = { ...detail, id: 'gr-2', name: 'other-guardrail' }
+    createMock.mockResolvedValueOnce(detail)
+    await useGuardrailStore.getState().createGuardrail({ name: 'pii-blocker' })
+    createMock.mockResolvedValueOnce(other)
+    await useGuardrailStore.getState().createGuardrail({ name: 'other-guardrail' })
+
+    const updated = { ...detail, description: 'updated' }
+    updateMock.mockResolvedValueOnce(updated)
+    await useGuardrailStore.getState().updateGuardrail('gr-1', { name: 'pii-blocker' })
+
+    const rows = useGuardrailStore.getState().guardrails
+    expect(rows.find((r) => r.id === 'gr-1')?.description).toBe('updated')
+    expect(rows.find((r) => r.id === 'gr-2')?.name).toBe('other-guardrail')
+  })
+
+  it("removeGuardrail's whole-guardrail delete does not touch a different guardrail whose id is a prefix collision", async () => {
+    createMock.mockResolvedValueOnce(detail)
+    await useGuardrailStore.getState().createGuardrail({ name: 'pii-blocker' })
+    const other: GuardrailDetail = { ...detail, id: 'gr-10' }
+    getMock.mockResolvedValueOnce(other)
+    await useGuardrailStore.getState().loadGuardrail('gr-10')
+
+    removeMock.mockResolvedValueOnce(undefined)
+    await useGuardrailStore.getState().removeGuardrail('gr-1')
+
+    // 'gr-10' must survive: it is not `gr-1` and does not start with `gr-1@`.
+    expect(useGuardrailStore.getState().details[guardrailCacheKey('gr-10')]).toBeDefined()
+    expect(useGuardrailStore.getState().details[guardrailCacheKey('gr-1')]).toBeUndefined()
+  })
+
+  it('removing a single version does not touch a different guardrail\'s versions list', async () => {
+    versionsListMock.mockResolvedValueOnce({ versions: [publishedVersion] })
+    await useGuardrailStore.getState().loadVersions('gr-1')
+    versionsListMock.mockResolvedValueOnce({ versions: [{ ...publishedVersion, id: 'gr-2' }] })
+    await useGuardrailStore.getState().loadVersions('gr-2')
+
+    removeMock.mockResolvedValueOnce(undefined)
+    await useGuardrailStore.getState().removeGuardrail('gr-1', '2')
+
+    expect(useGuardrailStore.getState().versions['gr-1']).toBeUndefined()
+    expect(useGuardrailStore.getState().versions['gr-2']).toBeDefined()
   })
 })

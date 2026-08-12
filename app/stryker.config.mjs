@@ -56,6 +56,14 @@ export default {
   disableTypeChecks: 'src/**/*.{ts,tsx}',
   coverageAnalysis: 'perTest',
 
+  // Static mutants (top-level constants, module-level default values) can
+  // only be tested by re-running the FULL suite, not just the tests that
+  // cover them — Stryker measured these as ~11% of mutants but ~81% of
+  // total runtime on this codebase. Ignoring them keeps the run inside the
+  // ~10 minute budget; see the mutation-testing report notes for what's
+  // dropped (mostly literal defaults in store initial-state objects).
+  ignoreStatic: true,
+
   concurrency: 4,
   timeoutMS: 15000,
 

@@ -79,8 +79,8 @@ export const INITIAL_HISTORY_STATE: HistoryStateData = {
 /** In-flight detail fetches, so two consumers of one run share a request. */
 const detailRequests = new Map<string, Promise<RunDetail | null>>()
 
-/** Filters + paging -> `GET /runs` query params. */
-function listParams(
+/** Filters + paging -> `GET /runs` query params. Exported for direct unit tests. */
+export function listParams(
   filters: HistoryFilters,
   cursor: string | null,
   limit: number
