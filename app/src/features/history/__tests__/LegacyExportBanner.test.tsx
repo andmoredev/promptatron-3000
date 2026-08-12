@@ -78,7 +78,7 @@ describe('LegacyExportBanner', () => {
     window.localStorage.setItem(LEGACY_SETTINGS_KEY, JSON.stringify({ theme: 'dark' }))
 
     render(<LegacyExportBanner />)
-    screen.getByTestId('legacy-clear-btn').click()
+    fireEvent.click(screen.getByTestId('legacy-clear-btn'))
 
     expect(window.localStorage.getItem(LEGACY_HISTORY_KEY)).toBeNull()
     expect(window.localStorage.getItem(LEGACY_FORM_STATE_KEY)).toBeNull()
@@ -95,7 +95,7 @@ describe('LegacyExportBanner', () => {
   it('does not resurrect after a clear + remount, since the key is gone', () => {
     window.localStorage.setItem(LEGACY_HISTORY_KEY, JSON.stringify([{ id: 'old-1' }]))
     const { unmount } = render(<LegacyExportBanner />)
-    screen.getByTestId('legacy-clear-btn').click()
+    fireEvent.click(screen.getByTestId('legacy-clear-btn'))
     unmount()
 
     render(<LegacyExportBanner />)

@@ -203,14 +203,16 @@ describe('HistoryPage: paging', () => {
 })
 
 describe('HistoryPage: delete', () => {
-  it('asks for confirmation, then calls remove on confirm', () => {
+  it('asks for confirmation, then calls remove on confirm', async () => {
     render(<HistoryPage />)
     const row = screen.getAllByTestId('history-row')[0]
 
     fireEvent.click(within(row).getByTestId('history-delete-btn'))
     expect(within(row).getByTestId('history-delete-confirm')).toBeInTheDocument()
 
-    fireEvent.click(within(row).getByTestId('history-delete-confirm'))
+    await act(async () => {
+      fireEvent.click(within(row).getByTestId('history-delete-confirm'))
+    })
     expect(remove).toHaveBeenCalledWith('r1')
   })
 

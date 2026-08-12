@@ -7,7 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import RunDetailView from '../RunDetailView'
 import { INITIAL_HISTORY_STATE, useHistoryStore } from '../../../stores'
 import type { RunDetail } from '../../../api'
@@ -97,7 +97,9 @@ describe('RunDetailView', () => {
     expect(screen.getByText('Guardrail trace')).toBeInTheDocument()
     expect(screen.getByTestId('run-detail-guardrail-trace')).toHaveTextContent('NONE')
 
-    useHistoryStore.setState({ details: { r1: detail({ guardrail_trace: null }) } })
+    act(() => {
+      useHistoryStore.setState({ details: { r1: detail({ guardrail_trace: null }) } })
+    })
     rerender(<RunDetailView runId="r1" />)
     expect(screen.queryByText('Guardrail trace')).not.toBeInTheDocument()
   })
