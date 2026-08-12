@@ -1,0 +1,96 @@
+name: Deploy
+
+# Reusable deploy, called by deploy-staging.yaml and deploy-production.yaml.
+# Uses the org-level secrets shared with the other nullchecktv services:
+#   PIPELINE_EXECUTION_ROLE       - assumed by Actions via OIDC
+#   CLOUDFORMATION_EXECUTION_ROLE - assumed by CloudFormation to build resources
+#   ARTIFACTS_BUCKET_NAME         - shared bucket for SAM packaging artifacts
+# The bucket is not optional: the pipeline role is scoped to it, so a
+# `--resolve-s3` managed bucket gets AccessDenied when SAM uploads the
+# AWS::Include openapi.yaml.
+# Callers pass `secrets: inherit`.
+on:
+  workflow_call:
+    inputs:
+      ENVIRONMENT:
+        description: Human label for logs and the run summary (Staging | Production).
+        type: string
+        required: true
+      STACK_NAME:
+        description: CloudFormation stack this environment deploys into.
+        type: string
+        required: true
+    outputs:
+      app_url:
+        description: CloudFront URL of the deployed app.
+        value: ${{ jobs.deploy.outputs.app_url }}
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.ENVIRONMENT }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      app_url: ${{ steps.deploy.outputs.app_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            app/package-lock.json
+            api/package-lock.json
+
+      # Packages the FastAPI server's arm64 Lambda zip.
+      - uses: astral-sh/setup-uv@v5
+
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: us-east-1
+          role-to-assume: ${{ secrets.PIPELINE_EXECUTION_ROLE }}
+
+      # The api/ functions build with `BuildMethod: esbuild`, and SAM's esbuild
+      # builder needs the binary on PATH -- it looks in the CodeUri directory
+      # (api/functions), which has no package.json of its own to resolve it from.
+      - name: Install esbuild
+        run: npm install -g esbuild
+
+      # One deploy definition, shared with local `make deploy`: package the
+      # server zip, upload it, deploy the stack, seed the config store, build
+      # the SPA, sync it to S3, invalidate CloudFront.
+      - name: Deploy stack
+        id: deploy
+        env:
+          STACK_NAME: ${{ inputs.STACK_NAME }}
+          DEPLOY_REGION: us-east-1
+          DEPLOY_S3_BUCKET: ${{ secrets.ARTIFACTS_BUCKET_NAME }}
+          DEPLOY_ROLE_ARN: ${{ secrets.CLOUDFORMATION_EXECUTION_ROLE }}
+        run: |
+          set -euo pipefail
+          make deploy \
+            STACK_NAME="$STACK_NAME" \
+            DEPLOY_REGION="$DEPLOY_REGION" \
+            DEPLOY_S3_BUCKET="$DEPLOY_S3_BUCKET" \
+            DEPLOY_ROLE_ARN="$DEPLOY_ROLE_ARN" | tee deploy.log
+
+          APP_URL=$(awk '/^Deployed: /{print $2}' deploy.log | tail -1)
+          echo "app_url=$APP_URL" >> "$GITHUB_OUTPUT"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## 🚀 ${{ inputs.ENVIRONMENT }} Deployed
+
+          **URL:** $APP_URL
+
+          * Stack: \`$STACK_NAME\`
+          * Region: \`$DEPLOY_REGION\`
+          EOF

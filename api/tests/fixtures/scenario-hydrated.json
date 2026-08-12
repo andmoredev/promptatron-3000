@@ -1,0 +1,83 @@
+{
+  "id": "fraud-detection-comprehensive",
+  "name": "Fraud Detection",
+  "description": "Complete fraud detection scenario with multiple transaction datasets, specialized prompts, and comprehensive fraud action tools for enterprise-level fraud prevention and risk management",
+  "createdAt": "2026-01-05T09:00:00.000Z",
+  "updatedAt": "2026-01-05T09:00:00.000Z",
+  "systemPrompts": [
+    {
+      "id": "fraud-analyst",
+      "name": "Expert Fraud Detection Analyst",
+      "content": "You are an expert fraud detection analyst with 10+ years of experience in financial crime prevention. Analyze transaction data to identify suspicious patterns, unusual behaviors, and potential fraud indicators. Focus on velocity checks, geographic anomalies, merchant risk factors, and behavioral analysis. Use your expertise to recommend appropriate actions based on risk levels and fraud indicators. Always provide detailed reasoning for your assessments and consider the impact on customer experience when recommending actions."
+    },
+    {
+      "id": "risk-manager",
+      "name": "Senior Risk Management Specialist",
+      "content": "You are a senior risk management specialist focused on minimizing financial losses while maintaining optimal customer experience. Evaluate transactions for risk levels and recommend appropriate actions based on established risk thresholds, business policies, and regulatory requirements. Consider the balance between fraud prevention and customer friction. Provide risk scores and detailed justifications for all recommendations."
+    }
+  ],
+  "userPrompts": [
+    {
+      "id": "analyze-transactions",
+      "name": "Comprehensive Fraud Pattern Analysis",
+      "content": "Analyze the provided transaction data for potential fraud indicators and suspicious patterns. Look for unusual patterns in amounts, locations, timing, merchant categories, velocity, and behavioral anomalies. Identify any transactions or accounts that warrant further investigation and explain your reasoning. Provide risk scores and recommended actions for each identified issue."
+    }
+  ],
+  "tools": [
+    {
+      "name": "freeze_account",
+      "description": "Immediately freeze an account to prevent further transactions due to suspected fraudulent activity. This action should be taken when there is strong evidence of fraud or when multiple risk indicators are present.",
+      "handlerKey": "tools/freezeAccount.freezeAccount",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^A[0-9]{4}$",
+            "description": "Account ID in format A1234"
+          },
+          "transaction_ids": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^T[0-9]{4}$" },
+            "minItems": 1,
+            "description": "List of suspicious transaction IDs that triggered this action"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 20,
+            "description": "Detailed reason for account freeze including specific fraud indicators"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "critical"],
+            "description": "Severity level of the suspected fraud"
+          },
+          "freeze_duration": {
+            "type": "string",
+            "enum": ["temporary", "pending_review", "permanent"],
+            "description": "Duration type for the account freeze"
+          },
+          "notify_customer": {
+            "type": "boolean",
+            "description": "Whether to notify the customer about the account freeze"
+          }
+        },
+        "required": ["account_id", "transaction_ids", "reason", "severity", "freeze_duration"]
+      }
+    }
+  ],
+  "datasets": [
+    {
+      "id": "retail-transactions",
+      "name": "Retail Transaction Data",
+      "description": "Sample retail transaction data for basic fraud analysis with standard transaction fields",
+      "contentType": "text/csv"
+    },
+    {
+      "id": "international-transactions",
+      "name": "International Transaction Data",
+      "description": "Crosssaction data with enhanced fraud indicators, anomaly detection, and risk scoring",
+      "contentType": "text/csv"
+    }
+  ]
+}

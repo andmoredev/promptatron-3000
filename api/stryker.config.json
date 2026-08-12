@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "reporters": ["clear-text", "progress", "html", "json"],
+  "coverageAnalysis": "perTest",
+  "mutate": [
+    "functions/common/repository.ts",
+    "functions/common/pagination.ts",
+    "functions/common/keys.ts",
+    "seed/lib/transform.mjs"
+  ],
+  "tempDirName": ".stryker-tmp",
+  "htmlReporter": {
+    "fileName": "reports/mutation/mutation.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "concurrency": 4,
+  "timeoutMS": 15000
+}

@@ -1,0 +1,6 @@
+# Coverage output (npm run test:coverage)
+coverage/
+
+# Stryker mutation testing output
+.stryker-tmp/
+reports/mutation/

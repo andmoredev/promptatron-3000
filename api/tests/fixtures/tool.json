@@ -1,0 +1,59 @@
+{
+  "name": "flag_suspicious_transaction",
+  "description": "Flag individual transactions for review without freezing the entire account. Use this for transactions that show potential fraud indicators but don't warrant immediate account suspension.",
+  "handlerKey": "tools/flagTransaction.flagSuspiciousTransaction",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "transaction_id": {
+        "type": "string",
+        "pattern": "^T[0-9]{4}$",
+        "description": "Transaction ID in format T1234"
+      },
+      "account_id": {
+        "type": "string",
+        "pattern": "^A[0-9]{4}$",
+        "description": "Associated account ID in format A1234"
+      },
+      "fraud_indicators": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "unusual_amount",
+            "unusual_location",
+            "unusual_time",
+            "velocity_check_failed",
+            "merchant_risk",
+            "device_fingerprint_mismatch",
+            "behavioral_anomaly",
+            "blacklist_match"
+          ]
+        },
+        "minItems": 1,
+        "description": "Specific fraud indicators detected in this transaction"
+      },
+      "risk_score": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100,
+        "description": "Calculated risk score for this transaction (0-100)"
+      },
+      "confidence_level": {
+        "type": "string",
+        "enum": ["low", "medium", "high"],
+        "description": "Confidence level in the fraud detection"
+      },
+      "recommended_action": {
+        "type": "string",
+        "enum": ["monitor", "review", "block", "verify_with_customer"],
+        "description": "Recommended action for this transaction"
+      },
+      "notes": {
+        "type": "string",
+        "description": "Additional notes about the suspicious activity"
+      }
+    },
+    "required": ["transaction_id", "account_id", "fraud_indicators", "risk_score", "confidence_level", "recommended_action"]
+  }
+}

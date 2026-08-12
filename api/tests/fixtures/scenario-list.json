@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": "fraud-detection-comprehensive",
+      "name": "Fraud Detection",
+      "description": "Complete fraud detection scenario with multiple transaction datasets, specialized prompts, and comprehensive fraud action tools for enterprise-level fraud prevention and risk management",
+      "createdAt": "2026-01-05T09:00:00.000Z",
+      "updatedAt": "2026-01-05T09:00:00.000Z"
+    },
+    {
+      "id": "shipping-logistics",
+      "name": "Shipping Logistics",
+      "description": "Enterprise-grade shipping logistics triage system for handling delivery exceptions and optimizing customer service. Implements safety-first decision framework with proper escalation paths and audit trails.",
+      "createdAt": "2026-01-06T09:00:00.000Z",
+      "updatedAt": "2026-01-06T09:00:00.000Z"
+    }
+  ],
+  "count": 2,
+  "nextToken": "eyJwayI6IlNDRU5BUklPI3NoaXBwaW5nLWxvZ2lzdGljcyIsInNrIjoiTUVUQURBVEEiLCJHU0kxUEsiOiJTQ0VOQVJJTyIsIkdTSTFTSyI6IlNoaXBwaW5nIExvZ2lzdGljcyJ9"
+}

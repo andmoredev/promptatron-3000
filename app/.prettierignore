@@ -1,0 +1,7 @@
+dist/
+node_modules/
+api/
+.kiro/
+coverage/
+package-lock.json
+*.min.js

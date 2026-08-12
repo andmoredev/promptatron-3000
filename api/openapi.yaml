@@ -1,8 +1,16 @@
 openapi: 3.0.0
 info:
   title: Promptatron 3000 API
-  version: 1.0.0
+  version: 2.0.0
+  description: >
+    Config store for Promptatron 3000 scenarios. A scenario is a single-table
+    item collection: metadata + system/user prompts + tools + datasets, all
+    under one DynamoDB partition (`SCENARIO#{scenarioId}`).
 
+security:
+  - ApiKeyAuth: []
+
+x-amazon-apigateway-request-validator: Validate All
 x-amazon-apigateway-request-validators:
   Validate All:
     validateRequestParameters: true
@@ -33,6 +41,9 @@ x-amazon-apigateway-gateway-responses:
 tags:
   - name: Scenarios
   - name: Prompts
+  - name: Datasets
+  - name: Tools
+
 paths:
   /scenarios:
     get:
@@ -57,9 +68,9 @@ paths:
                     type: integer
                   nextToken:
                     type: string
-      x-amazon-apigateway-integration:
+      x-amazon-apigateway-integration: &ScenariosIntegration
         uri:
-          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListScenariosFunction.Arn}/invocations
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ScenariosFunction.Arn}/invocations
         httpMethod: POST
         type: aws_proxy
     post:
@@ -77,17 +88,26 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Scenario'
-      x-amazon-apigateway-integration:
-        uri:
-          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateScenarioFunction.Arn}/invocations
-        httpMethod: POST
-        type: aws_proxy
+                $ref: '#/components/schemas/HydratedScenario'
+        '400':
+          description: Validation error
+        '409':
+          description: A scenario with this id already exists
+      x-amazon-apigateway-integration: *ScenariosIntegration
+    options:
+      summary: CORS preflight
+      tags: [Scenarios]
+      security: []
+      responses:
+        '204':
+          description: No Content
+      x-amazon-apigateway-integration: *ScenariosIntegration
+
   /scenarios/{scenarioId}:
     parameters:
       - $ref: '#/components/parameters/ScenarioId'
     get:
-      summary: Get scenario by id
+      summary: Get a fully hydrated scenario (metadata + prompts + tools + dataset metadata)
       tags: [Scenarios]
       responses:
         '200':
@@ -95,34 +115,54 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Scenario'
+                $ref: '#/components/schemas/HydratedScenario'
         '404':
           description: Not Found
-      x-amazon-apigateway-integration:
-        uri:
-          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetScenarioFunction.Arn}/invocations
-        httpMethod: POST
-        type: aws_proxy
-
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      x-amazon-apigateway-integration: *ScenariosIntegration
+    put:
+      summary: Update scenario metadata (name/description)
+      tags: [Scenarios]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScenarioUpdateRequest'
+      responses:
+        '204':
+          description: No Content
+        '400':
+          description: Validation error
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration: *ScenariosIntegration
     delete:
-      summary: Delete scenario by id
+      summary: Delete a scenario and every item in its partition (prompts, tools, datasets)
       tags: [Scenarios]
       responses:
         '204':
           description: No Content
         '404':
           description: Not Found
-      x-amazon-apigateway-integration:
-        uri:
-          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DeleteScenarioFunction.Arn}/invocations
-        httpMethod: POST
-        type: aws_proxy
+      x-amazon-apigateway-integration: *ScenariosIntegration
+    options:
+      summary: CORS preflight
+      tags: [Scenarios]
+      security: []
+      responses:
+        '204':
+          description: No Content
+      x-amazon-apigateway-integration: *ScenariosIntegration
 
   /scenarios/{scenarioId}/prompts:
     parameters:
       - $ref: '#/components/parameters/ScenarioId'
     get:
-      summary: List prompts for a scenario
+      summary: List prompts (system and user) for a scenario
       tags: [Prompts]
       parameters:
         - $ref: '#/components/parameters/Limit'
@@ -138,12 +178,16 @@ paths:
                   items:
                     type: array
                     items:
-                      $ref: '#/components/schemas/PromptItem'
+                      $ref: '#/components/schemas/Prompt'
                   count:
                     type: integer
-      x-amazon-apigateway-integration:
+                  nextToken:
+                    type: string
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration: &PromptsIntegration
         uri:
-          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListPromptsFunction.Arn}/invocations
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PromptsFunction.Arn}/invocations
         httpMethod: POST
         type: aws_proxy
     post:
@@ -154,7 +198,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PromptInput'
+              $ref: '#/components/schemas/PromptCreateRequest'
       responses:
         '201':
           description: Created
@@ -162,13 +206,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IdResponse'
+        '400':
+          description: Validation error
         '404':
           description: Not Found
-      x-amazon-apigateway-integration:
-        uri:
-          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreatePromptFunction.Arn}/invocations
-        httpMethod: POST
-        type: aws_proxy
+      x-amazon-apigateway-integration: *PromptsIntegration
+    options:
+      summary: CORS preflight
+      tags: [Prompts]
+      security: []
+      responses:
+        '204':
+          description: No Content
+      x-amazon-apigateway-integration: *PromptsIntegration
 
   /scenarios/{scenarioId}/prompts/{promptId}:
     parameters:
@@ -178,21 +228,8 @@ paths:
         required: true
         schema:
           type: string
-    delete:
-      summary: Delete a prompt
-      tags: [Prompts]
-      responses:
-        '204':
-          description: No Content
-        '404':
-          description: Not Found
-      x-amazon-apigateway-integration:
-        uri:
-          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DeletePromptFunction.Arn}/invocations
-        httpMethod: POST
-        type: aws_proxy
     put:
-      summary: Update a prompt
+      summary: Update a prompt's name and/or content
       tags: [Prompts]
       requestBody:
         required: true
@@ -203,94 +240,404 @@ paths:
       responses:
         '204':
           description: No Content
+        '400':
+          description: Validation error
         '404':
           description: Not Found
-      x-amazon-apigateway-integration:
+      x-amazon-apigateway-integration: *PromptsIntegration
+    delete:
+      summary: Delete a prompt
+      tags: [Prompts]
+      responses:
+        '204':
+          description: No Content
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration: *PromptsIntegration
+    options:
+      summary: CORS preflight
+      tags: [Prompts]
+      security: []
+      responses:
+        '204':
+          description: No Content
+      x-amazon-apigateway-integration: *PromptsIntegration
+
+  /scenarios/{scenarioId}/datasets:
+    parameters:
+      - $ref: '#/components/parameters/ScenarioId'
+    get:
+      summary: List dataset metadata for a scenario (no content)
+      tags: [Datasets]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/NextToken'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DatasetMetadata'
+                  count:
+                    type: integer
+                  nextToken:
+                    type: string
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration: &DatasetsIntegration
         uri:
-          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UpdatePromptFunction.Arn}/invocations
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DatasetsFunction.Arn}/invocations
         httpMethod: POST
         type: aws_proxy
+    post:
+      summary: Create a dataset (inline content, content is stored as-is)
+      tags: [Datasets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdResponse'
+        '400':
+          description: Validation error
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration: *DatasetsIntegration
+    options:
+      summary: CORS preflight
+      tags: [Datasets]
+      security: []
+      responses:
+        '204':
+          description: No Content
+      x-amazon-apigateway-integration: *DatasetsIntegration
+
+  /scenarios/{scenarioId}/datasets/{datasetId}:
+    parameters:
+      - $ref: '#/components/parameters/ScenarioId'
+      - in: path
+        name: datasetId
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get a dataset, including its inline content
+      tags: [Datasets]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration: *DatasetsIntegration
+    put:
+      summary: Update a dataset's metadata and/or content
+      tags: [Datasets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetUpdateRequest'
+      responses:
+        '204':
+          description: No Content
+        '400':
+          description: Validation error
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration: *DatasetsIntegration
+    delete:
+      summary: Delete a dataset
+      tags: [Datasets]
+      responses:
+        '204':
+          description: No Content
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration: *DatasetsIntegration
+    options:
+      summary: CORS preflight
+      tags: [Datasets]
+      security: []
+      responses:
+        '204':
+          description: No Content
+      x-amazon-apigateway-integration: *DatasetsIntegration
+
+  /scenarios/{scenarioId}/tools:
+    parameters:
+      - $ref: '#/components/parameters/ScenarioId'
+    get:
+      summary: List tools for a scenario
+      tags: [Tools]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tool'
+                  count:
+                    type: integer
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration: &ToolsIntegration
+        uri:
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ToolsFunction.Arn}/invocations
+        httpMethod: POST
+        type: aws_proxy
+    options:
+      summary: CORS preflight
+      tags: [Tools]
+      security: []
+      responses:
+        '204':
+          description: No Content
+      x-amazon-apigateway-integration: *ToolsIntegration
+
+  /scenarios/{scenarioId}/tools/{toolName}:
+    parameters:
+      - $ref: '#/components/parameters/ScenarioId'
+      - in: path
+        name: toolName
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get a tool definition
+      tags: [Tools]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tool'
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration: *ToolsIntegration
+    put:
+      summary: Create or replace a tool definition (upsert)
+      tags: [Tools]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolUpsertRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tool'
+        '400':
+          description: Validation error
+        '404':
+          description: Not Found
+      x-amazon-apigateway-integration: *ToolsIntegration
+    options:
+      summary: CORS preflight
+      tags: [Tools]
+      security: []
+      responses:
+        '204':
+          description: No Content
+      x-amazon-apigateway-integration: *ToolsIntegration
 
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+
   schemas:
+    Error:
+      type: object
+      properties:
+        message: { type: string }
+      required: [message]
+
     ScenarioSummary:
       type: object
       properties:
         id: { type: string }
-        name: { type: string, nullable: true }
+        name: { type: string }
         description: { type: string, nullable: true }
-        createdAt: { type: string }
-        updatedAt: { type: string }
-    Scenario:
-      allOf:
-        - $ref: '#/components/schemas/ScenarioSummary'
-        - type: object
-          properties:
-            prompts:
-              type: array
-              items:
-                $ref: '#/components/schemas/Prompt'
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, createdAt, updatedAt]
+
     ScenarioCreateRequest:
       type: object
       properties:
+        id: { type: string, description: 'Optional client-supplied id; a UUID is generated when omitted.' }
         name: { type: string }
         description: { type: string }
-        prompts:
-          type: array
-          items:
-            $ref: '#/components/schemas/PromptInput'
-          maxItems: 20
+      required: [name]
+
     ScenarioUpdateRequest:
       type: object
       properties:
         name: { type: string }
         description: { type: string }
-        prompts:
-          type: array
-          items:
-            $ref: '#/components/schemas/PromptInput'
-          maxItems: 20
+
+    PromptSummary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        content: { type: string }
+      required: [id, name, content]
+
     Prompt:
-      type: object
-      properties:
-        type:
-          type: string
-          enum: [SYSTEM, USER]
-        name: { type: string }
-        content: { type: string }
-      required: [type, name, content]
-      additionalProperties: false
-    PromptInput:
-      type: object
-      properties:
-        type:
-          type: string
-          enum: [SYSTEM, USER]
-        name: { type: string }
-        content: { type: string }
-      required: [type, name, content]
-      additionalProperties: false
-    PromptItem:
       allOf:
-        - $ref: '#/components/schemas/Prompt'
+        - $ref: '#/components/schemas/PromptSummary'
         - type: object
           properties:
-            id: { type: string }
-          required: [id]
+            kind:
+              type: string
+              enum: [SYSTEM, USER]
+          required: [kind]
+
+    PromptCreateRequest:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [SYSTEM, USER]
+        name: { type: string }
+        content: { type: string }
+      required: [kind, name, content]
+
     PromptUpdateRequest:
       type: object
       properties:
-        type:
-          type: string
-          enum: [SYSTEM, USER]
         name: { type: string }
         content: { type: string }
-      additionalProperties: false
+
+    ToolInputSchema:
+      type: object
+      description: JSON Schema describing the tool's input, as passed to the model's tool-use configuration.
+
+    Tool:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        inputSchema:
+          $ref: '#/components/schemas/ToolInputSchema'
+        handlerKey:
+          type: string
+          description: Module#export identifying the code that executes this tool call.
+      required: [name, description, inputSchema, handlerKey]
+
+    ToolUpsertRequest:
+      type: object
+      properties:
+        description: { type: string }
+        inputSchema:
+          $ref: '#/components/schemas/ToolInputSchema'
+        handlerKey: { type: string }
+      required: [description, inputSchema, handlerKey]
+
+    DatasetContentType:
+      type: string
+      enum: [text/csv, application/json]
+
+    DatasetMetadata:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        contentType:
+          $ref: '#/components/schemas/DatasetContentType'
+      required: [id, name, contentType]
+
+    Dataset:
+      allOf:
+        - $ref: '#/components/schemas/DatasetMetadata'
+        - type: object
+          properties:
+            content:
+              type: string
+              description: Inline dataset content (source files are expected to stay well under the 400KB DynamoDB item limit).
+          required: [content]
+
+    DatasetCreateRequest:
+      type: object
+      properties:
+        id: { type: string, description: 'Optional client-supplied id; a UUID is generated when omitted.' }
+        name: { type: string }
+        description: { type: string }
+        contentType:
+          $ref: '#/components/schemas/DatasetContentType'
+        content: { type: string }
+      required: [name, contentType, content]
+
+    DatasetUpdateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        contentType:
+          $ref: '#/components/schemas/DatasetContentType'
+        content: { type: string }
+
+    HydratedScenario:
+      allOf:
+        - $ref: '#/components/schemas/ScenarioSummary'
+        - type: object
+          properties:
+            systemPrompts:
+              type: array
+              items:
+                $ref: '#/components/schemas/PromptSummary'
+            userPrompts:
+              type: array
+              items:
+                $ref: '#/components/schemas/PromptSummary'
+            tools:
+              type: array
+              items:
+                $ref: '#/components/schemas/Tool'
+            datasets:
+              type: array
+              items:
+                $ref: '#/components/schemas/DatasetMetadata'
+          required: [systemPrompts, userPrompts, tools, datasets]
+
     IdResponse:
       type: object
       properties:
         id: { type: string }
       required: [id]
+
   parameters:
     ScenarioId:
       in: path
@@ -311,4 +658,4 @@ components:
       name: nextToken
       schema:
         type: string
-      description: Pagination token
+      description: Opaque pagination cursor (base64url-encoded DynamoDB LastEvaluatedKey) returned as `nextToken` by the previous page.

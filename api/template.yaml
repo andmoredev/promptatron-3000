@@ -1,11 +1,149 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Serverless CRUD API for scenarios using API Gateway, Lambda, and DynamoDB
+Description: >
+  Serverless config store for Promptatron 3000 (scenarios, prompts, tools, datasets) --
+  API Gateway REST API + Lambda (Node.js 22, TypeScript via esbuild, Powertools for AWS Lambda) + single-table DynamoDB.
 
 Parameters:
   CORSOrigin:
     Type: String
     Default: '*'
+    Description: Value used for Access-Control-Allow-Origin. Set to a specific origin in production.
+
+  # --------------------------------------------------------------------------
+  # Cloud evaluation lane (see docs/cloud-evals.md + docs/cloud-evals-infra.md)
+  # --------------------------------------------------------------------------
+  EvalWorkerArtifactKey:
+    Type: String
+    Default: ''
+    Description: >
+      S3 key (within EvalWorkerArtifactBucket) of the eval worker's CodeZip
+      artifact. Empty (the default) means the worker is not deployed and the
+      cloud lane stays unavailable -- the rest of the stack is unaffected.
+
+      The key MUST change whenever the artifact changes: AgentCore reads the zip
+      at create/update time, and CloudFormation only rolls the runtime when a
+      property it can see has changed. A static key means a stale bundle keeps
+      serving forever. `scripts/package-eval-worker.sh` therefore emits a
+      content-hash-versioned key (eval-worker/<sha256>.zip) and `make
+      deploy-worker` passes it through.
+
+      CAUTION: this is a plain parameter with an empty default, so running a
+      bare `sam deploy` (i.e. `make deploy-api`) after the worker exists resets
+      it to '' and DELETES the runtime. Once the worker is deployed, use `make
+      deploy-worker`, which deploys the whole stack including the worker.
+
+  EvalWorkerConfigApiKey:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: >
+      API key the worker presents to this stack's own config store API when an
+      evaluation references a stored scenario/prompt/dataset. CloudFormation
+      cannot read an AWS::ApiGateway::ApiKey's value, so it has to be passed in:
+        aws apigateway get-api-key --api-key <ApiKeyId output> --include-value
+      Leave empty if evaluations only ever use inline prompts.
+
+  # --------------------------------------------------------------------------
+  # Deployed FastAPI server + SPA hosting (see docs/serverless-deploy.md and
+  # docs/serverless-deploy-infra.md)
+  # --------------------------------------------------------------------------
+  ServerArtifactKey:
+    Type: String
+    Default: ''
+    Description: >
+      S3 key (within EvalWorkerArtifactBucket, which doubles as this stack's
+      artifact bucket) of the FastAPI server's Lambda zip. Empty (the default)
+      means the server is not deployed -- no Lambda, no bucket, no CloudFront --
+      and the config store deploys exactly as it did before.
+
+      Same content-hash rule and same footgun as EvalWorkerArtifactKey above:
+      the key MUST change whenever the code changes, or CloudFormation sees no
+      property change and the old bundle keeps serving.
+      `scripts/package-server.sh` emits server/<sha256>.zip and `make deploy`
+      passes it through -- along with the CURRENT EvalWorkerArtifactKey, so the
+      two opt-in halves of this stack never delete each other.
+
+      CAUTION: a bare `sam deploy` (or `make deploy-api`) after the server
+      exists resets this to '' and DELETES the function, bucket and
+      distribution. Use `make deploy`.
+
+  ArtifactsBucketName:
+    Type: String
+    Default: ''
+    Description: >
+      Existing S3 bucket to hold this stack's deployable zips (the eval worker
+      and server CodeZip artifacts). CI passes the shared org artifacts bucket,
+      because the pipeline role is scoped to it and cannot write to a bucket
+      this stack creates. Left empty (local deploys), the stack creates and
+      owns its own bucket instead.
+
+  ServerMemorySize:
+    Type: Number
+    Default: 1024
+    MinValue: 512
+    MaxValue: 10240
+    Description: >
+      Memory (MB) for the server Lambda. Lambda scales CPU with memory, and the
+      cold start pays for importing strands + boto3 + FastAPI, so this is a
+      latency knob as much as a memory one.
+
+  ServerFunctionUrlAuthType:
+    Type: String
+    Default: NONE
+    AllowedValues: [NONE, AWS_IAM]
+    Description: >
+      Function URL auth. v1 is NONE: the URL is public-but-unguessable and the
+      real front door is CloudFront (docs/serverless-deploy.md "Auth").
+      AWS_IAM is wired here for later, but note it is NOT a drop-in with
+      CloudFront: origin access control for Lambda function URLs requires the
+      *viewer* to send an x-amz-content-sha256 body hash on POST/PUT, which a
+      browser cannot do. AWS_IAM is only usable today for SigV4-signing
+      non-browser clients calling the Function URL directly.
+
+  ServerCorsOrigins:
+    Type: String
+    Default: '[]'
+    Description: >
+      JSON array for PROMPTATRON_CORS_ORIGINS. Default is the empty list: the
+      SPA and the API share one CloudFront origin, so the browser never makes a
+      cross-origin request and no Access-Control-Allow-Origin is needed. An
+      empty list is therefore the tightest correct value -- it also means a page
+      on some other site that guesses the Function URL gets no CORS grant.
+      Set e.g. '["http://localhost:3000"]' to point a local vite at the
+      deployed server.
+
+  LambdaAdapterLayerVersion:
+    Type: Number
+    Default: 28
+    Description: >
+      Version of the public AWS Lambda Web Adapter layer (account
+      753240598075, published into every commercial region). Bump to pick up a
+      newer adapter. See https://github.com/aws/aws-lambda-web-adapter.
+
+  LambdaAdapterLayerArn:
+    Type: String
+    Default: ''
+    Description: >
+      Full override for the adapter layer ARN. Empty (the default) builds
+      arn:<partition>:lambda:<region>:753240598075:layer:LambdaAdapterLayerArm64:<LambdaAdapterLayerVersion>.
+      Set this only for a partition or private mirror where that account does
+      not publish.
+
+Conditions:
+  # An artifact bucket was supplied, so do not create one.
+  HasExternalArtifactBucket: !Not [!Equals [!Ref ArtifactsBucketName, '']]
+  CreatesArtifactBucket: !Equals [!Ref ArtifactsBucketName, '']
+  # The worker is opt-in. Everything below is skipped entirely until an artifact
+  # key is supplied, so the config store deploys exactly as it did before.
+  DeployEvalWorker: !Not [!Equals [!Ref EvalWorkerArtifactKey, '']]
+  # So is the server + SPA hosting, on exactly the same pattern.
+  DeployServer: !Not [!Equals [!Ref ServerArtifactKey, '']]
+  # Only when BOTH halves are deployed does the server get a cloud eval lane.
+  ServerHasEvalWorker: !And
+    - !Condition DeployServer
+    - !Condition DeployEvalWorker
+  UseDefaultAdapterLayer: !Equals [!Ref LambdaAdapterLayerArn, '']
 
 Metadata:
   esbuild-properties: &esbuild-properties
@@ -13,10 +151,10 @@ Metadata:
     Minify: true
     OutExtension:
       - .js=.mjs
-    Target: es2020
+    Target: es2022
     Sourcemap: false
     EntryPoints:
-      - index.mjs
+      - index.ts
     Banner:
       - js=import { createRequire } from 'module'; const require = createRequire(import.meta.url);
     External:
@@ -37,18 +175,26 @@ Globals:
         AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
         ORIGIN: !Ref CORSOrigin
         TABLE_NAME: !Ref ScenariosTable
-  Api:
-    Cors:
-      AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-      AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
-      AllowOrigin: !Sub "'${CORSOrigin}'"
+        POWERTOOLS_LOG_LEVEL: INFO
+        POWERTOOLS_LOGGER_LOG_EVENT: 'false'
+  # Note: no `Globals.Api.Cors` here -- when `DefinitionBody` comes from an
+  # external file via `Fn::Transform`/`AWS::Include` (as it does below), SAM
+  # cannot introspect/merge a Cors config into it and `sam validate` fails
+  # with "Unable to add Cors configuration because 'DefinitionBody' does not
+  # contain a valid Swagger definition." CORS is instead handled explicitly
+  # in openapi.yaml: the `cors()` middleware in every Router (see
+  # functions/*/index.ts) sets Access-Control-Allow-* headers on real
+  # responses and answers OPTIONS preflight requests directly, and each path
+  # below has an explicit `options:` operation wired to the same Lambda so
+  # API Gateway forwards preflight requests instead of rejecting them.
 
 Resources:
   Api:
     Type: AWS::Serverless::Api
     Properties:
       StageName: api
-      EndpointConfiguration: REGIONAL
+      EndpointConfiguration:
+        Type: REGIONAL
       DefinitionBody:
         Fn::Transform:
           Name: AWS::Include
@@ -83,16 +229,27 @@ Resources:
           Projection:
             ProjectionType: ALL
 
-  ListScenariosFunction:
+  # ---------------------------------------------------------------------------
+  # Functions
+  #
+  # One Lambda per resource (scenarios / prompts / datasets / tools), each
+  # internally routed with the Powertools for AWS Lambda Event Handler HTTP
+  # Router. Every route the function serves is also declared as an explicit
+  # `Events` entry -- routing itself comes entirely from openapi.yaml (the
+  # Api resource's DefinitionBody), the Events entries exist so SAM emits the
+  # matching AWS::Lambda::Permission grants for API Gateway to invoke it.
+  # ---------------------------------------------------------------------------
+
+  ScenariosFunction:
     Type: AWS::Serverless::Function
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
         <<: *esbuild-properties
         EntryPoints:
-          - scenarios/list-scenarios.mjs
+          - scenarios/index.ts
     Properties:
-      Handler: scenarios/list-scenarios.handler
+      Handler: scenarios/index.handler
       Policies:
         - AWSLambdaBasicExecutionRole
         - Version: 2012-10-17
@@ -101,239 +258,774 @@ Resources:
               Action:
                 - dynamodb:Query
               Resource: !Sub "${ScenariosTable.Arn}/index/GSI1"
-    Events:
-      List:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios
-          Method: GET
+            - Effect: Allow
+              Action:
+                - dynamodb:Query
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+              Resource: !GetAtt ScenariosTable.Arn
+      Events:
+        ListScenarios:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios
+            Method: GET
+        ListScenariosOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios
+            Method: OPTIONS
+        CreateScenario:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios
+            Method: POST
+        GetScenario:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}
+            Method: GET
+        GetScenarioOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}
+            Method: OPTIONS
+        UpdateScenario:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}
+            Method: PUT
+        DeleteScenario:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}
+            Method: DELETE
 
-  CreateScenarioFunction:
+  PromptsFunction:
     Type: AWS::Serverless::Function
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
         <<: *esbuild-properties
         EntryPoints:
-          - scenarios/create-scenario.mjs
+          - prompts/index.ts
     Properties:
-      Handler: scenarios/create-scenario.handler
+      Handler: prompts/index.handler
       Policies:
         - AWSLambdaBasicExecutionRole
         - Version: 2012-10-17
           Statement:
             - Effect: Allow
               Action:
+                - dynamodb:Query
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+              Resource: !GetAtt ScenariosTable.Arn
+      Events:
+        ListPrompts:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/prompts
+            Method: GET
+        ListPromptsOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/prompts
+            Method: OPTIONS
+        CreatePrompt:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/prompts
+            Method: POST
+        UpdatePrompt:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/prompts/{promptId}
+            Method: PUT
+        UpdatePromptOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/prompts/{promptId}
+            Method: OPTIONS
+        DeletePrompt:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/prompts/{promptId}
+            Method: DELETE
+
+  DatasetsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        <<: *esbuild-properties
+        EntryPoints:
+          - datasets/index.ts
+    Properties:
+      Handler: datasets/index.handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Query
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+              Resource: !GetAtt ScenariosTable.Arn
+      Events:
+        ListDatasets:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets
+            Method: GET
+        ListDatasetsOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets
+            Method: OPTIONS
+        CreateDataset:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets
+            Method: POST
+        GetDataset:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets/{datasetId}
+            Method: GET
+        GetDatasetOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets/{datasetId}
+            Method: OPTIONS
+        UpdateDataset:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets/{datasetId}
+            Method: PUT
+        DeleteDataset:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/datasets/{datasetId}
+            Method: DELETE
+
+  ToolsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        <<: *esbuild-properties
+        EntryPoints:
+          - tools/index.ts
+    Properties:
+      Handler: tools/index.handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Query
+                - dynamodb:GetItem
                 - dynamodb:PutItem
               Resource: !GetAtt ScenariosTable.Arn
-    Events:
-      Create:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios
-          Method: POST
+      Events:
+        ListTools:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/tools
+            Method: GET
+        ListToolsOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/tools
+            Method: OPTIONS
+        GetTool:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/tools/{toolName}
+            Method: GET
+        GetToolOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/tools/{toolName}
+            Method: OPTIONS
+        PutTool:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /scenarios/{scenarioId}/tools/{toolName}
+            Method: PUT
 
-  GetScenarioFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - scenarios/get-scenario.mjs
+  # ---------------------------------------------------------------------------
+  # Cloud evaluation lane
+  #
+  # An AgentCore Runtime that executes evaluations out-of-process and persists
+  # job state, progress events, and run records to ScenariosTable above -- the
+  # same table the config store uses, under EVAL#/RUN# partitions. See
+  # docs/cloud-evals.md for the item contract and docs/cloud-evals-infra.md for
+  # the packaging decision and the list of things only a real deploy can prove.
+  #
+  # Inbound auth is IAM (SigV4), not JWT: the only caller is the FastAPI server
+  # holding AWS credentials, and there is no browser socket in this design.
+  # Omitting AuthorizerConfiguration selects IAM -- a runtime is JWT- OR
+  # IAM-authorized, never both.
+  # ---------------------------------------------------------------------------
+
+  # Always created (not conditional) so the first `make deploy-worker` has
+  # somewhere to upload before the runtime exists. Versioned because the
+  # AgentCore runtime holds a reference to a specific key.
+  EvalWorkerArtifactBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreatesArtifactBucket
     Properties:
-      Handler: scenarios/get-scenario.handler
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          # Superseded artifacts are dead weight: each deploy uploads a new
+          # content-hashed key and the runtime only ever reads the current one.
+          - Id: ExpireOldArtifacts
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+
+  EvalWorkerRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Condition: DeployEvalWorker
+    Properties:
+      # AgentRuntimeName is matched against [a-zA-Z][a-zA-Z0-9_]{0,47} -- no
+      # hyphens, so this cannot be derived from ${AWS::StackName}.
+      AgentRuntimeName: promptatron_eval_worker
+      Description: Executes Promptatron evaluations and persists them to DynamoDB
+      AgentRuntimeArtifact:
+        CodeConfiguration:
+          Code:
+            S3:
+              Bucket: !If [HasExternalArtifactBucket, !Ref ArtifactsBucketName, !Ref EvalWorkerArtifactBucket]
+              Prefix: !Ref EvalWorkerArtifactKey
+          # The zip's root-level entry module. AgentCore executes it; it starts
+          # the bedrock-agentcore SDK's server on :8080 (/invocations + /ping).
+          # See scripts/package-eval-worker.sh, which writes this shim.
+          EntryPoint:
+            - agentcore_app.py
+          # The server package targets 3.12 (server/pyproject.toml
+          # requires-python) and the artifact's wheels are built for it.
+          Runtime: PYTHON_3_12
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      # No AuthorizerConfiguration => IAM (SigV4) inbound auth. The FastAPI
+      # server calls InvokeAgentRuntime with its own AWS credentials.
+      RoleArn: !GetAtt EvalWorkerRole.Arn
+      EnvironmentVariables:
+        # Worker-owned (docs/cloud-evals.md "Configuration").
+        TABLE_NAME: !Ref ScenariosTable
+        # Consumed by promptatron.config.Settings (PROMPTATRON_ prefix), which
+        # evals.engine.default_deps() builds from the environment because the
+        # worker has no FastAPI request to hang dependencies off.
+        PROMPTATRON_AWS_REGION: !Ref AWS::Region
+        # The container filesystem is not a durable or necessarily writable
+        # place; /tmp is. This SQLite file is scratch space for the run engine,
+        # which writes each run there before save_run mirrors it to DynamoDB.
+        PROMPTATRON_DB_PATH: /tmp/promptatron-worker.db
+        PROMPTATRON_CONFIG_API_URL: !Sub https://${Api}.execute-api.${AWS::Region}.${AWS::URLSuffix}/api
+        PROMPTATRON_CONFIG_API_KEY: !Ref EvalWorkerConfigApiKey
+
+  EvalWorkerRole:
+    Type: AWS::IAM::Role
+    Condition: DeployEvalWorker
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*
+      Policies:
+        - PolicyName: EvalWorkerPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              # Read the CodeZip artifact at create/update time.
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub ['arn:${AWS::Partition}:s3:::${B}/*', {B: !If [HasExternalArtifactBucket, !Ref ArtifactsBucketName, !Ref EvalWorkerArtifactBucket]}]
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub ['arn:${AWS::Partition}:s3:::${B}', {B: !If [HasExternalArtifactBucket, !Ref ArtifactsBucketName, !Ref EvalWorkerArtifactBucket]}]
+              # The evaluation itself: the model under test, plus the judge.
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                  - bedrock:Converse
+                  - bedrock:ConverseStream
+                Resource:
+                  - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/*
+                  - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
+              # Guardrail-backed runs evaluate the configured guardrail inline.
+              - Effect: Allow
+                Action: bedrock:ApplyGuardrail
+                Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail/*
+              # Job state: EVAL# meta/events, the CANCEL flag, RUN# records.
+              # No Scan and no Query -- the worker only ever touches items whose
+              # keys it already knows.
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt ScenariosTable.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                  - logs:DescribeLogGroups
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/*
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: '*'
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: bedrock-agentcore
+
+  # ---------------------------------------------------------------------------
+  # Deployed FastAPI server
+  #
+  # The application is UNCHANGED: no handler, no Mangum, no ASGI shim. The AWS
+  # Lambda Web Adapter layer sits in front of it -- AWS_LAMBDA_EXEC_WRAPPER
+  # points Lambda at the layer's /opt/bootstrap, which execs this function's
+  # Handler (`run.sh`, written by scripts/package-server.sh), which starts
+  # uvicorn on $PORT. The adapter then translates Lambda invocations into plain
+  # HTTP against that port.
+  #
+  # AWS_LWA_INVOKE_MODE=response_stream + FunctionUrlConfig.InvokeMode
+  # RESPONSE_STREAM is what keeps `POST /runs` and the evaluation event streams
+  # incremental rather than buffered into one JSON blob at the end.
+  #
+  # See docs/serverless-deploy-infra.md for citations and the list of things
+  # only a real deploy can prove.
+  # ---------------------------------------------------------------------------
+
+  ServerFunction:
+    Type: AWS::Serverless::Function
+    Condition: DeployServer
+    Metadata:
+      # The zip is prebuilt by scripts/package-server.sh (cross-compiled arm64
+      # wheels) and uploaded under a content-hashed key. There is nothing for
+      # `sam build` to do, and every Python build workflow it might try to
+      # infer would be wrong.
+      SkipBuild: true
+    Properties:
+      CodeUri:
+        Bucket: !If [HasExternalArtifactBucket, !Ref ArtifactsBucketName, !Ref EvalWorkerArtifactBucket]
+        Key: !Ref ServerArtifactKey
+      # `run.sh` at the root of the zip, exec'd by the adapter's bootstrap.
+      Handler: run.sh
+      # Overrides the Globals default (nodejs22.x) -- this is the one Python
+      # function in the stack.
+      # Architectures comes from Globals ([arm64]); SAM *appends* to Globals
+      # lists, so restating it here yields ['arm64','arm64'] and fails cfn-lint.
+      Runtime: python3.12
+      MemorySize: !Ref ServerMemorySize
+      # A streaming run must finish inside one invocation; 900s is Lambda's max.
+      Timeout: 900
+      Layers:
+        - !If
+          - UseDefaultAdapterLayer
+          - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerArm64:${LambdaAdapterLayerVersion}
+          - !Ref LambdaAdapterLayerArn
+      Environment:
+        Variables:
+          # -- Lambda Web Adapter ------------------------------------------- #
+          # Makes Lambda exec the layer's bootstrap, which in turn execs Handler.
+          AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
+          AWS_LWA_INVOKE_MODE: response_stream
+          PORT: 8080
+          # Readiness is deliberately left at the adapter's default path ("/")
+          # with its default healthy range (100-499): FastAPI answers 404 there
+          # the instant the ASGI app is serving, which is exactly the signal
+          # wanted. Pointing it at /api/v1/health instead would make every cold
+          # start pay for a config-store probe and a provider probe first.
+          #
+          # -- application --------------------------------------------------- #
+          PROMPTATRON_AWS_REGION: !Ref AWS::Region
+          # /var/task is read-only. The run engine still opens a SQLite file for
+          # scratch even when history lives in DynamoDB, so give it /tmp.
+          PROMPTATRON_DB_PATH: /tmp/promptatron.db
+          # Deployed shape (docs/serverless-deploy.md): DynamoDB history, cloud
+          # lane only. Both are explicit rather than left to `auto` so the
+          # behaviour does not silently depend on Lambda env-var detection.
+          PROMPTATRON_HISTORY_BACKEND: dynamodb
+          PROMPTATRON_LOCAL_EVALS: 'off'
+          PROMPTATRON_EVAL_TABLE: !Ref ScenariosTable
+          PROMPTATRON_EVAL_RUNTIME_ARN: !If
+            - ServerHasEvalWorker
+            - !GetAtt EvalWorkerRuntime.AgentRuntimeArn
+            - !Ref AWS::NoValue
+          PROMPTATRON_CONFIG_API_URL: !Sub https://${Api}.execute-api.${AWS::Region}.${AWS::URLSuffix}/api
+          # NOT set. CloudFormation cannot read an AWS::ApiGateway::ApiKey's
+          # value, and routing the secret through a template parameter would put
+          # it in the CLI history of every deploy for no gain. The server
+          # already has a cached, fail-soft discovery path built for exactly
+          # this (promptatron.stack_discovery), so discovery stays ON and fills
+          # in this one field; the three values CloudFormation *does* know are
+          # still injected above, so the hot path never depends on discovery
+          # succeeding. Cost: two read-only IAM actions, granted narrowly below.
+          PROMPTATRON_STACK_DISCOVERY: 'true'
+          # Discovery reads *this* stack, whatever it was named.
+          PROMPTATRON_STACK_NAME: !Ref AWS::StackName
+          # Empty by default: SPA and API share one CloudFront origin, so
+          # nothing the browser does is cross-origin. See the parameter.
+          PROMPTATRON_CORS_ORIGINS: !Ref ServerCorsOrigins
       Policies:
         - AWSLambdaBasicExecutionRole
         - Version: 2012-10-17
           Statement:
+            # The run engine and the judge.
             - Effect: Allow
               Action:
-                - dynamodb:GetItem
-              Resource: !GetAtt ScenariosTable.Arn
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+                - bedrock:Converse
+                - bedrock:ConverseStream
+              Resource:
+                - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/*
+                - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
+            # GET /api/v1/models -- promptatron.awscat.catalog.
+            - Effect: Allow
+              Action:
+                - bedrock:ListFoundationModels
+                - bedrock:ListInferenceProfiles
+              Resource: '*'
+            # The guardrails router is full CRUD (promptatron/guardrails/service.py),
+            # unlike the worker, which only applies them.
+            - Effect: Allow
+              Action:
+                - bedrock:ApplyGuardrail
+                - bedrock:CreateGuardrail
+                - bedrock:CreateGuardrailVersion
+                - bedrock:GetGuardrail
+                - bedrock:UpdateGuardrail
+                - bedrock:DeleteGuardrail
+              Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail/*
+            - Effect: Allow
+              Action: bedrock:ListGuardrails
+              Resource: '*'
+            # History + cloud-eval reads. Unlike the worker this side DOES
+            # query: listing runs/evaluations walks the GSI1 RUN/EVAL
+            # partitions, and DELETE /runs/{id} is a real endpoint.
             - Effect: Allow
               Action:
                 - dynamodb:Query
-              Resource: !Sub "${ScenariosTable.Arn}/index/GSI1"
-    Events:
-      Get:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}
-          Method: GET
-
-  UpdateScenarioFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - scenarios/update-scenario.mjs
-    Properties:
-      Handler: scenarios/update-scenario.handler
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
                 - dynamodb:UpdateItem
-              Resource: !GetAtt ScenariosTable.Arn
-    Events:
-      Update:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}
-          Method: PUT
-
-  DeleteScenarioFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - scenarios/delete-scenario.mjs
-    Properties:
-      Handler: scenarios/delete-scenario.handler
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
                 - dynamodb:DeleteItem
               Resource: !GetAtt ScenariosTable.Arn
             - Effect: Allow
-              Action:
-                - dynamodb:Query
-              Resource: !Sub "${ScenariosTable.Arn}/index/GSI1"
-    Events:
-      Delete:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}
-          Method: DELETE
+              Action: dynamodb:Query
+              Resource: !Sub ${ScenariosTable.Arn}/index/GSI1
+            # Dispatching an evaluation to the cloud lane.
+            - !If
+              - ServerHasEvalWorker
+              - Effect: Allow
+                Action: bedrock-agentcore:InvokeAgentRuntime
+                Resource:
+                  - !GetAtt EvalWorkerRuntime.AgentRuntimeArn
+                  - !Sub ${EvalWorkerRuntime.AgentRuntimeArn}/*
+              - !Ref AWS::NoValue
+            # The two actions stack discovery needs, and only those: read this
+            # stack's outputs, then read the value of the API key it names.
+            - Effect: Allow
+              Action: cloudformation:DescribeStacks
+              Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*
+            - Effect: Allow
+              Action: apigateway:GET
+              Resource: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}::/apikeys/*
+      FunctionUrlConfig:
+        # v1: public-but-unguessable, fronted by CloudFront. SAM emits the
+        # matching AWS::Lambda::Permission (FunctionUrlAuthType: NONE) itself.
+        AuthType: !Ref ServerFunctionUrlAuthType
+        InvokeMode: RESPONSE_STREAM
 
-  ListPromptsFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - prompts/list-prompts.mjs
-    Properties:
-      Handler: prompts/list-prompts.handler
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
-                - dynamodb:GetItem
-              Resource: !GetAtt ScenariosTable.Arn
-            - Effect: Allow
-              Action:
-                - dynamodb:Query
-              Resource: !Sub "${ScenariosTable.Arn}/index/GSI1"
-    Events:
-      List:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}/prompts
-          Method: GET
+  # ---------------------------------------------------------------------------
+  # SPA hosting: private S3 bucket + one CloudFront distribution with two
+  # origins. The distribution is the whole point -- the browser sees a single
+  # origin for both the app and the API, so there is no CORS in production and
+  # VITE_API_URL can be relative.
+  # ---------------------------------------------------------------------------
 
-  CreatePromptFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - prompts/create-prompt.mjs
+  AppBucket:
+    Type: AWS::S3::Bucket
+    Condition: DeployServer
     Properties:
-      Handler: prompts/create-prompt.handler
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
-                - dynamodb:GetItem
-              Resource: !GetAtt ScenariosTable.Arn
-            - Effect: Allow
-              Action:
-                - dynamodb:PutItem
-              Resource: !GetAtt ScenariosTable.Arn
-    Events:
-      Create:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}/prompts
-          Method: POST
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
 
-  DeletePromptFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - prompts/delete-prompt.mjs
+  AppOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Condition: DeployServer
     Properties:
-      Handler: prompts/delete-prompt.handler
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
-                - dynamodb:DeleteItem
-              Resource: !GetAtt ScenariosTable.Arn
-    Events:
-      Delete:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}/prompts/{promptId}
-          Method: DELETE
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-app-oac
+        Description: Signs CloudFront's reads of the SPA bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
 
-  UpdatePromptFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        <<: *esbuild-properties
-        EntryPoints:
-          - prompts/update-prompt.mjs
+  AppBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: DeployServer
     Properties:
-      Handler: prompts/update-prompt.handler
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
-                - dynamodb:UpdateItem
-              Resource: !GetAtt ScenariosTable.Arn
-    Events:
-      Update:
-        Type: Api
-        Properties:
-          RestApiId: !Ref Api
-          Path: /scenarios/{scenarioId}/prompts/{promptId}
-          Method: PUT
+      Bucket: !Ref AppBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${AppBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${AppDistribution}
+
+  # SPA fallback, done as a viewer-request rewrite rather than the usual
+  # distribution-wide CustomErrorResponses 403/404 -> /index.html.
+  #
+  # CustomErrorResponses are NOT scoped to a cache behaviour: they would also
+  # rewrite the API's own 403s and 404s (GET /api/v1/runs/{unknown-id}) into a
+  # 200 carrying the HTML shell, which the app's error handling cannot see
+  # through. A CloudFront Function IS per-behaviour, so attaching this to the
+  # default behaviour only leaves /api/* completely untouched.
+  SpaRouterFunction:
+    Type: AWS::CloudFront::Function
+    Condition: DeployServer
+    Properties:
+      Name: !Sub ${AWS::StackName}-spa-router
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Rewrite extensionless paths to /index.html for client-side routing
+        Runtime: cloudfront-js-2.0
+      # Deliberately ES5-only (indexOf/substring, no includes/endsWith) so it is
+      # valid under either CloudFront Functions runtime.
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var uri = request.uri;
+          var last = uri.substring(uri.lastIndexOf('/') + 1);
+          if (last.indexOf('.') === -1) {
+            request.uri = '/index.html';
+          }
+          return request;
+        }
+
+  AppDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: DeployServer
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub Promptatron 3000 (${AWS::StackName}) -- SPA + API
+        HttpVersion: http2and3
+        DefaultRootObject: index.html
+        Origins:
+          - Id: spa
+            DomainName: !GetAtt AppBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt AppOriginAccessControl.Id
+            # Required-but-empty when OAC is in use (it replaces the legacy OAI).
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+          - Id: server
+            # !GetAtt ...FunctionUrl returns "https://<id>.lambda-url.<region>.on.aws/";
+            # CloudFront wants the bare host, which is the third slash-separated
+            # field of that URL.
+            DomainName: !Select [2, !Split ['/', !GetAtt ServerFunctionUrl.FunctionUrl]]
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
+              # CloudFront's response timeout is also its *inter-packet* timeout
+              # on a streaming response: 60s is the maximum without a quota
+              # increase, so a run that goes longer than a minute between NDJSON
+              # events will have its connection dropped.
+              OriginReadTimeout: 60
+              OriginKeepaliveTimeout: 60
+        DefaultCacheBehavior:
+          TargetOriginId: spa
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # Managed CachingOptimized. Vite emits content-hashed asset names, and
+          # index.html is invalidated by `make deploy`.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt SpaRouterFunction.FunctionARN
+        CacheBehaviors:
+          # The FastAPI routers mount at /api/v1, so this one pattern covers the
+          # whole API and the origin receives the path unchanged -- no
+          # OriginPath rewriting, no AWS_LWA_REMOVE_BASE_PATH.
+          - PathPattern: /api/*
+            TargetOriginId: server
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachedMethods: [GET, HEAD]
+            # Managed CachingDisabled -- an NDJSON run stream is never cacheable.
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            # Managed AllViewerExceptHostHeader: forwards every viewer header,
+            # cookie and query string, but lets CloudFront set Host to the
+            # Function URL's own domain (Lambda rejects a mismatched Host).
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+        # No CustomErrorResponses on purpose -- see SpaRouterFunction above.
+
+  # ---------------------------------------------------------------------------
+  # API key / usage plan
+  # ---------------------------------------------------------------------------
+
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub ${AWS::StackName}-key
+      Description: API key required by all Promptatron 3000 config-store endpoints (see openapi.yaml `security`).
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref Api
+          StageName: !Ref Api.Stage
+
+  ApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: !Sub ${AWS::StackName}-usage-plan
+      ApiStages:
+        - ApiId: !Ref Api
+          Stage: !Ref Api.Stage
+      Throttle:
+        RateLimit: 50
+        BurstLimit: 100
+
+  ApiUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ApiUsagePlan
 
 Outputs:
   ApiUrl:
     Description: API endpoint URL
     Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/api
+  ApiEndpoint:
+    Description: API endpoint URL (alias of ApiUrl; matches the name scripting/tooling looks up by convention)
+    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/api
+  ApiKeyId:
+    Description: >
+      AWS::ApiGateway::ApiKey resource id. Fetch the key value with:
+      aws apigateway get-api-key --api-key <id> --include-value
+    Value: !Ref ApiKey
+  TableName:
+    Description: DynamoDB table name (pass to the seeder as --table or $TABLE_NAME)
+    Value: !Ref ScenariosTable
+  EvalWorkerArtifactBucket:
+    Description: S3 bucket the eval worker's CodeZip artifact is uploaded to
+    Value: !If [HasExternalArtifactBucket, !Ref ArtifactsBucketName, !Ref EvalWorkerArtifactBucket]
+  ArtifactBucket:
+    Description: >
+      Alias of EvalWorkerArtifactBucket. The same bucket holds BOTH deployable
+      zips (eval-worker/<sha>.zip and server/<sha>.zip); the neutral name is
+      what `make deploy` looks up.
+    Value: !If [HasExternalArtifactBucket, !Ref ArtifactsBucketName, !Ref EvalWorkerArtifactBucket]
+  EvalWorkerRuntimeArn:
+    Condition: DeployEvalWorker
+    Description: >
+      AgentCore Runtime ARN for the cloud evaluation lane. Set this as
+      PROMPTATRON_EVAL_RUNTIME_ARN on the FastAPI server (with
+      PROMPTATRON_EVAL_TABLE=TableName) to enable the cloud lane.
+    Value: !GetAtt EvalWorkerRuntime.AgentRuntimeArn
+  EvalWorkerRuntimeId:
+    Condition: DeployEvalWorker
+    Description: AgentCore Runtime id (useful for CLI calls that take an id, not an ARN)
+    Value: !GetAtt EvalWorkerRuntime.AgentRuntimeId
+  ServerFunctionUrl:
+    Condition: DeployServer
+    Description: >
+      Direct Lambda Function URL for the FastAPI server. AuthType NONE in v1 --
+      public but unguessable. The supported front door is AppUrl; this is here
+      for curl-level debugging and for pointing a local vite at the deployed
+      server (which also needs ServerCorsOrigins set).
+    Value: !GetAtt ServerFunctionUrl.FunctionUrl
+  AppUrl:
+    Condition: DeployServer
+    Description: The deployment's one public URL -- SPA at /, API at /api/v1.
+    Value: !Sub https://${AppDistribution.DomainName}
+  AppBucket:
+    Condition: DeployServer
+    Description: S3 bucket the built SPA is synced into (private; read only via CloudFront OAC)
+    Value: !Ref AppBucket
+  AppDistributionId:
+    Condition: DeployServer
+    Description: CloudFront distribution id (for `aws cloudfront create-invalidation`)
+    Value: !Ref AppDistribution

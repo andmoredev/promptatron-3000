@@ -1,0 +1,166 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm run test:coverage
+
+      - run: npm run build
+
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - run: npm ci
+
+      - run: npx tsc --noEmit
+
+      # Guards the deploy path: the template grew a server Lambda, an AgentCore
+      # runtime and a CloudFront distribution, and nothing else in CI reads it.
+      # Plain `validate` rather than `--lint`, which still trips on four
+      # pre-existing W1100 YAML-merge warnings.
+      - run: sam validate --region ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - run: npm run test:coverage
+
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv sync --dev
+
+      - run: uv run ruff check .
+
+      # fail_under=97 in pyproject.toml gates the step automatically
+      - run: uv run pytest --cov=promptatron --cov-report=term-missing
+
+  # Mutation testing: advisory quality signal, one job per package so the
+  # slow runs (~2-10 min each) parallelize and never block the fast gates.
+  mutation-app:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - run: npm ci
+
+      - run: npx stryker run
+
+  mutation-api:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - run: npm ci
+
+      - run: npx stryker run
+
+  mutation-server:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv sync --dev
+
+      - run: uv run mutmut run
+
+      - run: uv run mutmut results
+        if: always()
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv sync --dev
+        working-directory: server
+
+      - run: npm ci
+        working-directory: app
+
+      - run: npx playwright install --with-deps chromium
+        working-directory: app
+
+      # No PLAYWRIGHT_BROWSERS_PATH here on purpose: `playwright install` above
+      # already uses the default cache location, and a `~` in a YAML env value
+      # is NOT shell-expanded -- it resolved to a literal ./~/.cache directory
+      # and every spec failed with "Executable doesn't exist".
+      - run: npx playwright test
+        working-directory: app
