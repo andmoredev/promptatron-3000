@@ -5,6 +5,8 @@ const ThemeContext = createContext(null)
 
 /**
  * Theme Provider component with null-checking and fallback handling
+ *
+ * @param {{ children?: React.ReactNode, theme?: { colors?: Record<string, Record<string|number, string>> } | null }} props
  */
 export const ThemeProvider = ({ children, theme = null }) => {
   const [themeState, setThemeState] = useState({

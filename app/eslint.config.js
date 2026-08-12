@@ -7,16 +7,7 @@ import tseslint from 'typescript-eslint'
 export default [
   {
     // Global ignores
-    ignores: [
-      'dist/**',
-      'node_modules/**',
-      'coverage/**',
-      // Pre-existing hard syntax error (`typeof export`) that the parser cannot
-      // recover from, so even an inline eslint-disable can't suppress it.
-      // Currently dead/unreachable code (not part of the built bundle) - see
-      // tooling report for details. Needs a real source fix, out of scope here.
-      'src/utils/browserCompatibility.js'
-    ]
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**']
   },
   js.configs.recommended,
   {

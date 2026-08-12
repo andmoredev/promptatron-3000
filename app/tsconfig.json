@@ -12,5 +12,5 @@
     "types": ["vite/client", "node"]
   },
   "include": ["src/**/*.{ts,tsx}", "src/**/*.jsx", "src/main.tsx"],
-  "exclude": ["node_modules", "dist", "src/utils/browserCompatibility.js"]
+  "exclude": ["node_modules", "dist"]
 }

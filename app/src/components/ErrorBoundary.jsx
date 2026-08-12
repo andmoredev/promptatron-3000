@@ -93,7 +93,7 @@ class ErrorBoundary extends React.Component {
             </div>
 
             {/* Error Details (in development) */}
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {import.meta.env.DEV && this.state.error && (
               <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
                 <h3 className="text-sm font-medium text-gray-900 mb-2">Error Details:</h3>
                 {this.state.errorId && (
@@ -148,7 +148,7 @@ class ErrorBoundary extends React.Component {
               <p>If this problem persists, try:</p>
               <ul className="mt-2 space-y-1">
                 <li>• Clearing your browser cache and cookies</li>
-                <li>• Checking your AWS credentials configuration</li>
+                <li>• Checking that the Promptatron API server is reachable</li>
                 <li>• Ensuring you have a stable internet connection</li>
                 <li>• Refreshing the page</li>
                 <li>• Using a different browser</li>
