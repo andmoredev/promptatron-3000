@@ -55,7 +55,7 @@ from strands_evals.evaluators.trajectory_evaluator import TrajectoryEvaluator
 from strands_evals.types.evaluation_report import EvaluationReport
 
 from promptatron.evals import rubrics
-from promptatron.evals.judge import JudgeFactory
+from promptatron.evals.judge import JudgeFactory, call_judge_factory
 from promptatron.evals.metrics import modal_value, tool_signature
 from promptatron.evals.outcomes import RunOutcome
 from promptatron.evals.schemas import GraderConfig
@@ -173,7 +173,7 @@ async def judge(
     effective_rubric = rubric or default_rubric
 
     try:
-        model = judge_factory(grader.model_id)
+        model = call_judge_factory(judge_factory, grader.model_id, grader.provider)
         evaluators: list[Any] = [
             OutputEvaluator(
                 rubric=effective_rubric,

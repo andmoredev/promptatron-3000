@@ -1,15 +1,22 @@
-"""Models endpoint for listing available Bedrock models."""
+"""Models endpoint: the model picker's whole source of truth.
+
+Returns every model reachable from this server across all four providers, plus
+which providers are configured, so the UI can grey out (and explain) the ones
+that are not. Each entry's ``source`` is the value to send back as
+``provider`` on ``POST /runs``.
+"""
 
 import logging
-import time
 from typing import Any
 
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends
 
-from promptatron.awscat.catalog import CACHE_TTL_SECONDS, ModelCatalog
+from promptatron.awscat.catalog import ModelCatalog
 from promptatron.config import Settings, get_settings
 from promptatron.errors import UpstreamError
+from promptatron.models_catalog import ProviderCatalog
+from promptatron.models_catalog import catalog as provider_catalog_singleton
 
 logger = logging.getLogger(__name__)
 
@@ -20,35 +27,46 @@ _catalog = ModelCatalog()
 
 
 def _get_catalog() -> ModelCatalog:
-    """Dependency to provide the model catalog."""
+    """Dependency to provide the Bedrock model catalog."""
     return _catalog
+
+
+_provider_catalog = provider_catalog_singleton
+
+
+def _get_provider_catalog() -> ProviderCatalog:
+    """Dependency to provide the multi-provider catalog."""
+    return _provider_catalog
 
 
 @router.get("/models")
 async def list_models(
     settings: Settings = Depends(get_settings),
     catalog: ModelCatalog = Depends(_get_catalog),
+    provider_catalog: ProviderCatalog = Depends(_get_provider_catalog),
 ) -> dict[str, Any]:
-    """List available Bedrock models for the configured region.
+    """List every available model, across every configured provider.
 
     Returns:
-        {"models": [...], "cached": bool} where models is the list of
-        model dicts (model_id, name, provider, supports_streaming, kind)
-        and cached indicates whether the result was from cache.
+        ``{"models": [...], "providers": {...}, "cached": bool}``. Each model is
+        ``{model_id, name, provider, supports_streaming, kind, source}``;
+        ``providers`` reports ``configured`` per provider (plus ``reachable``
+        for Ollama); ``cached`` is true only when *every* listing came from
+        cache.
+
+    A non-Bedrock provider that fails is reported as configured-but-empty rather
+    than failing the request; a Bedrock failure is still a 502.
     """
     try:
-        # Check if result would be from cache before calling
-        region = settings.aws_region
-        cached = region in catalog._cache
-        if cached:
-            cached_time = catalog._cache[region][1]
-            if time.time() - cached_time >= CACHE_TTL_SECONDS:
-                cached = False
-
-        models = catalog.list_models(region)
-        return {"models": models, "cached": cached}
+        result = await provider_catalog.collect(settings, catalog)
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "unknown")
         message = f"Failed to list models: {error_code}"
         logger.error(f"{message}: {e}")
         raise UpstreamError(message, detail={"error_code": error_code}) from e
+
+    return {
+        "models": result.models,
+        "providers": result.providers,
+        "cached": result.cached,
+    }

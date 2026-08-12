@@ -19,9 +19,14 @@ class AppError(Exception):
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
     code: str = "internal_error"
 
-    def __init__(self, message: str, detail: Any = None) -> None:
+    def __init__(self, message: str, detail: Any = None, *, code: str | None = None) -> None:
         self.message = message
         self.detail = detail
+        # A per-instance code lets one status class carry several machine-readable
+        # reasons (e.g. 400 `provider_not_configured` vs 400 `guardrail_requires_bedrock`)
+        # without a subclass per reason.
+        if code is not None:
+            self.code = code
         super().__init__(message)
 
 

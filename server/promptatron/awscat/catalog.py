@@ -20,6 +20,11 @@ class ModelCatalog:
         """Initialize the catalog with an empty cache."""
         self._cache: dict[str, tuple[list[dict[str, Any]], float]] = {}
 
+    def is_cached(self, region: str) -> bool:
+        """Whether the next :meth:`list_models` for ``region`` would be a cache hit."""
+        entry = self._cache.get(region)
+        return entry is not None and time.time() - entry[1] < CACHE_TTL_SECONDS
+
     def list_models(self, region: str) -> list[dict[str, Any]]:
         """List invocable Bedrock models for the given region.
 
@@ -100,6 +105,10 @@ class ModelCatalog:
                     "provider": model["providerName"],
                     "supports_streaming": model.get("responseStreamingSupported", True),
                     "kind": "foundation-model",
+                    # `provider` is the *model vendor* AWS reports (Anthropic,
+                    # Meta, ...); `source` is which SDK invokes it, and is what
+                    # the UI sends back as `provider` on a run.
+                    "source": "bedrock",
                 }
             )
 
@@ -128,6 +137,7 @@ class ModelCatalog:
                             "provider": self._extract_provider_from_arn(profile),
                             "supports_streaming": True,
                             "kind": "inference-profile",
+                            "source": "bedrock",
                         }
                     )
         except ClientError as e:

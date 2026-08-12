@@ -90,6 +90,7 @@ from promptatron.evals.judge import JudgeFactory, build_judge_model
 from promptatron.evals.metrics import local_metrics
 from promptatron.evals.outcomes import RunOutcome
 from promptatron.evals.schemas import EvaluationRequest
+from promptatron.providers import DEFAULT_PROVIDER
 from promptatron.store import history
 from promptatron.store.db import get_engine
 
@@ -126,7 +127,9 @@ def default_deps(settings: Settings | None = None) -> EvalDeps:
     return EvalDeps(
         settings=settings,
         model_factory=lambda request: build_model(request, settings),
-        judge_factory=lambda model_id: build_judge_model(model_id, settings),
+        judge_factory=lambda model_id, provider=DEFAULT_PROVIDER: build_judge_model(
+            model_id, settings, provider
+        ),
     )
 
 

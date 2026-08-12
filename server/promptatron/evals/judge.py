@@ -28,6 +28,7 @@ and ``grader.system_prompt`` actually reached the judge.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -37,9 +38,14 @@ from strands_evals.types.evaluation import EvaluationOutput
 
 from promptatron.config import Settings, get_settings
 from promptatron.engine.fake_model import FakeModel, ToolUseStep
+from promptatron.providers import DEFAULT_PROVIDER, Provider
 
-# A judge builder: model id -> model provider. The seam tests override.
-JudgeFactory = Callable[[str], Model]
+#: A judge builder. The current signature is ``(model_id, provider) -> Model``;
+#: the original ``(model_id) -> Model`` is still accepted, and
+#: :func:`call_judge_factory` picks whichever the callable takes. Kept loose on
+#: purpose: this is a test seam with a lot of one-line overrides, and forcing
+#: every one of them to grow a parameter it ignores buys nothing.
+JudgeFactory = Callable[..., Model]
 
 # Strands names the structured-output tool after the pydantic model class.
 STRUCTURED_OUTPUT_TOOL_NAME = EvaluationOutput.__name__
@@ -113,15 +119,49 @@ class FakeJudgeModel(FakeModel):
         return [call.system_prompt for call in self.calls]
 
 
-def build_judge_model(model_id: str, settings: Settings) -> Model:
-    """Build the judge model provider for ``model_id``."""
+def build_judge_model(
+    model_id: str, settings: Settings, provider: Provider = DEFAULT_PROVIDER
+) -> Model:
+    """Build the judge model provider for ``model_id`` on ``provider``.
+
+    The judge is a model like any other, so it reuses the run engine's factory
+    rather than a second copy of the provider branching -- including its
+    ``provider_not_configured`` refusal. A judge is always a plain chat model
+    (no dataset, no tools, no guardrail), so the synthetic ``RunRequest`` here
+    carries nothing but the two routing fields.
+    """
     if settings.fake_model:
         return FakeJudgeModel(model_id=model_id)
 
     # Imported lazily so a fake-judge evaluation never constructs a boto session.
-    from strands.models.bedrock import BedrockModel
+    from promptatron.engine.model_factory import build_model
+    from promptatron.engine.schemas import RunRequest
 
-    return BedrockModel(model_id=model_id, region_name=settings.aws_region, streaming=True)
+    if provider == "bedrock":
+        from strands.models.bedrock import BedrockModel
+
+        return BedrockModel(model_id=model_id, region_name=settings.aws_region, streaming=True)
+
+    return build_model(
+        RunRequest(model_id=model_id, provider=provider, user_prompt="judge"), settings
+    )
+
+
+def call_judge_factory(
+    factory: JudgeFactory, model_id: str, provider: Provider = DEFAULT_PROVIDER
+) -> Model:
+    """Invoke ``factory``, passing ``provider`` only if it accepts one.
+
+    ``signature().bind`` answers that question without calling anything, so a
+    single-argument override keeps working untouched and a ``TypeError`` raised
+    *inside* a factory is never mistaken for an arity mismatch.
+    """
+    try:
+        signature = inspect.signature(factory)
+        signature.bind(model_id, provider)
+    except (TypeError, ValueError):
+        return factory(model_id)
+    return factory(model_id, provider)
 
 
 def get_judge_factory(settings: Settings = Depends(get_settings)) -> JudgeFactory:
@@ -131,4 +171,6 @@ def get_judge_factory(settings: Settings = Depends(get_settings)) -> JudgeFactor
     touching settings or the environment -- the mirror image of
     ``routers.runs.get_model_factory``.
     """
-    return lambda model_id: build_judge_model(model_id, settings)
+    return lambda model_id, provider=DEFAULT_PROVIDER: build_judge_model(
+        model_id, settings, provider
+    )

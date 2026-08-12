@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from promptatron.errors import BadRequestError
+from promptatron.providers import DEFAULT_PROVIDER, Provider
 
 
 class InferenceConfig(BaseModel):
@@ -39,6 +42,10 @@ class RunRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     model_id: str = Field(min_length=1)
+    #: Which SDK executes this run. ``model_id`` is interpreted in that
+    #: provider's namespace, so it is the ``source`` the model came back with
+    #: from ``GET /models`` -- not a free choice.
+    provider: Provider = DEFAULT_PROVIDER
     system_prompt: str = ""
     user_prompt: str = Field(min_length=1)
     scenario_id: str | None = None
@@ -49,9 +56,26 @@ class RunRequest(BaseModel):
     guardrail: GuardrailConfig | None = None
     stream: bool = True
 
+    @model_validator(mode="after")
+    def _guardrails_are_bedrock_only(self) -> RunRequest:
+        """Guardrails are an AWS service, not a portable inference setting.
+
+        Rejected up front rather than silently dropped: a run that quietly loses
+        its guardrail is worse than one that never starts.
+        """
+        if self.guardrail is not None and self.provider != "bedrock":
+            raise BadRequestError(
+                "Guardrails are a Bedrock feature and cannot be applied to "
+                f"provider {self.provider!r}",
+                detail={"provider": self.provider, "guardrail_id": self.guardrail.id},
+                code="guardrail_requires_bedrock",
+            )
+        return self
+
     def stored_config(self) -> dict:
         """The ``config`` JSON persisted on the run row."""
         return {
+            "provider": self.provider,
             "inference": self.inference.as_model_config(),
             "tools_enabled": self.tools_enabled,
             "max_tool_iterations": self.max_tool_iterations,

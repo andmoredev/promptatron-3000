@@ -30,6 +30,24 @@ instance/task role, etc.) — this replaces the old `local-setup.sh` flow.
 | `PROMPTATRON_DB_PATH`             | `./data/promptatron.db`        | SQLite database path                 |
 | `PROMPTATRON_CORS_ORIGINS`        | `["http://localhost:3000"]`    | Allowed CORS origins (JSON list)     |
 | `PROMPTATRON_FAKE_MODEL`          | `false`                        | Use a fake model instead of live LLM |
+| `PROMPTATRON_ANTHROPIC_API_KEY`   | `None`                         | Anthropic API key (falls back to `ANTHROPIC_API_KEY`) |
+| `PROMPTATRON_OPENAI_API_KEY`      | `None`                         | OpenAI API key (falls back to `OPENAI_API_KEY`) |
+| `PROMPTATRON_OLLAMA_BASE_URL`     | `None`                         | Ollama server base URL, e.g. `http://localhost:11434` (falls back to `OLLAMA_HOST`) |
+
+## Model providers
+
+Runs and evaluations select a provider with `provider` on the request body
+(`"bedrock"` — the default — `"anthropic"`, `"openai"` or `"ollama"`); graders take
+the same field, so an OpenAI judge can grade Bedrock runs. `GET /models` lists every
+model across every configured provider, each entry tagged with the `source` to send
+back as `provider`, alongside a `providers` block reporting which are configured
+(also mirrored on `GET /health`).
+
+A provider is "configured" when its credential resolves: the standard AWS chain for
+Bedrock, an API key for Anthropic/OpenAI, a base URL for Ollama. Selecting an
+unconfigured provider is a `400 provider_not_configured`. Guardrails are Bedrock-only
+— pairing one with another provider is a `400 guardrail_requires_bedrock`.
+`PROMPTATRON_FAKE_MODEL` short-circuits all of this, provider included.
 
 ## Endpoints
 

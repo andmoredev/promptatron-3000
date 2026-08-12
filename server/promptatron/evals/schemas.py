@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from promptatron.engine.schemas import RunRequest
 from promptatron.errors import BadRequestError
 from promptatron.evals.judge import DEFAULT_JUDGE_MODEL_ID
+from promptatron.providers import DEFAULT_PROVIDER, Provider
 
 MIN_RUNS = 2
 MAX_RUNS = 25
@@ -25,6 +26,9 @@ class GraderConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     model_id: str = Field(default=DEFAULT_JUDGE_MODEL_ID, min_length=1)
+    #: Which SDK runs the judge. Independent of the graded runs' provider -- an
+    #: OpenAI judge grading Bedrock runs is a perfectly reasonable setup.
+    provider: Provider = DEFAULT_PROVIDER
     system_prompt: str | None = None
 
 

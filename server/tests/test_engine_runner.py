@@ -189,6 +189,7 @@ async def test_config_records_inference_tools_guardrail_and_stream(initialized_d
 
     row = stored_run(events[0].run_id)
     assert row.config == {
+        "provider": "bedrock",
         "inference": {"temperature": 0.2, "max_tokens": 512},
         "tools_enabled": True,
         "max_tool_iterations": 3,
