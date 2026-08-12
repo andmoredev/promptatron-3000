@@ -53,13 +53,32 @@ npm test           # vitest, mocks DynamoDB via aws-sdk-client-mock
 npm run build      # tsc --noEmit, type-checks everything
 
 sam build
-sam validate --lint --region <region>
-sam deploy --guided
+sam deploy
 ```
 
-Outputs include the API URL and the `AWS::ApiGateway::ApiKey` id (fetch the
-key value with `aws apigateway get-api-key --api-key <id> --include-value`).
-Every route requires the `x-api-key` header except CORS preflight (`OPTIONS`).
+`samconfig.toml` is checked into the repo (stack name `promptatron-config`, non-interactive
+deploy) -- edit its `region` before your first deploy. From the repo root, `make deploy-api` does
+`npm ci && sam build && sam deploy` and then seeds the table in one step; `sam deploy --guided`
+still works if you want to override a parameter interactively.
+
+Outputs include the API URL (`ApiUrl`/`ApiEndpoint`), the DynamoDB `TableName`, and the
+`AWS::ApiGateway::ApiKey` id (`ApiKeyId`; fetch the key value with
+`aws apigateway get-api-key --api-key <id> --include-value`). Every route requires the
+`x-api-key` header except CORS preflight (`OPTIONS`) -- see `components.securitySchemes.ApiKeyAuth`
+in `openapi.yaml`.
+
+## Seeding
+
+```sh
+npm run seed -- --table <TableName>   # or $TABLE_NAME env var
+npm run seed:dry                      # prints the converted items, makes no AWS calls
+```
+
+`seed/seed.mjs` loads every fixture under `seed/fixtures/<scenario-id>/` (currently
+`fraud-detection` and `shipping-logistics`) and upserts it into the table -- idempotent, safe to
+re-run. `make deploy-api` runs this automatically against the freshly deployed table; use
+`make seed-api TABLE_NAME=...` (from the repo root) to re-seed an existing one, e.g. after editing
+a fixture.
 
 ## Tests & contract fixtures
 
@@ -70,5 +89,5 @@ query shape, full-scenario hydration folding, dataset content round-tripping,
 `handler`s directly with realistic API Gateway proxy events.
 
 `tests/fixtures/*.json` are real response-body shapes (based on the
-`fraud-detection` and `shipping-logistics` scenario data under `../src/scenarios`)
+`fraud-detection` and `shipping-logistics` scenario fixtures under `seed/fixtures/`)
 for a downstream Python client to test its own parsing against the same contract.
