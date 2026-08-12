@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["vite/client", "node"]
+  },
+  "include": ["src/**/*.{ts,tsx}", "src/**/*.jsx", "src/main.tsx"],
+  "exclude": ["node_modules", "dist", "src/utils/browserCompatibility.js"]
+}
