@@ -2,8 +2,18 @@
 	install install-app install-api install-server deploy-api seed-api e2e smoke \
 	package-eval-worker deploy-worker package-server deploy
 
-# CloudFormation stack the api/ SAM template deploys into (see api/samconfig.toml).
+# CloudFormation stack the api/ SAM template deploys into. Overriding this is
+# what makes multiple environments possible (Staging and Production are two
+# independent stacks), so it MUST reach `sam deploy` itself -- samconfig.toml
+# carries its own stack_name and would otherwise win, silently deploying every
+# environment into the same stack. See SAM_DEPLOY_ARGS below.
 STACK_NAME ?= promptatron-config
+# Region for deploys. Empty means "whatever samconfig.toml/AWS_REGION says";
+# CI sets it explicitly so the stack can never land in a surprise region.
+DEPLOY_REGION ?=
+# Threaded into every `sam deploy`. Do not inline these flags at the call
+# sites -- there are five of them and they must stay identical.
+SAM_DEPLOY_ARGS ?= --stack-name $(STACK_NAME) $(if $(DEPLOY_REGION),--region $(DEPLOY_REGION),)
 # Where scripts/package-eval-worker.sh stages and zips the worker artifact.
 EVAL_WORKER_BUILD_DIR ?= $(CURDIR)/.build/eval-worker
 # Where scripts/package-server.sh stages and zips the FastAPI server artifact.
@@ -120,7 +130,7 @@ smoke:
 deploy-api:
 	@set -e; \
 	current_param() { \
-		aws cloudformation describe-stacks --stack-name promptatron-config \
+		aws cloudformation describe-stacks --stack-name $(STACK_NAME) \
 			--query "Stacks[0].Parameters[?ParameterKey=='$$1'].ParameterValue" \
 			--output text 2>/dev/null || true; \
 	}; \
@@ -133,10 +143,10 @@ deploy-api:
 		fi; \
 	done; \
 	if [ -n "$$OVERRIDES" ]; then OVERRIDES="--parameter-overrides$$OVERRIDES"; fi; \
-	cd api && npm ci && sam build && sam deploy $$OVERRIDES && \
-	TABLE_NAME=$$(aws cloudformation describe-stacks --stack-name promptatron-config --query "Stacks[0].Outputs[?OutputKey=='TableName'].OutputValue" --output text) && \
+	cd api && npm ci && sam build && sam deploy $(SAM_DEPLOY_ARGS) $$OVERRIDES && \
+	TABLE_NAME=$$(aws cloudformation describe-stacks --stack-name $(STACK_NAME) --query "Stacks[0].Outputs[?OutputKey=='TableName'].OutputValue" --output text) && \
 	if [ -z "$$TABLE_NAME" ] || [ "$$TABLE_NAME" = "None" ]; then \
-		echo "deploy-api: could not resolve TableName from stack 'promptatron-config' outputs" >&2; \
+		echo "deploy-api: could not resolve TableName from stack '$(STACK_NAME)' outputs" >&2; \
 		exit 1; \
 	fi && \
 	npm run seed -- --table "$$TABLE_NAME"
@@ -175,7 +185,7 @@ deploy-worker:
 	BUCKET=$$(resolve_output EvalWorkerArtifactBucket); \
 	if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
 		echo "deploy-worker: stack '$(STACK_NAME)' has no artifact bucket yet -- bootstrapping"; \
-		( cd api && npm ci && sam build && sam deploy ); \
+		( cd api && npm ci && sam build && sam deploy $(SAM_DEPLOY_ARGS) ); \
 		BUCKET=$$(resolve_output EvalWorkerArtifactBucket); \
 	fi; \
 	if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
@@ -193,7 +203,7 @@ deploy-worker:
 	if [ -n "$$CURRENT_SERVER_KEY" ]; then \
 		echo "deploy-worker: preserving deployed server artifact $$CURRENT_SERVER_KEY"; \
 	fi; \
-	( cd api && npm ci && sam build && sam deploy --parameter-overrides \
+	( cd api && npm ci && sam build && sam deploy $(SAM_DEPLOY_ARGS) --parameter-overrides \
 		"EvalWorkerArtifactKey=$$ARTIFACT_KEY" \
 		$${CURRENT_SERVER_KEY:+"ServerArtifactKey=$$CURRENT_SERVER_KEY"} \
 		$${EVAL_WORKER_CONFIG_API_KEY:+"EvalWorkerConfigApiKey=$$EVAL_WORKER_CONFIG_API_KEY"} ); \
@@ -237,7 +247,7 @@ deploy:
 	BUCKET=$$(resolve_output ArtifactBucket); \
 	if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
 		echo "deploy: stack '$(STACK_NAME)' has no artifact bucket yet -- bootstrapping"; \
-		( cd api && npm ci && sam build && sam deploy ); \
+		( cd api && npm ci && sam build && sam deploy $(SAM_DEPLOY_ARGS) ); \
 		BUCKET=$$(resolve_output ArtifactBucket); \
 	fi; \
 	if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
@@ -256,7 +266,7 @@ deploy:
 	else \
 		WORKER_KEY=""; \
 	fi; \
-	( cd api && npm ci && sam build && sam deploy --parameter-overrides \
+	( cd api && npm ci && sam build && sam deploy $(SAM_DEPLOY_ARGS) --parameter-overrides \
 		"ServerArtifactKey=$$ARTIFACT_KEY" \
 		$${WORKER_KEY:+"EvalWorkerArtifactKey=$$WORKER_KEY"} \
 		$${SERVER_MEMORY:+"ServerMemorySize=$$SERVER_MEMORY"} ); \

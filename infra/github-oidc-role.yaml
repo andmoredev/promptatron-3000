@@ -1,0 +1,190 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  GitHub Actions OIDC deployment role for Promptatron 3000. Deploy this ONCE
+  PER ENVIRONMENT (Staging, Production) before the Deploy workflow can run;
+  put each stack's DeploymentRoleArn output into that GitHub Environment as a
+  secret named AWS_DEPLOYMENT_ROLE_ARN.
+
+    aws cloudformation deploy \
+      --template-file infra/github-oidc-role.yaml \
+      --stack-name promptatron-ci-staging \
+      --capabilities CAPABILITY_NAMED_IAM \
+      --parameter-overrides EnvironmentName=Staging TargetStackName=promptatron-staging
+
+    aws cloudformation deploy \
+      --template-file infra/github-oidc-role.yaml \
+      --stack-name promptatron-ci-production \
+      --capabilities CAPABILITY_NAMED_IAM \
+      --parameter-overrides EnvironmentName=Production TargetStackName=promptatron-config \
+        CreateOidcProvider=false
+
+  An AWS account may hold only ONE GitHub OIDC provider, so create it with the
+  first environment and set CreateOidcProvider=false for every one after.
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Default: nullchecktv
+  GitHubRepo:
+    Type: String
+    Default: promptatron-3000
+  EnvironmentName:
+    Type: String
+    AllowedValues: [Staging, Production]
+    Description: >
+      Must match the GitHub Environment name EXACTLY. A job that names an
+      environment gets the OIDC subject claim
+      repo:ORG/REPO:environment:NAME, which is what this role trusts -- so a
+      workflow job without `environment:` (or with a different one) cannot
+      assume this role, no matter which branch it runs from.
+  TargetStackName:
+    Type: String
+    Description: The application stack this role is allowed to deploy.
+  CreateOidcProvider:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  ShouldCreateOidcProvider: !Equals [!Ref CreateOidcProvider, 'true']
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      # AWS validates GitHub's OIDC certificate against its own trust store;
+      # the thumbprint is no longer load-bearing but the field is required.
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+
+  DeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'promptatron-deploy-${EnvironmentName}'
+      Description: !Sub 'Deploys Promptatron ${EnvironmentName} from GitHub Actions'
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - ShouldCreateOidcProvider
+                - !Ref GitHubOidcProvider
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # Environment-scoped, NOT branch-scoped: pair this with the
+                # environment's own deployment-branch policy in GitHub to
+                # control which refs may deploy here.
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:${EnvironmentName}'
+      Policies:
+        - PolicyName: DeployPromptatron
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudFormation/SAM drive the deploy. Scoped to this
+              # environment's stack plus the CDK-less SAM managed bucket stack.
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ListStackResources
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${TargetStackName}/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*'
+              - Effect: Allow
+                Action: cloudformation:ValidateTemplate
+                Resource: '*'
+              # Artifact + SPA buckets: the SAM managed bucket, the stack's own
+              # artifact bucket, and the SPA bucket the deploy syncs into.
+              - Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                  - s3:GetBucketPolicy
+                  - s3:PutBucketPolicy
+                  - s3:PutBucketTagging
+                  - s3:PutBucketVersioning
+                  - s3:PutEncryptionConfiguration
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:GetEncryptionConfiguration
+                  - s3:PutLifecycleConfiguration
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::aws-sam-cli-managed-default*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::aws-sam-cli-managed-default*/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${TargetStackName}-*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${TargetStackName}-*/*'
+              # The stack creates execution roles for its own Lambdas and the
+              # AgentCore runtime, so the deployer must be able to manage them.
+              # Scoped by name prefix rather than left open.
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PassRole
+                  - iam:TagRole
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${TargetStackName}-*'
+              - Effect: Allow
+                Action:
+                  - lambda:*
+                  - apigateway:*
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:UpdateTable
+                  - dynamodb:TagResource
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:UpdateTimeToLive
+                  - dynamodb:DescribeContinuousBackups
+                  - cloudfront:*
+                  - logs:*
+                  - bedrock-agentcore:*
+                Resource: '*'
+              # `make deploy` seeds the config store and invalidates the CDN
+              # after the stack converges.
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TargetStackName}-*'
+
+Outputs:
+  DeploymentRoleArn:
+    Description: Put this in the GitHub Environment secret AWS_DEPLOYMENT_ROLE_ARN
+    Value: !GetAtt DeploymentRole.Arn
+  OidcProviderArn:
+    Condition: ShouldCreateOidcProvider
+    Value: !Ref GitHubOidcProvider

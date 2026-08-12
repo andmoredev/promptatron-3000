@@ -126,6 +126,39 @@ https://d1234abcd.cloudfront.net/api/v1/...  → the server
 > CloudFront OAC is not a drop-in replacement (browsers cannot send the required request-body
 > hash) and what the realistic hardening paths are.
 
+### Continuous deployment (GitHub Actions + OIDC)
+
+`.github/workflows/deploy.yml` deploys **Staging on every pull request** and **Production on merge
+to `main`**, using short-lived OIDC credentials — there are no long-lived AWS keys in GitHub.
+Each environment is its own CloudFormation stack, so a PR can never touch production.
+
+One-time setup:
+
+1. **Create the deployment roles** — once per environment. An AWS account may hold only one GitHub
+   OIDC provider, so the second run passes `CreateOidcProvider=false`:
+   ```bash
+   aws cloudformation deploy --template-file infra/github-oidc-role.yaml \
+     --stack-name promptatron-ci-staging --capabilities CAPABILITY_NAMED_IAM \
+     --parameter-overrides EnvironmentName=Staging TargetStackName=promptatron-staging
+
+   aws cloudformation deploy --template-file infra/github-oidc-role.yaml \
+     --stack-name promptatron-ci-production --capabilities CAPABILITY_NAMED_IAM \
+     --parameter-overrides EnvironmentName=Production TargetStackName=promptatron-config \
+       CreateOidcProvider=false
+   ```
+2. **Create the GitHub Environments** `Staging` and `Production` (spelled exactly that way — the
+   role's trust policy pins the OIDC subject claim to
+   `repo:OWNER/REPO:environment:<name>`, so a typo means the role simply cannot be assumed).
+3. **Add the secret** `AWS_DEPLOYMENT_ROLE_ARN` to each environment, set to that environment's
+   `DeploymentRoleArn` output.
+4. Optional per-environment variables: `AWS_REGION` (default `us-east-1`) and `STACK_NAME` if you
+   want names other than `promptatron-staging` / `promptatron-config`.
+
+Recommended protections, since the deployed app is unauthenticated: restrict the `Production`
+environment's deployment branches to `main`, and enable branch protection on `main` requiring the
+CI checks — the deploy workflow does not re-run them, it relies on that gate. Add required
+reviewers on `Production` if you want a human in the loop before each release.
+
 One sharp edge: `ServerArtifactKey` is a CloudFormation parameter with an empty default, and an
 empty value deletes the server. `make deploy-api` and `make deploy-worker` do not pass it, so
 **once the server is deployed, use `make deploy`** — it is a superset of both `deploy-api` and
