@@ -50,8 +50,12 @@ from promptatron.engine.mapper import EventMapper
 from promptatron.engine.model_factory import ModelFactory, build_model, classify_error
 from promptatron.engine.schemas import RunRequest
 from promptatron.errors import BadRequestError
-from promptatron.store import history
-from promptatron.store.db import get_engine
+from promptatron.store.repo import (
+    HistoryRepo,
+    SqliteHistoryRepo,
+    default_session_factory,
+    get_history_repo,
+)
 from promptatron.tools.registry import get_tools
 
 logger = logging.getLogger(__name__)
@@ -67,15 +71,12 @@ SessionFactory = Callable[[], AbstractContextManager[Session]]
 DATASET_PROMPT_TEMPLATE = "{user_prompt}\n\nData to analyze:\n{content}"
 
 
-def default_session_factory() -> AbstractContextManager[Session]:
-    """A store session bound to the process-wide engine.
-
-    The runner opens (and closes) its own short session per write instead of
-    borrowing the request's ``Depends`` session: FastAPI tears those down when
-    the endpoint function returns, which for a streaming response is long before
-    the body finishes.
-    """
-    return Session(get_engine())
+#: Re-exported for callers that already imported it from here. The runner writes
+#: through a :class:`~promptatron.store.repo.HistoryRepo`, which opens (and
+#: closes) its own short session per write instead of borrowing the request's
+#: ``Depends`` session: FastAPI tears those down when the endpoint function
+#: returns, which for a streaming response is long before the body finishes.
+__all__ = ["compose_user_message", "dataset_hash", "default_session_factory", "execute_run"]
 
 
 def compose_user_message(user_prompt: str, dataset_content: str | None) -> str:
@@ -192,10 +193,22 @@ async def execute_run(
     settings: Settings | None = None,
     *,
     model_factory: ModelFactory | None = None,
+    repo: HistoryRepo | None = None,
 ) -> AsyncIterator[RunEvent]:
-    """Run ``request`` through a Strands Agent, yielding the run's event stream."""
+    """Run ``request`` through a Strands Agent, yielding the run's event stream.
+
+    The run row is written through ``repo`` — the history backend these settings
+    resolve to (SQLite locally, DynamoDB in a deployed server). ``session_factory``
+    is the older, SQLite-only form of the same injection and still wins when it
+    is passed, so a caller can point the store at a specific database file.
+    """
     resolved_settings = settings or get_settings()
-    session_factory = session_factory or default_session_factory
+    if repo is None:
+        repo = (
+            SqliteHistoryRepo(session_factory)
+            if session_factory is not None
+            else get_history_repo(resolved_settings)
+        )
     make_model: ModelFactory = model_factory or (
         lambda req: build_model(req, resolved_settings)
     )
@@ -203,18 +216,16 @@ async def execute_run(
     # --- setup: anything that fails here is a plain HTTP error ----------- #
     user_message, content_hash = await _resolve_dataset(request, config_client)
 
-    with session_factory() as session:
-        record = history.create_run(
-            session,
-            model_id=request.model_id,
-            system_prompt=request.system_prompt,
-            user_prompt=request.user_prompt,
-            scenario_id=request.scenario_id,
-            dataset_id=request.dataset_id,
-            dataset_hash=content_hash,
-            config=request.stored_config(),
-            status="running",
-        )
+    record = repo.create_run(
+        model_id=request.model_id,
+        system_prompt=request.system_prompt,
+        user_prompt=request.user_prompt,
+        scenario_id=request.scenario_id,
+        dataset_id=request.dataset_id,
+        dataset_hash=content_hash,
+        config=request.stored_config(),
+        status="running",
+    )
     run_id = record.id
 
     yield RunStartEvent(run_id=run_id, model_id=request.model_id, ts=record.ts)
@@ -243,17 +254,15 @@ async def execute_run(
                 pass
 
     def _persist() -> None:
-        with session_factory() as session:
-            history.update_run(
-                session,
-                run_id,
-                output="".join(text_parts),
-                tool_transcript=transcript or None,
-                metrics=metrics,
-                guardrail_trace=assessments or None,
-                status=status,
-                error=error_payload,
-            )
+        repo.update_run(
+            run_id,
+            output="".join(text_parts),
+            tool_transcript=transcript or None,
+            metrics=metrics,
+            guardrail_trace=assessments or None,
+            status=status,
+            error=error_payload,
+        )
 
     try:
         model = make_model(request)

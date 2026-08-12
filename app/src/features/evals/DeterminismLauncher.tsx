@@ -7,6 +7,11 @@
  * Workbench's Run button uses — so an evaluation always replays exactly the
  * request a manual run would send.
  *
+ * Run location follows the server: health's `cloud_evals.configured` gates the
+ * Cloud option, `local_evals.available` gates "This machine". A deployment with
+ * no local lane flips the *effective* choice to cloud without touching the
+ * stored `defaultEvalExecution`.
+ *
  * The grader model picker is grouped the same way as the Workbench's
  * `ModelPanel` (`groupModelsBySource`); picking a grader model sets its
  * provider alongside it, same idea as `runConfigStore.selectModel`. Left
@@ -37,6 +42,7 @@ const N_MIN = 2
 const N_MAX = 25
 
 const CLOUD_UNAVAILABLE_TOOLTIP = 'Cloud lane not configured on the server'
+const LOCAL_UNAVAILABLE_TOOLTIP = 'Local execution is unavailable on this deployment'
 
 const EXECUTION_OPTIONS: Array<{ value: EvaluationExecution; label: string }> = [
   { value: 'local', label: 'This machine' },
@@ -97,6 +103,10 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
   // `api.health`): the cloud option starts — and stays — disabled unless a
   // health check comes back and says otherwise.
   const [cloudConfigured, setCloudConfigured] = useState(false)
+  // The local lane goes the other way: a local-first tool assumes it can run
+  // locally, and only a health response that explicitly says
+  // `local_evals.available === false` (a deployed server) takes that away.
+  const [localAvailable, setLocalAvailable] = useState(true)
 
   useEffect(() => {
     void loadModels()
@@ -111,7 +121,9 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
     api
       .health()
       .then((health) => {
-        if (!cancelled) setCloudConfigured(Boolean(health.cloud_evals?.configured))
+        if (cancelled) return
+        setCloudConfigured(Boolean(health.cloud_evals?.configured))
+        setLocalAvailable(health.local_evals?.available !== false)
       })
       .catch(() => {
         if (!cancelled) setCloudConfigured(false)
@@ -120,6 +132,13 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
       cancelled = true
     }
   }, [])
+
+  // What this launch will actually use. When the deployment has no local lane,
+  // a stored `defaultEvalExecution: 'local'` is overridden for *this* form
+  // rather than rewritten in settings — the preference is still the right one
+  // the next time the user points the UI at their own machine.
+  const effectiveExecution: EvaluationExecution =
+    !localAvailable && execution === 'local' ? 'cloud' : execution
 
   function handleExecutionChange(next: EvaluationExecution) {
     setExecution(next)
@@ -147,7 +166,7 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
       run_config: toRunRequest(useRunConfigStore.getState()),
       n,
       grader,
-      execution
+      execution: effectiveExecution
     }
     if (rubric.trim() !== '') request.rubric = rubric
 
@@ -197,20 +216,25 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
             aria-label="Run location"
           >
             {EXECUTION_OPTIONS.map((option) => {
-              const disabled = option.value === 'cloud' && !cloudConfigured
+              const disabled =
+                option.value === 'cloud' ? !cloudConfigured : !localAvailable
+              const hint =
+                option.value === 'cloud' ? CLOUD_UNAVAILABLE_TOOLTIP : LOCAL_UNAVAILABLE_TOOLTIP
               return (
                 <label
                   key={option.value}
-                  title={disabled ? CLOUD_UNAVAILABLE_TOOLTIP : undefined}
+                  title={disabled ? hint : undefined}
                   className={`px-3 py-1.5 cursor-pointer first:border-r first:border-gray-300 ${
-                    execution === option.value ? 'bg-primary-600 text-white' : 'bg-white text-gray-700'
+                    effectiveExecution === option.value
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-white text-gray-700'
                   } ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-50'}`}
                 >
                   <input
                     type="radio"
                     name="eval-execution"
                     value={option.value}
-                    checked={execution === option.value}
+                    checked={effectiveExecution === option.value}
                     disabled={disabled}
                     onChange={() => handleExecutionChange(option.value)}
                     className="sr-only"
@@ -220,7 +244,7 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
               )
             })}
           </div>
-          {execution === 'cloud' && (
+          {effectiveExecution === 'cloud' && (
             <p className="mt-1 text-xs text-gray-500" data-testid="cloud-execution-note">
               Runs, prompts, and dataset content are persisted to your AWS account (DynamoDB) for
               later review.

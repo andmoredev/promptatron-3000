@@ -31,6 +31,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
+from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import uuid4
@@ -46,6 +47,7 @@ from promptatron.evals import ddb_reader, jobs
 from promptatron.evals.ddb_reader import EvalTable
 from promptatron.evals.schemas import EvaluationRequest
 from promptatron.schemas.runs import EvaluationDetail, Page, RunDetail, RunSummary
+from promptatron.store import ddb_items
 
 # The worker exports the session-id derivation (rather than each side inventing
 # one) so a retried invoke lands on the same AgentCore runtime session.
@@ -226,68 +228,26 @@ async def submit(
 # --------------------------------------------------------------------------- #
 
 
-def _json(item: dict[str, Any], key: str, default: Any = None) -> Any:
-    """A contract JSON-string attribute, parsed. Absent/null/"" -> ``default``."""
-    raw = item.get(key)
-    if raw is None or raw == "":
-        return default
-    if isinstance(raw, str):
-        return json.loads(raw)
-    return raw  # already a native map/list (a permissive writer)
-
-
-def _ts(item: dict[str, Any]) -> datetime:
-    return datetime.fromisoformat(str(item["ts"]))
-
-
 def evaluation_detail(item: dict[str, Any]) -> EvaluationDetail:
-    """An ``EVAL#/META`` item as an :class:`EvaluationDetail`."""
-    return EvaluationDetail(
-        id=str(item["id"]),
-        ts=_ts(item),
-        kind=str(item["kind"]),
-        status=str(item["status"]),
-        config=_json(item, "config", {}) or {},
-        run_ids=_json(item, "run_ids", []) or [],
-        result=_json(item, "result"),
-        progress=_json(item, "progress"),
-        error=_json(item, "error"),
-        execution="cloud",
-    )
+    """An ``EVAL#/META`` item as an :class:`EvaluationDetail`.
+
+    Item -> record is :mod:`promptatron.store.ddb_items` (the same mapping the
+    worker writes through and the DynamoDB history backend reads through);
+    record -> response is the ordinary ``model_validate`` the local lane uses.
+    The only cloud-specific thing left here is the lane label.
+    """
+    record = ddb_items.evaluation_record(item)
+    return EvaluationDetail.model_validate({**asdict(record), "execution": "cloud"})
 
 
 def run_detail(item: dict[str, Any]) -> RunDetail:
     """A ``RUN#/META`` item as a :class:`RunDetail`."""
-    return RunDetail(
-        id=str(item["id"]),
-        ts=_ts(item),
-        model_id=str(item["model_id"]),
-        scenario_id=item.get("scenario_id"),
-        system_prompt=str(item.get("system_prompt") or ""),
-        user_prompt=str(item.get("user_prompt") or ""),
-        dataset_id=item.get("dataset_id"),
-        dataset_hash=item.get("dataset_hash"),
-        config=_json(item, "config", {}) or {},
-        output=item.get("output"),
-        tool_transcript=_json(item, "tool_transcript"),
-        metrics=_json(item, "metrics"),
-        guardrail_trace=_json(item, "guardrail_trace"),
-        status=str(item["status"]),
-        error=_json(item, "error"),
-    )
+    return RunDetail.model_validate(ddb_items.run_record(item))
 
 
 def run_summary(item: dict[str, Any]) -> RunSummary:
     """A ``RUN#/META`` item as a listing row."""
-    return RunSummary(
-        id=str(item["id"]),
-        ts=_ts(item),
-        model_id=str(item["model_id"]),
-        scenario_id=item.get("scenario_id"),
-        dataset_id=item.get("dataset_id"),
-        status=str(item["status"]),
-        metrics=_json(item, "metrics"),
-    )
+    return RunSummary.model_validate(ddb_items.run_record(item))
 
 
 # --------------------------------------------------------------------------- #

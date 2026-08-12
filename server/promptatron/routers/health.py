@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends
 
-from promptatron import runtime_config
+from promptatron import deployment, runtime_config
 from promptatron.config import Settings, get_settings
 from promptatron.evals import cloud as evals_cloud
 from promptatron.models_catalog import catalog as provider_catalog
@@ -99,5 +99,11 @@ async def health(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
         "cloud_evals": {
             "configured": evals_cloud.is_configured(settings),
             "source": runtime_config.cloud_evals_source(settings),
+        },
+        # Whether this server may execute an evaluation in its own process. A
+        # deployed (Lambda) server cannot, so the UI disables "This machine" and
+        # defaults to the cloud lane (docs/serverless-deploy.md).
+        "local_evals": {
+            "available": deployment.local_evals_available(settings),
         },
     }

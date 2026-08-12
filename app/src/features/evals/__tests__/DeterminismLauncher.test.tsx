@@ -8,19 +8,20 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { HealthResponse, ModelInfo } from '../../../api'
 
 /**
- * The launcher fetches `api.health()` on mount to decide whether the Cloud
- * option is selectable. Defaults `configured: true` so most tests (which
- * don't care about the toggle) don't need to wait on it; the disabled-lane
- * tests override with `mockResolvedValueOnce`/`mockRejectedValueOnce`.
+ * The launcher fetches `api.health()` on mount to decide which run locations
+ * are selectable. Defaults to "cloud configured, local available" so most tests
+ * (which don't care about the toggle) don't need to wait on it; the
+ * disabled-lane tests override with `mockResolvedValueOnce`/`mockRejectedValueOnce`.
  */
 const healthMock = vi.fn<() => Promise<HealthResponse>>()
 
-function health(configured: boolean): HealthResponse {
+function health(configured: boolean, localAvailable = true): HealthResponse {
   return {
     status: 'ok',
     aws: { region: 'us-east-1', credentials: 'ok' },
     config_store: { configured: false, reachable: null },
-    cloud_evals: { configured }
+    cloud_evals: { configured },
+    local_evals: { available: localAvailable }
   }
 }
 
@@ -292,6 +293,73 @@ describe('DeterminismLauncher', () => {
       expect(startEvaluation).toHaveBeenCalledWith(
         expect.objectContaining({ execution: 'cloud' })
       )
+    })
+
+    describe('when the deployment has no local lane', () => {
+      beforeEach(() => {
+        healthMock.mockReset()
+        healthMock.mockResolvedValue(health(true, false))
+      })
+
+      it('disables "This machine" with a hint', async () => {
+        render(<DeterminismLauncher />)
+
+        await waitFor(() =>
+          expect((screen.getByRole('radio', { name: 'This machine' }) as HTMLInputElement).disabled).toBe(
+            true
+          )
+        )
+        expect(screen.getByRole('radio', { name: 'This machine' }).closest('label')).toHaveAttribute(
+          'title',
+          'Local execution is unavailable on this deployment'
+        )
+        // The cloud lane is configured here, so it stays selectable.
+        expect((screen.getByRole('radio', { name: 'Cloud — persisted' }) as HTMLInputElement).disabled).toBe(
+          false
+        )
+      })
+
+      it('makes cloud the effective default without rewriting the stored preference', async () => {
+        render(<DeterminismLauncher />)
+
+        await waitFor(() =>
+          expect((screen.getByRole('radio', { name: 'Cloud — persisted' }) as HTMLInputElement).checked).toBe(
+            true
+          )
+        )
+        expect((screen.getByRole('radio', { name: 'This machine' }) as HTMLInputElement).checked).toBe(
+          false
+        )
+        expect(screen.getByTestId('cloud-execution-note')).toBeInTheDocument()
+        // The user's own preference is untouched: it is right again the moment
+        // they point the UI at their own machine.
+        expect(useSettingsStore.getState().defaultEvalExecution).toBe(
+          DEFAULT_SETTINGS.defaultEvalExecution
+        )
+      })
+
+      it('launches with execution:"cloud"', async () => {
+        useRunConfigStore.setState({ model_id: MODELS[0].model_id, user_prompt: 'go' })
+        render(<DeterminismLauncher />)
+        await waitFor(() => expect(healthMock).toHaveBeenCalledTimes(1))
+
+        fireEvent.click(screen.getByRole('button', { name: 'Start evaluation' }))
+
+        expect(startEvaluation).toHaveBeenCalledWith(
+          expect.objectContaining({ execution: 'cloud' })
+        )
+      })
+    })
+
+    it('keeps "This machine" available when health omits local_evals', async () => {
+      healthMock.mockReset()
+      healthMock.mockResolvedValue({ ...health(true), local_evals: undefined })
+      render(<DeterminismLauncher />)
+      await waitFor(() => expect(healthMock).toHaveBeenCalledTimes(1))
+
+      const local = screen.getByRole('radio', { name: 'This machine' }) as HTMLInputElement
+      expect(local.disabled).toBe(false)
+      expect(local.checked).toBe(true)
     })
   })
 })

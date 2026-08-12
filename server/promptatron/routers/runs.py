@@ -17,15 +17,23 @@ in-process background task described above, ``"cloud"`` hands the work to an
 AgentCore Runtime worker with state in DynamoDB (:mod:`promptatron.evals.cloud`,
 contract in ``docs/cloud-evals.md``).
 
-**Lane detection on reads is "SQLite first, then DynamoDB".** A cloud evaluation
-has no SQLite row at all -- the id is minted at submit time and only the worker
-writes it anywhere -- so a local miss is unambiguous: ``get_evaluation``,
+**Lane detection on reads is "history store first, then the cloud lane".** A
+cloud evaluation has no local row at all -- the id is minted at submit time and
+only the worker writes it anywhere -- so a local miss is unambiguous:
+``get_evaluation``,
 ``stream_evaluation_events``, ``cancel_evaluation`` and ``get_run`` fall through
 to the cloud reader (and re-raise the local ``404`` when the lane is
 unconfigured). No lane hint is carried in the id or the URL, so a stale
 bookmark keeps working after the lane is turned on. *Listings* are the one
 exception, because there is nothing to miss on: cloud rows appear only under
-``?execution=cloud``, which reads the GSI1 partition instead of SQLite.
+``?execution=cloud``, which reads the GSI1 partition instead of the history
+store.
+
+The history store itself is whichever backend the deployment resolved
+(:mod:`promptatron.store.repo`): SQLite locally, DynamoDB in a deployed server.
+On the DynamoDB backend the two read paths converge -- the repository reads the
+very ``RUN#{id}/META`` item the cloud fallback would have -- which is exactly
+the "one code path" ``docs/serverless-deploy.md`` asks for.
 """
 
 from __future__ import annotations
@@ -37,8 +45,8 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi import status as http_status
 from fastapi.responses import StreamingResponse
-from sqlmodel import Session
 
+from promptatron import deployment
 from promptatron.config import Settings, get_settings
 from promptatron.configstore.client import ConfigStoreClient
 from promptatron.engine.events import ErrorEvent, RunEvent, RunStartEvent
@@ -57,7 +65,7 @@ from promptatron.evals.schemas import EvaluationRequest
 from promptatron.routers.scenarios import get_config_store_client
 from promptatron.schemas.runs import EvaluationDetail, Page, RunDetail, RunSummary
 from promptatron.store import history
-from promptatron.store.db import get_engine, get_session
+from promptatron.store.repo import HistoryRepo, get_history_repo, get_repo
 
 router = APIRouter(tags=["runs"])
 
@@ -65,6 +73,7 @@ NDJSON_MEDIA_TYPE = "application/x-ndjson"
 
 
 def _export_ndjson(
+    repo: HistoryRepo,
     model_id: str | None,
     scenario_id: str | None,
     status: str | None,
@@ -72,20 +81,18 @@ def _export_ndjson(
 ) -> Iterator[str]:
     """Stream every matching run as one JSON (``RunDetail``) object per line.
 
-    Opens its own session rather than reusing the request's ``Depends``
-    session: FastAPI tears down ``yield``-dependencies once the endpoint
-    function returns, which for a ``StreamingResponse`` happens *before* the
-    body has actually been sent.
+    The repository owns whatever connection it needs for the whole iteration --
+    which matters here because FastAPI tears down ``yield``-dependencies once
+    the endpoint function returns, and for a ``StreamingResponse`` that happens
+    *before* the body has actually been sent.
     """
-    with Session(get_engine()) as export_session:
-        for record in history.iter_runs_export(
-            export_session,
-            model_id=model_id,
-            scenario_id=scenario_id,
-            status=status,
-            since=since,
-        ):
-            yield RunDetail.model_validate(record).model_dump_json() + "\n"
+    for record in repo.iter_runs_export(
+        model_id=model_id,
+        scenario_id=scenario_id,
+        status=status,
+        since=since,
+    ):
+        yield RunDetail.model_validate(record).model_dump_json() + "\n"
 
 
 def get_model_factory(settings: Settings = Depends(get_settings)) -> ModelFactory:
@@ -124,12 +131,19 @@ async def create_run(
     dataset reference, an unreachable config store) still surface as ordinary
     HTTP error envelopes. Once ``run_start`` has been produced the run row
     exists, and every later failure travels in-band on a 200 stream.
+
+    The history repository is resolved from ``settings`` here rather than taken
+    as a dependency: the run outlives the request (a streaming body is still
+    being written after this function returns), so the repository is handed to
+    the engine, which owns it for the life of the stream.
     """
+    repo = get_history_repo(settings)
     events = execute_run(
         payload,
         config_client=config_client,
         settings=settings,
         model_factory=model_factory,
+        repo=repo,
     )
     first = await anext(events)
 
@@ -149,8 +163,7 @@ async def create_run(
             detail={"run_id": first.run_id, "code": failure.code, "retryable": failure.retryable},
         )
 
-    with Session(get_engine()) as session:
-        return RunDetail.model_validate(history.get_run(session, first.run_id))
+    return RunDetail.model_validate(repo.get_run(first.run_id))
 
 
 @router.get("/runs", response_model=Page[RunSummary])
@@ -163,7 +176,7 @@ def list_runs(
     cursor: str | None = None,
     limit: int = Query(default=25, ge=1, le=100),
     execution: str | None = None,
-    session: Session = Depends(get_session),
+    repo: HistoryRepo = Depends(get_repo),
     table: EvalTable | None = Depends(get_eval_table),
 ):
     """List runs newest-first (paginated), or export all matches as NDJSON.
@@ -183,12 +196,11 @@ def list_runs(
 
     if request.headers.get("accept") == NDJSON_MEDIA_TYPE:
         return StreamingResponse(
-            _export_ndjson(model_id, scenario_id, status, since),
+            _export_ndjson(repo, model_id, scenario_id, status, since),
             media_type=NDJSON_MEDIA_TYPE,
         )
 
-    items, next_cursor = history.list_runs(
-        session,
+    items, next_cursor = repo.list_runs(
         model_id=model_id,
         scenario_id=scenario_id,
         status=status,
@@ -205,12 +217,12 @@ def list_runs(
 @router.get("/runs/{run_id}", response_model=RunDetail)
 def get_run(
     run_id: str,
-    session: Session = Depends(get_session),
+    repo: HistoryRepo = Depends(get_repo),
     table: EvalTable | None = Depends(get_eval_table),
 ):
-    """A run from SQLite, falling back to the cloud lane's ``RUN#{id}/META``."""
+    """A run from the history store, falling back to the cloud lane's ``RUN#{id}/META``."""
     try:
-        record = history.get_run(session, run_id)
+        record = repo.get_run(run_id)
     except NotFoundError:
         if table is None:
             raise
@@ -219,8 +231,8 @@ def get_run(
 
 
 @router.delete("/runs/{run_id}", status_code=http_status.HTTP_204_NO_CONTENT)
-def delete_run(run_id: str, session: Session = Depends(get_session)) -> Response:
-    history.delete_run(session, run_id)
+def delete_run(run_id: str, repo: HistoryRepo = Depends(get_repo)) -> Response:
+    repo.delete_run(run_id)
     return Response(status_code=http_status.HTTP_204_NO_CONTENT)
 
 
@@ -231,7 +243,7 @@ def list_evaluations(
     cursor: str | None = None,
     limit: int = Query(default=25, ge=1, le=100),
     execution: str | None = None,
-    session: Session = Depends(get_session),
+    repo: HistoryRepo = Depends(get_repo),
     table: EvalTable | None = Depends(get_eval_table),
 ):
     """List evaluations newest-first.
@@ -248,8 +260,8 @@ def list_evaluations(
             limit=limit,
         )
 
-    items, next_cursor = history.list_evaluations(
-        session, kind=kind, status=status, cursor=cursor, limit=limit
+    items, next_cursor = repo.list_evaluations(
+        kind=kind, status=status, cursor=cursor, limit=limit
     )
     return Page[EvaluationDetail](
         items=[EvaluationDetail.model_validate(record) for record in items],
@@ -268,7 +280,7 @@ async def create_evaluation(
     config_client: ConfigStoreClient = Depends(get_config_store_client),
     model_factory: ModelFactory = Depends(get_model_factory),
     judge_factory: JudgeFactory = Depends(get_judge_factory),
-    session: Session = Depends(get_session),
+    repo: HistoryRepo = Depends(get_repo),
     invoker: Invoker | None = Depends(get_invoker),
 ):
     """Accept an evaluation and run it in the background.
@@ -280,18 +292,25 @@ async def create_evaluation(
 
     ``execution="cloud"`` short-circuits all of that: the work goes to the
     AgentCore worker and the ``202`` is synthesized from the request, with no
-    SQLite row written at all (400 ``cloud_lane_unavailable`` when the lane is
+    local row written at all (400 ``cloud_lane_unavailable`` when the lane is
     not configured).
+
+    The mirror case is a deployment with no local lane (``PROMPTATRON_LOCAL_EVALS``,
+    off inside Lambda by default): ``execution="local"`` -- explicit *or*
+    defaulted -- is a 400 ``local_lane_unavailable`` rather than a silent
+    upgrade to the cloud lane, because where an evaluation runs is the caller's
+    decision to make.
     """
     if payload.execution == "cloud":
         return await evals_cloud.submit(payload, settings=settings, invoker=invoker)
 
+    deployment.require_local_lane(settings)
+
     if payload.kind == "grade":
         for run_id in payload.run_ids:
-            history.get_run(session, run_id)
+            repo.get_run(run_id)
 
-    record = history.create_evaluation(
-        session,
+    record = repo.create_evaluation(
         kind=payload.kind,
         run_ids=payload.run_ids if payload.kind == "grade" else [],
         config=payload.stored_config(),
@@ -305,6 +324,7 @@ async def create_evaluation(
             model_factory=model_factory,
             judge_factory=judge_factory,
             config_client=config_client,
+            repo=repo,
         ),
     )
     return EvaluationDetail.model_validate(record)
@@ -313,12 +333,12 @@ async def create_evaluation(
 @router.get("/evaluations/{evaluation_id}", response_model=EvaluationDetail)
 def get_evaluation(
     evaluation_id: str,
-    session: Session = Depends(get_session),
+    repo: HistoryRepo = Depends(get_repo),
     table: EvalTable | None = Depends(get_eval_table),
 ):
-    """An evaluation from SQLite, falling back to the cloud lane's ``META`` item."""
+    """An evaluation from the history store, falling back to the cloud ``META`` item."""
     try:
-        record = history.get_evaluation(session, evaluation_id)
+        record = repo.get_evaluation(evaluation_id)
     except NotFoundError:
         if table is None:
             raise
@@ -344,7 +364,7 @@ def _replay_finished(record: history.EvaluationRecord) -> Iterator[str]:
 @router.get("/evaluations/{evaluation_id}/events")
 def stream_evaluation_events(
     evaluation_id: str,
-    session: Session = Depends(get_session),
+    repo: HistoryRepo = Depends(get_repo),
     table: EvalTable | None = Depends(get_eval_table),
 ):
     """Follow an evaluation as NDJSON: replay what happened, then live events.
@@ -362,7 +382,7 @@ def stream_evaluation_events(
         return StreamingResponse(job.follow(), media_type=NDJSON_MEDIA_TYPE)
 
     try:
-        record = history.get_evaluation(session, evaluation_id)
+        record = repo.get_evaluation(evaluation_id)
     except NotFoundError:
         if table is None:
             raise
@@ -376,7 +396,7 @@ def stream_evaluation_events(
 @router.delete("/evaluations/{evaluation_id}", status_code=http_status.HTTP_204_NO_CONTENT)
 async def cancel_evaluation(
     evaluation_id: str,
-    session: Session = Depends(get_session),
+    repo: HistoryRepo = Depends(get_repo),
     table: EvalTable | None = Depends(get_eval_table),
 ) -> Response:
     """Cancel a running evaluation (204); a finished one is a 409.
@@ -390,7 +410,7 @@ async def cancel_evaluation(
     runs.
     """
     try:
-        record = history.get_evaluation(session, evaluation_id)
+        record = repo.get_evaluation(evaluation_id)
     except NotFoundError:
         if table is None:
             raise
@@ -405,7 +425,7 @@ async def cancel_evaluation(
 
     if record.status in ("pending", "running"):
         # An orphaned row (its job died with the process): settle it as cancelled.
-        history.update_evaluation(session, evaluation_id, status="cancelled")
+        repo.update_evaluation(evaluation_id, status="cancelled")
         return Response(status_code=http_status.HTTP_204_NO_CONTENT)
 
     raise ConflictError(

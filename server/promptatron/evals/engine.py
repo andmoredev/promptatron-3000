@@ -18,8 +18,8 @@ Two lanes share that core:
 *local*
     ``POST /evaluations`` with ``execution="local"`` (the default). One
     ``asyncio`` task per evaluation; ``emit`` is the in-process job's event log
-    (:mod:`promptatron.evals.jobs`) and ``store`` is the SQLite history
-    repository (:class:`SqliteEvalStore`). :func:`run_evaluation` is the whole
+    (:mod:`promptatron.evals.jobs`) and ``store`` is this server's history
+    repository (:class:`LocalEvalStore`). :func:`run_evaluation` is the whole
     adapter.
 *cloud*
     An AgentCore Runtime worker outside this process, whose ``emit`` appends
@@ -61,13 +61,11 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
-from contextlib import aclosing, contextmanager
+from contextlib import aclosing
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from sqlmodel import Session
-
-from promptatron.config import Settings
+from promptatron.config import Settings, get_settings
 from promptatron.configstore.client import ConfigStoreClient
 from promptatron.engine.events import ErrorEvent, RunCompleteEvent, RunStartEvent
 from promptatron.engine.model_factory import ModelFactory, build_model, classify_error
@@ -92,7 +90,7 @@ from promptatron.evals.outcomes import RunOutcome
 from promptatron.evals.schemas import EvaluationRequest
 from promptatron.providers import DEFAULT_PROVIDER
 from promptatron.store import history
-from promptatron.store.db import get_engine
+from promptatron.store.repo import HistoryRepo, get_history_repo
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +112,17 @@ class EvalDeps:
     model_factory: ModelFactory
     judge_factory: JudgeFactory
     config_client: ConfigStoreClient | None = None
+    #: The history backend the repeats and the evaluation row are written
+    #: through. ``None`` means "whatever ``settings`` resolves to" -- which is
+    #: what the cloud worker wants (its repeats go to the microVM's own SQLite
+    #: and are mirrored into DynamoDB by its :class:`EvalStore`), and what a
+    #: local server wants too. It is a field rather than a lookup so a test can
+    #: drive the whole pipeline against an in-memory table.
+    repo: HistoryRepo | None = None
+
+    def history_repo(self) -> HistoryRepo:
+        """The repository these deps write history through."""
+        return self.repo if self.repo is not None else get_history_repo(self.settings)
 
 
 def default_deps(settings: Settings | None = None) -> EvalDeps:
@@ -151,7 +160,8 @@ class EvalStore(Protocol):
     Deliberately tiny: the engine only ever needs to update *its own*
     evaluation row, read a run back after it has been executed (or, for
     ``kind="grade"``, read one that already existed), and publish a finished
-    run. The local lane backs all three with SQLite (:class:`SqliteEvalStore`);
+    run. The local lane backs all three with the history repository
+    (:class:`LocalEvalStore`);
     the cloud worker backs them with DynamoDB items
     (:class:`promptatron.worker.ddb.DynamoEvalStore`, restated for that side as
     :class:`promptatron.worker.interfaces.RunStore`).
@@ -177,40 +187,41 @@ class EvalStore(Protocol):
         """Publish a just-finished run, before its ``run_completed`` event.
 
         A no-op for the local lane, where ``execute_run`` has already written
-        the row to the same SQLite database the reader uses; a copy of that row
+        the row through the same repository the reader uses; a copy of that row
         into a ``RUN#`` item in the cloud lane.
         """
         ...
 
 
-@contextmanager
-def _session():
-    """A short store session bound to the process-wide engine.
+class LocalEvalStore:
+    """The local lane's :class:`EvalStore`: this server's history repository.
 
-    The job outlives the request that started it, so it can never borrow the
-    request's ``Depends`` session -- FastAPI closes those when the endpoint
-    returns.
+    Which backend that is depends on the deployment (SQLite on a laptop,
+    DynamoDB in a deployed server that still has the local lane switched on) --
+    resolved per call rather than at construction, because the job outlives the
+    request that started it and must not hold a session open across it.
     """
-    with Session(get_engine()) as session:
-        yield session
 
-
-class SqliteEvalStore:
-    """The local lane's :class:`EvalStore`: the SQLite history repository."""
-
-    def __init__(self, evaluation_id: str = "") -> None:
+    def __init__(self, evaluation_id: str = "", repo: HistoryRepo | None = None) -> None:
         self.evaluation_id = evaluation_id
+        self._repo = repo
+
+    @property
+    def repo(self) -> HistoryRepo:
+        return self._repo if self._repo is not None else get_history_repo(get_settings())
 
     def save_evaluation(self, **fields: Any) -> None:
-        with _session() as session:
-            history.update_evaluation(session, self.evaluation_id, **fields)
+        self.repo.update_evaluation(self.evaluation_id, **fields)
 
     def load_run(self, run_id: str) -> history.RunRecord:
-        with _session() as session:
-            return history.get_run(session, run_id)
+        return self.repo.get_run(run_id)
 
     def save_run(self, run_id: str) -> None:
-        """Nothing to do: ``execute_run`` wrote the row as it executed."""
+        """Nothing to do: ``execute_run`` wrote the row through the same repository."""
+
+
+#: The name this class had while SQLite was the only local backend.
+SqliteEvalStore = LocalEvalStore
 
 
 class _CooperativeCancel(Exception):
@@ -245,11 +256,11 @@ async def _execute_once(
 ) -> RunOutcome:
     """Run ``run_config`` once, consuming the engine's event stream internally.
 
-    ``store`` defaults to the local SQLite repository -- which is where
-    ``execute_run`` has just written the row in *either* lane, the cloud store's
-    ``load_run`` simply preferring that same local row.
+    ``store`` defaults to the local repository -- which is where ``execute_run``
+    has just written the row in *either* lane, the cloud store's ``load_run``
+    simply preferring that same local row.
     """
-    store = store or SqliteEvalStore()
+    store = store or LocalEvalStore()
     assert request.run_config is not None
     outcome = RunOutcome(index=index, user_prompt=request.run_config.user_prompt)
     started = time.perf_counter()
@@ -259,6 +270,7 @@ async def _execute_once(
         config_client=deps.config_client,
         settings=deps.settings,
         model_factory=deps.model_factory,
+        repo=deps.repo,
     )
     try:
         async with aclosing(events):
@@ -592,7 +604,7 @@ async def execute_evaluation_with_seam(
 async def run_evaluation(
     job: EvalJob, evaluation_id: str, request: EvaluationRequest, deps: EvalDeps
 ) -> None:
-    """Run one evaluation locally: job log as emitter, SQLite as store.
+    """Run one evaluation locally: job log as emitter, the history repo as store.
 
     The whole local lane is this adapter -- everything else lives in
     :func:`execute_evaluation_with_seam`.
@@ -601,7 +613,7 @@ async def run_evaluation(
         await execute_evaluation_with_seam(
             request,
             job.emit_entry,
-            SqliteEvalStore(evaluation_id),
+            LocalEvalStore(evaluation_id, deps.history_repo()),
             lambda: job.cancelled,
             deps=deps,
             evaluation_id=evaluation_id,

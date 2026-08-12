@@ -1,5 +1,7 @@
 """Application settings, sourced from the environment (PROMPTATRON_ prefix)."""
 
+from typing import Literal
+
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -69,6 +71,16 @@ class Settings(BaseSettings):
     eval_runtime_arn: str | None = None
     #: DynamoDB table holding cloud evaluation state (the config-store table).
     eval_table: str | None = None
+
+    # -- deployment shape (docs/serverless-deploy.md) ----------------------- #
+    #: Where run/evaluation history lives. ``auto`` picks ``dynamodb`` inside
+    #: Lambda and ``sqlite`` everywhere else; see
+    #: :mod:`promptatron.deployment` for the full resolution matrix.
+    history_backend: Literal["sqlite", "dynamodb", "auto"] = "auto"
+    #: Whether ``POST /evaluations`` may execute an evaluation in this process.
+    #: ``auto`` means "off inside Lambda, on everywhere else" -- a deployed
+    #: server has no durable place to run a multi-minute job.
+    local_evals: Literal["auto", "on", "off"] = "auto"
 
     @field_validator("anthropic_api_key", "openai_api_key")
     @classmethod

@@ -633,6 +633,20 @@ export interface HealthResponse {
   cloud_evals: {
     configured: boolean
   }
+  /**
+   * Whether the server can execute an evaluation in its own process. `false`
+   * on a deployed (Lambda) server, where the cloud lane is the only one — the
+   * launcher disables "This machine" and defaults to cloud when it is.
+   *
+   * Optional so a health response from an older server (or a failed check)
+   * reads as "local is fine", which is the safe answer for a local-first tool.
+   *
+   * contract: docs/serverless-deploy.md — "Health gains "local_evals":
+   * {"available": bool}".
+   */
+  local_evals?: {
+    available: boolean
+  }
 }
 
 /* -------------------------------------------------------------------------- */

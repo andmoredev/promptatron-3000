@@ -23,12 +23,15 @@ because every listed item's ``sk`` is ``META``.
 Everything here is expressed against a plain ``boto3`` DynamoDB *resource
 Table* (``get_item`` / ``put_item`` / ``query``), so tests hand :class:`EvalTable`
 an in-memory double instead and never touch AWS.
+
+The keys, cursors, TTL and partition names are not defined here: they are the
+same ones the worker writes and the DynamoDB history backend reads, so they live
+in :mod:`promptatron.store.ddb_items` and are re-exported below under the names
+this module has always used.
 """
 
 from __future__ import annotations
 
-import base64
-import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -37,73 +40,53 @@ from boto3.dynamodb.conditions import Key
 
 from promptatron import runtime_config
 from promptatron.config import Settings
-from promptatron.errors import BadRequestError
+from promptatron.store.ddb_items import (
+    CANCEL_SK,
+    EVAL_PARTITION,
+    EVENT_SEQ_WIDTH,
+    EVENT_SK_PREFIX,
+    GSI1_INDEX_NAME,
+    GSI1_PK,
+    GSI1_SK,
+    META_SK,
+    RUN_PARTITION,
+    TERMINAL_STATUSES,
+    TTL_SECONDS,
+    decode_cursor,
+    encode_cursor,
+    eval_pk,
+    event_sk,
+    expires_at,
+    is_terminal,
+    run_pk,
+)
 
-#: The listing index on the shared config-store table.
-GSI1_INDEX_NAME = "GSI1"
-GSI1_PK = "GSI1PK"
-GSI1_SK = "GSI1SK"
-
-EVAL_PARTITION = "EVAL"
-RUN_PARTITION = "RUN"
-
-META_SK = "META"
-CANCEL_SK = "CANCEL"
-EVENT_SK_PREFIX = "EVENT#"
-#: ``EVENT#`` sequence numbers are zero-padded to this width.
-EVENT_SEQ_WIDTH = 8
-
-#: TTL horizon for every item this module writes (the contract's 90 days).
-TTL_SECONDS = 90 * 24 * 60 * 60
-
-TERMINAL_STATUSES = frozenset({"completed", "error", "cancelled"})
-
-
-# --------------------------------------------------------------------------- #
-# Keys and cursors
-# --------------------------------------------------------------------------- #
-
-
-def eval_pk(evaluation_id: str) -> str:
-    return f"{EVAL_PARTITION}#{evaluation_id}"
-
-
-def run_pk(run_id: str) -> str:
-    return f"{RUN_PARTITION}#{run_id}"
-
-
-def event_sk(seq: int) -> str:
-    return f"{EVENT_SK_PREFIX}{seq:0{EVENT_SEQ_WIDTH}d}"
-
+__all__ = [
+    "CANCEL_SK",
+    "EVAL_PARTITION",
+    "EVENT_SEQ_WIDTH",
+    "EVENT_SK_PREFIX",
+    "GSI1_INDEX_NAME",
+    "GSI1_PK",
+    "GSI1_SK",
+    "META_SK",
+    "RUN_PARTITION",
+    "TERMINAL_STATUSES",
+    "TTL_SECONDS",
+    "EvalTable",
+    "build_eval_table",
+    "build_table",
+    "decode_cursor",
+    "encode_cursor",
+    "eval_pk",
+    "event_sk",
+    "expires_at",
+    "is_terminal",
+    "run_pk",
+]
 
 #: Upper bound of the ``EVENT#`` range -- every representable sequence number.
 _MAX_EVENT_SK = event_sk(10**EVENT_SEQ_WIDTH - 1)
-
-
-def encode_cursor(gsi1sk: str, pk: str) -> str:
-    """A page cursor: base64url of ``"{GSI1SK}|{pk}"``."""
-    return base64.urlsafe_b64encode(f"{gsi1sk}|{pk}".encode()).decode("ascii")
-
-
-def decode_cursor(cursor: str, partition: str) -> dict[str, str]:
-    """Rebuild an ``ExclusiveStartKey`` from a cursor. 400s on a malformed one."""
-    try:
-        raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
-        gsi1sk, pk = raw.split("|", 1)
-    except Exception as exc:
-        raise BadRequestError("Invalid pagination cursor", detail={"cursor": cursor}) from exc
-    if not gsi1sk or not pk:
-        raise BadRequestError("Invalid pagination cursor", detail={"cursor": cursor})
-    return {"pk": pk, "sk": META_SK, GSI1_PK: partition, GSI1_SK: gsi1sk}
-
-
-def expires_at(now: float | None = None) -> int:
-    """The ``expiresAt`` (epoch seconds) every item carries for TTL."""
-    return int((now if now is not None else time.time()) + TTL_SECONDS)
-
-
-def is_terminal(status: str | None) -> bool:
-    return status in TERMINAL_STATUSES
 
 
 # --------------------------------------------------------------------------- #
@@ -208,6 +191,22 @@ class EvalTable:
 # --------------------------------------------------------------------------- #
 
 _tables: dict[tuple[str, str], EvalTable] = {}
+_raw_tables: dict[tuple[str, str], Any] = {}
+
+
+def build_table(table_name: str, region_name: str) -> Any:
+    """The raw ``boto3`` resource ``Table``, cached per (table, region).
+
+    Shared with the DynamoDB history backend
+    (:mod:`promptatron.store.ddb_history`), which needs the same table with a
+    wider surface (``put_item``/``delete_item``) than :class:`EvalTable`
+    exposes -- one boto3 resource serves both.
+    """
+    key = (table_name, region_name)
+    if key not in _raw_tables:
+        resource = boto3.resource("dynamodb", region_name=region_name)
+        _raw_tables[key] = resource.Table(table_name)
+    return _raw_tables[key]
 
 
 def build_eval_table(settings: Settings) -> EvalTable | None:
@@ -221,6 +220,5 @@ def build_eval_table(settings: Settings) -> EvalTable | None:
         return None
     key = (table_name, settings.aws_region)
     if key not in _tables:
-        resource = boto3.resource("dynamodb", region_name=settings.aws_region)
-        _tables[key] = EvalTable(resource.Table(table_name))
+        _tables[key] = EvalTable(build_table(table_name, settings.aws_region))
     return _tables[key]

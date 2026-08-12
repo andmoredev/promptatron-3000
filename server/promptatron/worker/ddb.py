@@ -49,6 +49,12 @@ testable — the tests assert on the AttributeValue dicts themselves.
 Every attribute the contract declares is always present: fields documented as
 nullable are written as ``NULL`` rather than omitted, so the reader never has to
 distinguish "absent" from "null".
+
+The item *shapes* (keys, field lists, JSON columns, TTL) come from
+:mod:`promptatron.store.ddb_items`, shared with the server-side reader and with
+the DynamoDB history backend. Only the AttributeValue encoding is this module's
+own: :func:`_serialize` turns one of those plain-Python items into exactly the
+dicts this module has always written.
 """
 
 from __future__ import annotations
@@ -56,10 +62,24 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import UTC, datetime
 from typing import Any
 
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
+
+from promptatron.store import ddb_items
+from promptatron.store.ddb_items import (
+    CANCEL_SK,
+    EVENT_SEQ_WIDTH,
+    META_SK,
+    TTL_ATTRIBUTE,
+    TTL_DAYS,
+    TTL_SECONDS,
+    eval_pk,
+    event_sk,
+    run_pk,
+)
+from promptatron.store.ddb_items import EVAL_PARTITION as GSI1_EVAL_PK
+from promptatron.store.ddb_items import RUN_PARTITION as GSI1_RUN_PK
 
 logger = logging.getLogger(__name__)
 
@@ -70,83 +90,32 @@ __all__ = [
     "GSI1_RUN_PK",
     "TTL_ATTRIBUTE",
     "TTL_DAYS",
+    "TTL_SECONDS",
     "DynamoEvalStore",
     "eval_pk",
     "event_sk",
     "run_pk",
 ]
 
-#: TTL horizon for every item this module writes. The table's TTL is configured
-#: on ``expiresAt`` (see ``api/template.yaml``).
-TTL_DAYS = 90
-TTL_SECONDS = TTL_DAYS * 24 * 60 * 60
-TTL_ATTRIBUTE = "expiresAt"
-
-#: ``EVENT#{seq:08d}`` — zero-padded so lexicographic ``sk`` ordering (which is
-#: what ``begins_with`` Query returns) matches numeric ``seq`` ordering. Eight
-#: digits covers 100M events per evaluation against a hard ceiling of 25 runs.
-EVENT_SEQ_WIDTH = 8
-
-META_SK = "META"
-CANCEL_SK = "CANCEL"
-EVENT_SK_PREFIX = "EVENT#"
-
-GSI1_EVAL_PK = "EVAL"
-GSI1_RUN_PK = "RUN"
-
 #: Terminal statuses. ``complete()`` refuses anything else.
 _TERMINAL_STATUSES = frozenset({"completed", "error", "cancelled"})
 
 #: Run fields that are JSON-encoded on the way in, matching the SQLite ``runs``
 #: table's TEXT-holding-JSON columns exactly (see ``promptatron.store.models``).
-_RUN_JSON_FIELDS = ("config", "tool_transcript", "metrics", "guardrail_trace", "error")
+_RUN_JSON_FIELDS = ddb_items.RUN_JSON_FIELDS
 
 #: Meta fields that are JSON-encoded on the way in, matching the SQLite
 #: ``evaluations`` table. ``progress`` is not in the contract's table but is a
 #: SQLite column the engine writes mid-flight; carrying it costs nothing and
 #: keeps the two lanes' rows comparable.
-_META_JSON_FIELDS = frozenset({"result", "error", "progress", "run_ids"})
+_META_JSON_FIELDS = frozenset({*ddb_items.EVAL_JSON_FIELDS, "run_ids"})
 
 #: DynamoDB reserved words among the meta attribute names, which have to be
 #: aliased in an UpdateExpression.
 _RESERVED_META_WORDS = frozenset({"status", "result", "error", "config", "ts"})
 
-#: Run fields stored as plain strings.
-_RUN_TEXT_FIELDS = (
-    "id",
-    "ts",
-    "model_id",
-    "scenario_id",
-    "system_prompt",
-    "user_prompt",
-    "dataset_id",
-    "dataset_hash",
-    "output",
-    "status",
-)
-
 _serializer = TypeSerializer()
 _deserializer = TypeDeserializer()
-
-
-# --------------------------------------------------------------------------- #
-# Key helpers (importable so the reader side can share them)
-# --------------------------------------------------------------------------- #
-
-
-def eval_pk(evaluation_id: str) -> str:
-    """Partition key for an evaluation's meta/event/cancel items."""
-    return f"EVAL#{evaluation_id}"
-
-
-def run_pk(run_id: str) -> str:
-    """Partition key for a run record."""
-    return f"RUN#{run_id}"
-
-
-def event_sk(seq: int) -> str:
-    """Sort key for progress event ``seq``."""
-    return f"{EVENT_SK_PREFIX}{seq:0{EVENT_SEQ_WIDTH}d}"
 
 
 # --------------------------------------------------------------------------- #
@@ -161,16 +130,26 @@ def _av(value: Any) -> dict[str, Any]:
 
 def _text(value: Any) -> dict[str, Any]:
     """A nullable string attribute: ``None`` becomes ``NULL``, never absent."""
-    return {"NULL": True} if value is None else {"S": str(value)}
+    return _av(ddb_items.text(value))
 
 
 def _json(value: Any) -> dict[str, Any]:
     """A nullable JSON-string attribute (matching the SQLite TEXT columns)."""
-    return {"NULL": True} if value is None else {"S": json.dumps(value, default=str)}
+    return _av(ddb_items.dump_json(value))
+
+
+def _serialize(item: dict[str, Any]) -> dict[str, Any]:
+    """A plain-Python item (from :mod:`promptatron.store.ddb_items`) as AttributeValues.
+
+    ``None`` becomes ``{"NULL": True}``, ``str`` becomes ``{"S": ...}``, ``int``
+    becomes ``{"N": ...}`` — the same encoding a resource ``Table`` applies to
+    the identical item, which is what makes both writers byte-compatible.
+    """
+    return {key: _av(value) for key, value in item.items()}
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return ddb_items.now_iso()
 
 
 def _meta_attribute(field: str, value: Any) -> dict[str, Any]:
@@ -202,36 +181,10 @@ def _to_run_record(record: dict[str, Any]) -> Any:
 
     The engine's :class:`~promptatron.evals.engine.EvalStore` protocol hands
     back the same dataclass in both lanes, so the outcome-building code does not
-    branch on where the run came from.
+    branch on where the run came from — and it is the same mapping the server's
+    DynamoDB history backend reads runs through.
     """
-    from promptatron.store import history
-
-    ts = record.get("ts")
-    if isinstance(ts, str):
-        try:
-            ts = datetime.fromisoformat(ts)
-        except ValueError:
-            ts = datetime.now(UTC)
-    elif not isinstance(ts, datetime):
-        ts = datetime.now(UTC)
-
-    return history.RunRecord(
-        id=str(record.get("id", "")),
-        ts=ts,
-        model_id=str(record.get("model_id") or ""),
-        scenario_id=record.get("scenario_id"),
-        system_prompt=record.get("system_prompt") or "",
-        user_prompt=record.get("user_prompt") or "",
-        dataset_id=record.get("dataset_id"),
-        dataset_hash=record.get("dataset_hash"),
-        config=record.get("config") or {},
-        output=record.get("output"),
-        tool_transcript=record.get("tool_transcript"),
-        metrics=record.get("metrics"),
-        guardrail_trace=record.get("guardrail_trace"),
-        status=str(record.get("status") or "completed"),
-        error=record.get("error"),
-    )
+    return ddb_items.run_record(record)
 
 
 # --------------------------------------------------------------------------- #
@@ -649,30 +602,11 @@ class DynamoEvalStore:
         ``GET /runs/{id}`` can fall back to this item and
         ``GET /runs?execution=cloud`` can list them by ``ts`` desc.
         """
-        run_id = run.get("id")
-        if not run_id:
-            raise ValueError("run record has no id")
-        run_id = str(run_id)
-
-        ts = run.get("ts") or _now_iso()
-        if isinstance(ts, datetime):
-            ts = ts.isoformat()
-        ts = str(ts)
-
-        item: dict[str, Any] = {
-            "pk": {"S": run_pk(run_id)},
-            "sk": {"S": META_SK},
-            "evaluation_id": {"S": self.evaluation_id},
-            "GSI1PK": {"S": GSI1_RUN_PK},
-            "GSI1SK": {"S": ts},
-            TTL_ATTRIBUTE: _av(self._expires_at()),
-        }
-        for field in _RUN_TEXT_FIELDS:
-            item[field] = _text(ts if field == "ts" else run.get(field))
-        for field in _RUN_JSON_FIELDS:
-            item[field] = _json(run.get(field))
-
-        self.client.put_item(TableName=self.table_name, Item=item)
+        item = ddb_items.run_item(
+            run, evaluation_id=self.evaluation_id, ttl=self._expires_at()
+        )
+        self.client.put_item(TableName=self.table_name, Item=_serialize(item))
+        run_id = str(run["id"])
         if run_id not in self._saved_runs:
             self._saved_runs.append(run_id)
 
