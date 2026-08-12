@@ -159,12 +159,43 @@ The deploy job runs the same `make deploy` used locally, so there is one deploy 
 than a CI copy that drifts. Local runs use your own credentials; CI assumes the pipeline role and
 passes the artifacts bucket and CloudFormation execution role through `DEPLOY_S3_BUCKET` / `DEPLOY_ROLE_ARN`.
 
-> **Two permissions worth checking on the first run.** `make deploy` does a few things outside
-> CloudFormation, under `PIPELINE_EXECUTION_ROLE`: uploading the server zip to the stack's own
-> artifact bucket, syncing the SPA to S3, invalidating CloudFront, and **seeding the config store
-> in DynamoDB**. The first three match what the other services already do; the DynamoDB seed is
-> unique to this repo, so that role may need `dynamodb:PutItem`/`GetItem` on
-> `promptatron-*` tables added.
+#### Permissions the pipeline role needs
+
+`make deploy` does four things *outside* CloudFormation, so they run as `PIPELINE_EXECUTION_ROLE`
+rather than the CloudFormation execution role: seed the config store, sync the SPA to S3,
+invalidate CloudFront, and upload the server zip. The last one is covered by the shared artifacts
+bucket; the other three touch `promptatron-*` resources this stack creates, and need to be
+allowed on the org pipeline role once:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SeedPromptatronConfigStore",
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:PutItem"],
+      "Resource": "arn:aws:dynamodb:*:*:table/promptatron-*"
+    },
+    {
+      "Sid": "SyncPromptatronSpa",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": ["arn:aws:s3:::promptatron-*", "arn:aws:s3:::promptatron-*/*"]
+    },
+    {
+      "Sid": "InvalidatePromptatronCdn",
+      "Effect": "Allow",
+      "Action": "cloudfront:CreateInvalidation",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+`s3:DeleteObject` is required because the SPA sync runs with `--delete`; `GetItem` because the
+seeder preserves `createdAt` on re-seed. `cloudfront:CreateInvalidation` cannot be scoped by a
+resource policy — CloudFront has none — so it has to come from the role's identity policy.
 
 One sharp edge: `ServerArtifactKey` is a CloudFormation parameter with an empty default, and an
 empty value deletes the server. `make deploy-api` and `make deploy-worker` do not pass it, so
