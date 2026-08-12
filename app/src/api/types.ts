@@ -57,6 +57,16 @@ export type ApiErrorCode =
 /** `RunStatus` in events.py / the persisted run row. */
 export type RunStatus = 'completed' | 'error' | 'cancelled'
 
+/**
+ * Which lane an evaluation ran in — `local` (in-process, SQLite) or `cloud`
+ * (AgentCore Runtime worker, DynamoDB). `local` is the default everywhere it
+ * is omitted.
+ *
+ * contract: docs/cloud-evals.md "Request" / "Frontend" — server work landing
+ * concurrently; typed from the doc, not from server code.
+ */
+export type EvaluationExecution = 'local' | 'cloud'
+
 export interface RunStartEvent {
   type: 'run_start'
   run_id: string
@@ -277,6 +287,13 @@ export interface RunListParams extends RunListFilters {
   cursor?: string
   /** 1 – 100, defaults to 25. */
   limit?: number
+  /**
+   * `cloud` reads the DynamoDB `RUN` GSI1 partition instead of SQLite.
+   * Omitted (the default) is the existing local/SQLite listing.
+   *
+   * contract: docs/cloud-evals.md "Reader rules" — `GET /runs?execution=cloud`.
+   */
+  execution?: 'cloud'
 }
 
 /* -------------------------------------------------------------------------- */
@@ -304,6 +321,14 @@ export interface EvaluationDetail {
   result: EvaluationResult | null
   progress: unknown | null
   error: unknown | null
+  /**
+   * Which lane this evaluation ran in. Optional on the wire type because
+   * pre-existing rows predate the field; treat a missing value as `'local'`.
+   *
+   * contract: docs/cloud-evals.md "Request" — "EvaluationDetail gains
+   * execution: local|cloud (default local for pre-existing rows)".
+   */
+  execution?: EvaluationExecution
 }
 
 /** The `config` JSON persisted on an evaluation row (`stored_config`). */
@@ -357,6 +382,14 @@ export interface EvaluationListParams {
   cursor?: string
   /** 1 – 100, defaults to 25. */
   limit?: number
+  /**
+   * `cloud` reads the DynamoDB `EVAL` GSI1 partition instead of SQLite.
+   * Omitted (the default) is the existing local/SQLite listing.
+   *
+   * contract: docs/cloud-evals.md "Reader rules" — cloud evals appear in
+   * `GET /evaluations` only when queried with `?execution=cloud`.
+   */
+  execution?: 'cloud'
 }
 
 /**
@@ -389,6 +422,14 @@ export interface EvaluationRequest {
   run_ids?: string[]
   rubric?: string | null
   grader?: EvaluationGraderConfig
+  /**
+   * Which lane to run in. Defaults to `'local'` server-side when omitted. A
+   * `'cloud'` request 400s with `cloud_lane_unavailable` if the server has no
+   * AgentCore runtime configured.
+   *
+   * contract: docs/cloud-evals.md "Request".
+   */
+  execution?: EvaluationExecution
 }
 
 /* -------------------------------------------------------------------------- */
@@ -506,6 +547,18 @@ export interface HealthResponse {
     configured: boolean
     /** `null` when the config store is not configured. */
     reachable: boolean | null
+  }
+  /**
+   * Whether the server has an AgentCore runtime configured for the cloud eval
+   * lane (`PROMPTATRON_EVAL_RUNTIME_ARN`). `false` (never unset) once the
+   * server ships this field; callers should still treat a missing/failed
+   * health response as unconfigured.
+   *
+   * contract: docs/cloud-evals.md "Configuration" — "Health: GET /health
+   * gains "cloud_evals": {"configured": bool}".
+   */
+  cloud_evals: {
+    configured: boolean
   }
 }
 

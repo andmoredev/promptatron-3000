@@ -68,6 +68,12 @@ export interface EvalStateData {
   listLoading: boolean
   listError: StoreError | null
   listLoaded: boolean
+  /**
+   * The filters `loadEvaluations` was last called with (including
+   * `execution`), so `loadMoreEvaluations` can carry them onto the next page
+   * — a cursor is only valid for the filter set it was issued under.
+   */
+  listParams: EvaluationListParams
 }
 
 export interface EvalActions {
@@ -105,7 +111,8 @@ export const INITIAL_EVAL_STATE: EvalStateData = {
   nextCursor: null,
   listLoading: false,
   listError: null,
-  listLoaded: false
+  listLoaded: false,
+  listParams: {}
 }
 
 /* -------------------------------------------------------------------------- */
@@ -319,7 +326,7 @@ export const useEvalStore = create<EvalStore>()((set, get) => ({
   },
 
   loadEvaluations: async (params = {}) => {
-    set({ listLoading: true, listError: null })
+    set({ listLoading: true, listError: null, listParams: params })
     try {
       const page: Page<EvaluationDetail> = await api.evaluations.list(params)
       set({
@@ -338,11 +345,14 @@ export const useEvalStore = create<EvalStore>()((set, get) => ({
   },
 
   loadMoreEvaluations: async () => {
-    const { nextCursor, listLoading } = get()
+    const { nextCursor, listLoading, listParams } = get()
     if (!nextCursor || listLoading) return
     set({ listLoading: true, listError: null })
     try {
-      const page: Page<EvaluationDetail> = await api.evaluations.list({ cursor: nextCursor })
+      const page: Page<EvaluationDetail> = await api.evaluations.list({
+        ...listParams,
+        cursor: nextCursor
+      })
       set((state) => ({
         evaluations: [...state.evaluations, ...page.items],
         nextCursor: page.next_cursor,

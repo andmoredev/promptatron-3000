@@ -19,10 +19,18 @@ import {
   useScenarioStore,
   useSettingsStore
 } from '../../stores'
-import type { EvaluationGraderConfig, EvaluationRequest } from '../../api'
+import { api } from '../../api'
+import type { EvaluationExecution, EvaluationGraderConfig, EvaluationRequest } from '../../api'
 
 const N_MIN = 2
 const N_MAX = 25
+
+const CLOUD_UNAVAILABLE_TOOLTIP = 'Cloud lane not configured on the server'
+
+const EXECUTION_OPTIONS: Array<{ value: EvaluationExecution; label: string }> = [
+  { value: 'local', label: 'This machine' },
+  { value: 'cloud', label: 'Cloud — persisted' }
+]
 
 function clampN(value: number): number {
   if (!Number.isFinite(value)) return N_MIN
@@ -55,6 +63,8 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
 
   const defaultGraderModelId = useSettingsStore((state) => state.defaultGraderModelId)
   const defaultN = useSettingsStore((state) => state.defaultN)
+  const defaultEvalExecution = useSettingsStore((state) => state.defaultEvalExecution)
+  const setDefaultEvalExecution = useSettingsStore((state) => state.setDefaultEvalExecution)
 
   const startEvaluation = useEvalStore((state) => state.startEvaluation)
   const isEvaluating = useEvalStore(selectIsEvaluating)
@@ -66,6 +76,11 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
   const [graderSystemPrompt, setGraderSystemPrompt] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [startFailed, setStartFailed] = useState(false)
+  const [execution, setExecution] = useState<EvaluationExecution>(defaultEvalExecution)
+  // Unknown/failed health is treated as "not configured" (see module docs on
+  // `api.health`): the cloud option starts — and stays — disabled unless a
+  // health check comes back and says otherwise.
+  const [cloudConfigured, setCloudConfigured] = useState(false)
 
   useEffect(() => {
     void loadModels()
@@ -74,6 +89,26 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
   useEffect(() => {
     void loadScenarios()
   }, [loadScenarios])
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .health()
+      .then((health) => {
+        if (!cancelled) setCloudConfigured(Boolean(health.cloud_evals?.configured))
+      })
+      .catch(() => {
+        if (!cancelled) setCloudConfigured(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  function handleExecutionChange(next: EvaluationExecution) {
+    setExecution(next)
+    setDefaultEvalExecution(next)
+  }
 
   const model = findModel(models, modelId)
   const scenario = scenarios.find((entry) => entry.id === scenarioId) ?? null
@@ -88,7 +123,8 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
       kind: 'determinism',
       run_config: toRunRequest(useRunConfigStore.getState()),
       n,
-      grader
+      grader,
+      execution
     }
     if (rubric.trim() !== '') request.rubric = rubric
 
@@ -130,6 +166,45 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
       )}
 
       <div className="space-y-3">
+        <div>
+          <span className="block text-xs font-medium text-gray-700 mb-1">Run location</span>
+          <div
+            className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-sm"
+            role="radiogroup"
+            aria-label="Run location"
+          >
+            {EXECUTION_OPTIONS.map((option) => {
+              const disabled = option.value === 'cloud' && !cloudConfigured
+              return (
+                <label
+                  key={option.value}
+                  title={disabled ? CLOUD_UNAVAILABLE_TOOLTIP : undefined}
+                  className={`px-3 py-1.5 cursor-pointer first:border-r first:border-gray-300 ${
+                    execution === option.value ? 'bg-primary-600 text-white' : 'bg-white text-gray-700'
+                  } ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-50'}`}
+                >
+                  <input
+                    type="radio"
+                    name="eval-execution"
+                    value={option.value}
+                    checked={execution === option.value}
+                    disabled={disabled}
+                    onChange={() => handleExecutionChange(option.value)}
+                    className="sr-only"
+                  />
+                  {option.label}
+                </label>
+              )
+            })}
+          </div>
+          {execution === 'cloud' && (
+            <p className="mt-1 text-xs text-gray-500" data-testid="cloud-execution-note">
+              Runs, prompts, and dataset content are persisted to your AWS account (DynamoDB) for
+              later review.
+            </p>
+          )}
+        </div>
+
         <div>
           <label htmlFor="eval-n" className="block text-xs font-medium text-gray-700 mb-1">
             Number of runs ({N_MIN}–{N_MAX})

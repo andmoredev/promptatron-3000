@@ -240,7 +240,10 @@ const runs = {
   stream: (body: RunRequest, options: StreamOptions<RunStreamEvent>): Promise<void> =>
     streamNdjson<RunStreamEvent>('/runs', { ...body, stream: true }, options),
 
-  /** `GET /runs` -> `Page<RunSummary>` (newest first). */
+  /**
+   * `GET /runs` -> `Page<RunSummary>` (newest first). `execution: 'cloud'`
+   * reads the DynamoDB `RUN` GSI1 partition instead of SQLite.
+   */
   list: (params: RunListParams = {}, options: CallOptions = {}): Promise<Page<RunSummary>> =>
     http.get<Page<RunSummary>>('/runs', {
       query: {
@@ -249,7 +252,8 @@ const runs = {
         status: params.status,
         since: params.since,
         cursor: params.cursor,
-        limit: params.limit
+        limit: params.limit,
+        execution: params.execution
       },
       signal: options.signal
     }),
@@ -295,7 +299,10 @@ const evaluations = {
   create: (body: EvaluationRequest, options: CallOptions = {}): Promise<EvaluationDetail> =>
     http.post<EvaluationDetail>('/evaluations', body, { signal: options.signal }),
 
-  /** `GET /evaluations` -> `Page<EvaluationDetail>`. */
+  /**
+   * `GET /evaluations` -> `Page<EvaluationDetail>`. `execution: 'cloud'` reads
+   * the DynamoDB `EVAL` GSI1 partition instead of SQLite.
+   */
   list: (
     params: EvaluationListParams = {},
     options: CallOptions = {}
@@ -305,7 +312,8 @@ const evaluations = {
         kind: params.kind,
         status: params.status,
         cursor: params.cursor,
-        limit: params.limit
+        limit: params.limit,
+        execution: params.execution
       },
       signal: options.signal
     }),

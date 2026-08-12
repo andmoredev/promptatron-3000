@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react'
 import LoadingSpinner from '../../components/LoadingSpinner'
 import { api } from '../../api'
-import type { RunDetail, RunSummary } from '../../api'
+import type { Page, RunDetail, RunSummary } from '../../api'
 import {
   selectHasMore,
   selectNeedsRefresh,
@@ -281,6 +281,135 @@ function ExportButton({ filters }: { filters: HistoryFilters }) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Cloud runs                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The "Cloud runs" filter reads `GET /runs?execution=cloud` directly (like
+ * `ExportButton` above, it bypasses `historyStore` — those rows come from the
+ * DynamoDB `RUN` GSI1 partition, not the SQLite-backed store this page's main
+ * list/paging is built around). Additive to the model/scenario/status filters:
+ * whichever of those is set is carried onto the cloud query too.
+ */
+function CloudRunsPanel({ filters }: { filters: HistoryFilters }) {
+  const [items, setItems] = useState<RunSummary[]>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    api.runs
+      .list({ ...filters, execution: 'cloud' })
+      .then((page: Page<RunSummary>) => {
+        if (cancelled) return
+        setItems(page.items)
+        setNextCursor(page.next_cursor)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : 'Could not load cloud runs')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [filters])
+
+  async function handleLoadMore() {
+    if (!nextCursor || loading) return
+    setLoading(true)
+    setError(null)
+    try {
+      const page = await api.runs.list({ ...filters, execution: 'cloud', cursor: nextCursor })
+      setItems((current) => [...current, ...page.items])
+      setNextCursor(page.next_cursor)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load cloud runs')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <section className="card" aria-labelledby="cloud-runs-heading" data-testid="cloud-runs-panel">
+      <h2 id="cloud-runs-heading" className="text-base font-semibold text-gray-900 mb-1">
+        Cloud runs
+      </h2>
+      <p className="text-xs text-gray-500 mb-3" data-testid="cloud-runs-note">
+        These are cloud-lane evaluation runs — executed on Bedrock AgentCore and persisted to
+        your AWS account&apos;s DynamoDB table, not this machine&apos;s local history.
+      </p>
+
+      {error && (
+        <p className="mb-3 text-xs text-red-600" role="alert">
+          {error}
+        </p>
+      )}
+
+      {loading && items.length === 0 && <LoadingSpinner text="Loading cloud runs…" />}
+
+      {!loading && items.length === 0 && !error && (
+        <p className="text-sm text-gray-600" data-testid="cloud-runs-empty">
+          No cloud runs match these filters.
+        </p>
+      )}
+
+      {items.length > 0 && (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left" data-testid="cloud-runs-table">
+              <thead>
+                <tr className="border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  <th className="py-2 pr-4">Time</th>
+                  <th className="py-2 pr-4">Model</th>
+                  <th className="py-2 pr-4">Scenario</th>
+                  <th className="py-2 pr-4">Status</th>
+                  <th className="py-2 pr-4">Tokens</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((run) => (
+                  <tr key={run.id} className="border-b border-gray-100 last:border-0" data-testid="cloud-run-row">
+                    <td className="py-2 pr-4 text-sm text-gray-700 whitespace-nowrap">{formatTs(run.ts)}</td>
+                    <td className="py-2 pr-4 text-sm font-mono text-gray-900 break-all">{run.model_id}</td>
+                    <td className="py-2 pr-4 text-sm text-gray-700">{run.scenario_id ?? '—'}</td>
+                    <td className="py-2 pr-4">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadgeClass(run.status)}`}>
+                        {run.status}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4 text-sm text-gray-700 tabular-nums">{formatTokens(run)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {nextCursor && (
+            <div className="mt-4 flex justify-center">
+              <button
+                type="button"
+                className="btn-secondary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="cloud-runs-load-more-btn"
+                disabled={loading}
+                onClick={() => void handleLoadMore()}
+              >
+                {loading ? 'Loading…' : 'Load more'}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
 /* Page                                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -300,6 +429,7 @@ export default function HistoryPage() {
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [compareIds, setCompareIds] = useState<string[]>([])
+  const [cloudRunsFilter, setCloudRunsFilter] = useState(false)
 
   useEffect(() => {
     if (needsRefresh) void loadFirstPage()
@@ -331,7 +461,17 @@ export default function HistoryPage() {
           <h2 id="history-heading" className="text-lg font-semibold text-gray-900">
             Run history
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                data-testid="history-cloud-filter"
+                className="h-4 w-4 rounded border-gray-300 text-primary-600"
+                checked={cloudRunsFilter}
+                onChange={(event) => setCloudRunsFilter(event.target.checked)}
+              />
+              Cloud runs
+            </label>
             <button
               type="button"
               className="btn-secondary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
@@ -412,6 +552,8 @@ export default function HistoryPage() {
           </>
         )}
       </section>
+
+      {cloudRunsFilter && <CloudRunsPanel filters={filters} />}
 
       {comparing ? (
         <CompareView

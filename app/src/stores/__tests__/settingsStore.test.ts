@@ -16,13 +16,14 @@ beforeEach(() => {
 })
 
 describe('defaults', () => {
-  it('starts with system theme, the robot on, Chad on, nova-pro grading and n=10', () => {
+  it('starts with system theme, the robot on, Chad on, nova-pro grading, n=10 and local eval execution', () => {
     const state = useSettingsStore.getState()
     expect(state.theme).toBe('system')
     expect(state.robotEnabled).toBe(true)
     expect(state.chadEnabled).toBe(true)
     expect(state.defaultGraderModelId).toBe('amazon.nova-pro-v1:0')
     expect(state.defaultN).toBe(10)
+    expect(state.defaultEvalExecution).toBe('local')
   })
 
   it('exports the defaults as constants', () => {
@@ -33,7 +34,8 @@ describe('defaults', () => {
       robotEnabled: true,
       chadEnabled: true,
       defaultGraderModelId: 'amazon.nova-pro-v1:0',
-      defaultN: 10
+      defaultN: 10,
+      defaultEvalExecution: 'local'
     })
   })
 })
@@ -46,13 +48,15 @@ describe('setters', () => {
     state.setChadEnabled(false)
     state.setDefaultGraderModelId('anthropic.claude-3-sonnet')
     state.setDefaultN(25)
+    state.setDefaultEvalExecution('cloud')
 
     expect(useSettingsStore.getState()).toMatchObject({
       theme: 'dark',
       robotEnabled: false,
       chadEnabled: false,
       defaultGraderModelId: 'anthropic.claude-3-sonnet',
-      defaultN: 25
+      defaultN: 25,
+      defaultEvalExecution: 'cloud'
     })
 
     useSettingsStore.getState().reset()
@@ -73,7 +77,8 @@ describe('persistence', () => {
       robotEnabled: true,
       chadEnabled: true,
       defaultGraderModelId: 'amazon.nova-pro-v1:0',
-      defaultN: 10
+      defaultN: 10,
+      defaultEvalExecution: 'local'
     })
   })
 
@@ -114,6 +119,31 @@ describe('persistence', () => {
     await useSettingsStore.persist.rehydrate()
 
     expect(useSettingsStore.getState().chadEnabled).toBe(true)
+  })
+
+  it('a pre-defaultEvalExecution payload merges cleanly, defaulting it to local', async () => {
+    // Simulates a payload persisted before `defaultEvalExecution` existed: the
+    // key is simply absent, not `undefined`-valued. Same no-version-bump
+    // pattern as `chadEnabled` above.
+    const legacyState: Record<string, unknown> = {
+      theme: 'dark',
+      robotEnabled: true,
+      chadEnabled: false,
+      defaultGraderModelId: 'amazon.nova-pro-v1:0',
+      defaultN: 10
+    }
+    expect('defaultEvalExecution' in legacyState).toBe(false)
+
+    localStorage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({ version: 1, state: legacyState })
+    )
+
+    await useSettingsStore.persist.rehydrate()
+
+    expect(useSettingsStore.getState().defaultEvalExecution).toBe('local')
+    // Every other field from the legacy payload still round-trips.
+    expect(useSettingsStore.getState().chadEnabled).toBe(false)
   })
 })
 

@@ -6,8 +6,22 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import EvalsPage from '../EvalsPage'
-import {
+import type { EvaluationDetail } from '../../../api'
+
+const healthMock = vi.fn().mockResolvedValue({
+  status: 'ok',
+  aws: { region: 'us-east-1', credentials: 'ok' },
+  config_store: { configured: false, reachable: null },
+  cloud_evals: { configured: false }
+})
+
+vi.mock('../../../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../api')>()
+  return { ...actual, api: { ...actual.api, health: healthMock } }
+})
+
+const EvalsPage = (await import('../EvalsPage')).default
+const {
   DEFAULT_RUN_CONFIG,
   DEFAULT_SETTINGS,
   INITIAL_EVAL_STATE,
@@ -15,8 +29,7 @@ import {
   useRunConfigStore,
   useScenarioStore,
   useSettingsStore
-} from '../../../stores'
-import type { EvaluationDetail } from '../../../api'
+} = await import('../../../stores')
 
 const loadEvaluations = vi.fn().mockResolvedValue(undefined)
 const loadMoreEvaluations = vi.fn().mockResolvedValue(undefined)
@@ -65,11 +78,13 @@ const rows: EvaluationDetail[] = [
     run_ids: [],
     result: null,
     progress: null,
-    error: null
+    error: null,
+    execution: 'cloud'
   }
 ]
 
 beforeEach(() => {
+  healthMock.mockClear()
   loadEvaluations.mockClear()
   loadMoreEvaluations.mockClear()
   refreshEvaluation.mockClear()
@@ -167,5 +182,23 @@ describe('EvalsPage', () => {
     fireEvent.click(screen.getByTestId('eval-row-eval-running'))
 
     expect(followEvaluation).toHaveBeenCalledWith('eval-running')
+  })
+
+  it('renders a lane badge per row, defaulting to local when execution is absent', () => {
+    render(<EvalsPage />)
+
+    expect(screen.getByTestId('eval-lane-eval-completed')).toHaveTextContent('local')
+    expect(screen.getByTestId('eval-lane-eval-running')).toHaveTextContent('cloud')
+  })
+
+  it('the Cloud filter reloads the list with {execution: "cloud"} and back with none on uncheck', () => {
+    render(<EvalsPage />)
+    expect(loadEvaluations).toHaveBeenLastCalledWith({})
+
+    fireEvent.click(screen.getByTestId('eval-cloud-filter'))
+    expect(loadEvaluations).toHaveBeenLastCalledWith({ execution: 'cloud' })
+
+    fireEvent.click(screen.getByTestId('eval-cloud-filter'))
+    expect(loadEvaluations).toHaveBeenLastCalledWith({})
   })
 })

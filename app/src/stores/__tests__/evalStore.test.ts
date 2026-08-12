@@ -356,13 +356,33 @@ describe('list ops', () => {
     await useEvalStore.getState().loadEvaluations({ kind: 'determinism' })
     expect(listMock).toHaveBeenCalledWith({ kind: 'determinism' })
 
+    // `loadMoreEvaluations` carries the original filters (kind, execution, …)
+    // onto the next page — a cursor is only valid for the filter set that
+    // issued it.
     await useEvalStore.getState().loadMoreEvaluations()
-    expect(listMock).toHaveBeenLastCalledWith({ cursor: 'c1' })
+    expect(listMock).toHaveBeenLastCalledWith({ kind: 'determinism', cursor: 'c1' })
 
     const state = useEvalStore.getState()
     expect(state.evaluations.map((row) => row.id)).toEqual(['e1', 'e2', 'e3'])
     expect(state.nextCursor).toBeNull()
     expect(state.listLoaded).toBe(true)
+  })
+
+  it('loads and pages the cloud lane with ?execution=cloud carried through', async () => {
+    listMock
+      .mockResolvedValueOnce({
+        items: rows(['e1']),
+        next_cursor: 'c1'
+      } as Page<EvaluationDetail>)
+      .mockResolvedValueOnce({ items: rows(['e2']), next_cursor: null } as Page<EvaluationDetail>)
+
+    await useEvalStore.getState().loadEvaluations({ execution: 'cloud' })
+    expect(listMock).toHaveBeenCalledWith({ execution: 'cloud' })
+
+    await useEvalStore.getState().loadMoreEvaluations()
+    expect(listMock).toHaveBeenLastCalledWith({ execution: 'cloud', cursor: 'c1' })
+
+    expect(useEvalStore.getState().evaluations.map((row) => row.id)).toEqual(['e1', 'e2'])
   })
 
   it('refreshEvaluation replaces the row in place', async () => {

@@ -119,6 +119,7 @@ export {
   DEFAULT_EVAL_N,
   SETTINGS_STORAGE_KEY,
   type ThemePreference,
+  type EvalExecutionPreference,
   type SettingsData,
   type SettingsActions,
   type SettingsStore

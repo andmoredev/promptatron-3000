@@ -10,16 +10,20 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { RunDetail, RunSummary } from '../../../api'
 
 const exportAllMock = vi.fn()
+const runsListMock = vi.fn()
 
 vi.mock('../../../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../api')>()
   return {
     ...actual,
-    api: { ...actual.api, runs: { ...actual.api.runs, exportAll: exportAllMock } }
+    api: {
+      ...actual.api,
+      runs: { ...actual.api.runs, exportAll: exportAllMock, list: runsListMock }
+    }
   }
 })
 
@@ -73,6 +77,8 @@ const getRunDetail = vi.fn().mockResolvedValue(null)
 
 beforeEach(() => {
   exportAllMock.mockReset()
+  runsListMock.mockReset()
+  runsListMock.mockResolvedValue({ items: [], next_cursor: null })
   setFilters.mockClear()
   loadFirstPage.mockClear()
   loadMore.mockClear()
@@ -317,5 +323,61 @@ describe('HistoryPage: NDJSON export', () => {
     })
 
     expect(screen.getByText('network down')).toBeInTheDocument()
+  })
+})
+
+describe('HistoryPage: Cloud runs filter', () => {
+  it('is off by default and fetches nothing', () => {
+    render(<HistoryPage />)
+    expect(screen.queryByTestId('cloud-runs-panel')).not.toBeInTheDocument()
+    expect(runsListMock).not.toHaveBeenCalled()
+  })
+
+  it('checking it calls api.runs.list with execution:"cloud" and shows the panel with a note', async () => {
+    runsListMock.mockResolvedValueOnce({
+      items: [summary('cr1', { model_id: 'anthropic.claude-3-sonnet' })],
+      next_cursor: null
+    })
+
+    render(<HistoryPage />)
+    fireEvent.click(screen.getByTestId('history-cloud-filter'))
+
+    await waitFor(() => expect(runsListMock).toHaveBeenCalledWith({ execution: 'cloud' }))
+    expect(screen.getByTestId('cloud-runs-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('cloud-runs-note')).toHaveTextContent(/cloud-lane evaluation runs/i)
+    expect(await screen.findByTestId('cloud-run-row')).toBeInTheDocument()
+  })
+
+  it('carries the existing model/scenario/status filters onto the cloud query', async () => {
+    useHistoryStore.setState({ filters: { model_id: 'nova', status: 'completed' } })
+    render(<HistoryPage />)
+
+    fireEvent.click(screen.getByTestId('history-cloud-filter'))
+
+    await waitFor(() =>
+      expect(runsListMock).toHaveBeenCalledWith({
+        model_id: 'nova',
+        status: 'completed',
+        execution: 'cloud'
+      })
+    )
+  })
+
+  it('unchecking it hides the panel again', async () => {
+    render(<HistoryPage />)
+    fireEvent.click(screen.getByTestId('history-cloud-filter'))
+    await waitFor(() => expect(screen.getByTestId('cloud-runs-panel')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('history-cloud-filter'))
+    expect(screen.queryByTestId('cloud-runs-panel')).not.toBeInTheDocument()
+  })
+
+  it('surfaces a fetch failure instead of throwing', async () => {
+    runsListMock.mockRejectedValueOnce(new Error('cloud unreachable'))
+
+    render(<HistoryPage />)
+    fireEvent.click(screen.getByTestId('history-cloud-filter'))
+
+    expect(await screen.findByText('cloud unreachable')).toBeInTheDocument()
   })
 })

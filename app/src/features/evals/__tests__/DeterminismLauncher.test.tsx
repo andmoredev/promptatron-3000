@@ -5,8 +5,32 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import DeterminismLauncher from '../DeterminismLauncher'
-import {
+import type { HealthResponse, ModelInfo } from '../../../api'
+
+/**
+ * The launcher fetches `api.health()` on mount to decide whether the Cloud
+ * option is selectable. Defaults `configured: true` so most tests (which
+ * don't care about the toggle) don't need to wait on it; the disabled-lane
+ * tests override with `mockResolvedValueOnce`/`mockRejectedValueOnce`.
+ */
+const healthMock = vi.fn<() => Promise<HealthResponse>>()
+
+function health(configured: boolean): HealthResponse {
+  return {
+    status: 'ok',
+    aws: { region: 'us-east-1', credentials: 'ok' },
+    config_store: { configured: false, reachable: null },
+    cloud_evals: { configured }
+  }
+}
+
+vi.mock('../../../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../api')>()
+  return { ...actual, api: { ...actual.api, health: healthMock } }
+})
+
+const DeterminismLauncher = (await import('../DeterminismLauncher')).default
+const {
   DEFAULT_RUN_CONFIG,
   DEFAULT_SETTINGS,
   INITIAL_EVAL_STATE,
@@ -14,8 +38,7 @@ import {
   useRunConfigStore,
   useScenarioStore,
   useSettingsStore
-} from '../../../stores'
-import type { ModelInfo } from '../../../api'
+} = await import('../../../stores')
 
 const MODELS: ModelInfo[] = [
   {
@@ -39,6 +62,8 @@ const startEvaluation = vi.fn().mockResolvedValue('eval-new')
 beforeEach(() => {
   startEvaluation.mockClear()
   startEvaluation.mockResolvedValue('eval-new')
+  healthMock.mockReset()
+  healthMock.mockResolvedValue(health(true))
   useEvalStore.setState({ ...INITIAL_EVAL_STATE, startEvaluation })
   useRunConfigStore.setState({ ...DEFAULT_RUN_CONFIG })
   useSettingsStore.setState({ ...DEFAULT_SETTINGS })
@@ -53,8 +78,9 @@ beforeEach(() => {
 })
 
 describe('DeterminismLauncher', () => {
-  it('disables Start until the workbench config is valid and shows a hint', () => {
+  it('disables Start until the workbench config is valid and shows a hint', async () => {
     render(<DeterminismLauncher />)
+    await waitFor(() => expect(healthMock).toHaveBeenCalledTimes(1))
 
     expect(
       screen.getByText(/Set a model and a user prompt in the Workbench tab/i)
@@ -68,9 +94,10 @@ describe('DeterminismLauncher', () => {
     expect(screen.getByRole('button', { name: 'Start evaluation' })).toBeEnabled()
   })
 
-  it('clamps N to the 2-25 range', () => {
+  it('clamps N to the 2-25 range', async () => {
     useRunConfigStore.setState({ model_id: MODELS[0].model_id, user_prompt: 'go' })
     render(<DeterminismLauncher />)
+    await waitFor(() => expect(healthMock).toHaveBeenCalledTimes(1))
 
     const nInput = screen.getByLabelText(/Number of runs/i) as HTMLInputElement
     expect(nInput.value).toBe(String(DEFAULT_SETTINGS.defaultN))
@@ -85,7 +112,7 @@ describe('DeterminismLauncher', () => {
     expect(nInput.value).toBe('12')
   })
 
-  it('starts an evaluation with the exact request, including rubric and grader prompt when filled', () => {
+  it('starts an evaluation with the exact request, including rubric and grader prompt when filled', async () => {
     useRunConfigStore.setState({
       model_id: MODELS[1].model_id,
       system_prompt: 'You are a fraud analyst.',
@@ -93,6 +120,7 @@ describe('DeterminismLauncher', () => {
       tools_enabled: true
     })
     render(<DeterminismLauncher />)
+    await waitFor(() => expect(healthMock).toHaveBeenCalledTimes(1))
 
     fireEvent.change(screen.getByLabelText(/Number of runs/i), { target: { value: '5' } })
     fireEvent.change(screen.getByLabelText('Grader model'), {
@@ -125,13 +153,15 @@ describe('DeterminismLauncher', () => {
         model_id: MODELS[0].model_id,
         system_prompt: 'You are a strict judge.'
       },
-      rubric: 'Penalize inconsistent tool use.'
+      rubric: 'Penalize inconsistent tool use.',
+      execution: 'local'
     })
   })
 
-  it('omits rubric and grader system prompt from the request when left blank', () => {
+  it('omits rubric and grader system prompt from the request when left blank', async () => {
     useRunConfigStore.setState({ model_id: MODELS[0].model_id, user_prompt: 'go' })
     render(<DeterminismLauncher />)
+    await waitFor(() => expect(healthMock).toHaveBeenCalledTimes(1))
 
     fireEvent.click(screen.getByRole('button', { name: 'Start evaluation' }))
 
@@ -154,5 +184,83 @@ describe('DeterminismLauncher', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start evaluation' }))
 
     await waitFor(() => expect(onStarted).toHaveBeenCalledWith('eval-new'))
+  })
+
+  describe('Run location toggle', () => {
+    it('renders both options, defaulting to "This machine"', async () => {
+      render(<DeterminismLauncher />)
+      await waitFor(() => expect(healthMock).toHaveBeenCalledTimes(1))
+
+      const local = screen.getByRole('radio', { name: 'This machine' }) as HTMLInputElement
+      const cloud = screen.getByRole('radio', { name: 'Cloud — persisted' }) as HTMLInputElement
+      expect(local.checked).toBe(true)
+      expect(cloud.checked).toBe(false)
+    })
+
+    it('seeds the toggle from settings.defaultEvalExecution', async () => {
+      useSettingsStore.setState({ ...DEFAULT_SETTINGS, defaultEvalExecution: 'cloud' })
+      render(<DeterminismLauncher />)
+      await waitFor(() => expect(healthMock).toHaveBeenCalledTimes(1))
+
+      expect((screen.getByRole('radio', { name: 'Cloud — persisted' }) as HTMLInputElement).checked).toBe(
+        true
+      )
+    })
+
+    it('switching to Cloud persists it as the new default and shows the storage note', async () => {
+      render(<DeterminismLauncher />)
+      await waitFor(() => expect(healthMock).toHaveBeenCalledTimes(1))
+
+      expect(screen.queryByTestId('cloud-execution-note')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Cloud — persisted' }))
+
+      expect((screen.getByRole('radio', { name: 'Cloud — persisted' }) as HTMLInputElement).checked).toBe(
+        true
+      )
+      expect(useSettingsStore.getState().defaultEvalExecution).toBe('cloud')
+      expect(screen.getByTestId('cloud-execution-note')).toHaveTextContent(
+        'Runs, prompts, and dataset content are persisted to your AWS account (DynamoDB) for later review.'
+      )
+    })
+
+    it('disables the Cloud option with a tooltip when health reports the lane unconfigured', async () => {
+      healthMock.mockReset()
+      healthMock.mockResolvedValueOnce(health(false))
+      render(<DeterminismLauncher />)
+
+      await waitFor(() =>
+        expect((screen.getByRole('radio', { name: 'Cloud — persisted' }) as HTMLInputElement).disabled).toBe(
+          true
+        )
+      )
+      const cloudLabel = screen.getByRole('radio', { name: 'Cloud — persisted' }).closest('label')
+      expect(cloudLabel).toHaveAttribute('title', 'Cloud lane not configured on the server')
+    })
+
+    it('treats a health-check failure as unconfigured (disabled, no crash)', async () => {
+      healthMock.mockReset()
+      healthMock.mockRejectedValueOnce(new Error('network down'))
+      render(<DeterminismLauncher />)
+
+      await waitFor(() =>
+        expect((screen.getByRole('radio', { name: 'Cloud — persisted' }) as HTMLInputElement).disabled).toBe(
+          true
+        )
+      )
+    })
+
+    it('carries execution:"cloud" on the launch request when Cloud is selected', async () => {
+      useRunConfigStore.setState({ model_id: MODELS[0].model_id, user_prompt: 'go' })
+      render(<DeterminismLauncher />)
+      await waitFor(() => expect(healthMock).toHaveBeenCalledTimes(1))
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Cloud — persisted' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Start evaluation' }))
+
+      expect(startEvaluation).toHaveBeenCalledWith(
+        expect.objectContaining({ execution: 'cloud' })
+      )
+    })
   })
 })

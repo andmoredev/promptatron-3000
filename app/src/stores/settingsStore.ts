@@ -19,6 +19,15 @@ export const DEFAULT_GRADER_MODEL_ID = 'amazon.nova-pro-v1:0'
 /** The default run count for a determinism evaluation (server clamps to 2–25). */
 export const DEFAULT_EVAL_N = 10
 
+/**
+ * Lane a new determinism evaluation launches in when the user doesn't change
+ * the launcher's "Run location" toggle.
+ *
+ * contract: docs/cloud-evals.md "Frontend" — "Choice remembered in settings
+ * (defaultEvalExecution)".
+ */
+export type EvalExecutionPreference = 'local' | 'cloud'
+
 export interface SettingsData {
   theme: ThemePreference
   /** Whether the robot mascot is rendered at all. */
@@ -27,6 +36,8 @@ export interface SettingsData {
   chadEnabled: boolean
   defaultGraderModelId: string
   defaultN: number
+  /** Which lane the determinism launcher's "Run location" toggle starts on. */
+  defaultEvalExecution: EvalExecutionPreference
 }
 
 export interface SettingsActions {
@@ -35,6 +46,7 @@ export interface SettingsActions {
   setChadEnabled(enabled: boolean): void
   setDefaultGraderModelId(modelId: string): void
   setDefaultN(n: number): void
+  setDefaultEvalExecution(execution: EvalExecutionPreference): void
   reset(): void
 }
 
@@ -45,7 +57,8 @@ export const DEFAULT_SETTINGS: SettingsData = {
   robotEnabled: true,
   chadEnabled: true,
   defaultGraderModelId: DEFAULT_GRADER_MODEL_ID,
-  defaultN: DEFAULT_EVAL_N
+  defaultN: DEFAULT_EVAL_N,
+  defaultEvalExecution: 'local'
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -58,15 +71,17 @@ export const useSettingsStore = create<SettingsStore>()(
       setChadEnabled: (enabled) => set({ chadEnabled: enabled }),
       setDefaultGraderModelId: (modelId) => set({ defaultGraderModelId: modelId }),
       setDefaultN: (n) => set({ defaultN: n }),
+      setDefaultEvalExecution: (execution) => set({ defaultEvalExecution: execution }),
       reset: () => set({ ...DEFAULT_SETTINGS })
     }),
     {
       name: SETTINGS_STORAGE_KEY,
-      // `chadEnabled` was added without a version bump: zustand's default
-      // `merge` is `{ ...currentState, ...persistedState }`, so a v1 payload
-      // that predates this field (and therefore doesn't mention it) simply
-      // falls through to the freshly-created store's default (`true`) rather
-      // than clobbering it with `undefined`. Every other field round-trips
+      // `chadEnabled` (and, since, `defaultEvalExecution`) were added without
+      // a version bump: zustand's default `merge` is
+      // `{ ...currentState, ...persistedState }`, so a payload that predates
+      // one of these fields (and therefore doesn't mention it) simply falls
+      // through to the freshly-created store's default rather than
+      // clobbering it with `undefined`. Every other field round-trips
       // unchanged. A version bump + `migrate` would only be needed if an
       // *existing* field's meaning or shape changed.
       version: 1,
@@ -75,7 +90,8 @@ export const useSettingsStore = create<SettingsStore>()(
         robotEnabled: state.robotEnabled,
         chadEnabled: state.chadEnabled,
         defaultGraderModelId: state.defaultGraderModelId,
-        defaultN: state.defaultN
+        defaultN: state.defaultN,
+        defaultEvalExecution: state.defaultEvalExecution
       })
     }
   )

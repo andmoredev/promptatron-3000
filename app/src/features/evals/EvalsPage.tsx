@@ -15,7 +15,7 @@ import DeterminismLauncher from './DeterminismLauncher'
 import EvalProgress from './EvalProgress'
 import EvalResultView from './EvalResultView'
 import { useEvalStore } from '../../stores'
-import type { EvaluationDetail, EvaluationStatus } from '../../api'
+import type { EvaluationDetail, EvaluationExecution, EvaluationStatus } from '../../api'
 
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Pending',
@@ -33,12 +33,23 @@ const STATUS_CLASSES: Record<string, string> = {
   cancelled: 'bg-gray-200 text-gray-700'
 }
 
+/** Lane badge classes — `local` is quiet grey, `cloud` stands out blue. */
+const EXECUTION_CLASSES: Record<EvaluationExecution, string> = {
+  local: 'bg-gray-100 text-gray-600',
+  cloud: 'bg-sky-100 text-sky-800'
+}
+
 function statusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status
 }
 
 function statusClasses(status: string): string {
   return STATUS_CLASSES[status] ?? 'bg-gray-100 text-gray-700'
+}
+
+/** `EvaluationDetail.execution` is optional on the wire; pre-existing rows are local. */
+function executionOf(row: EvaluationDetail): EvaluationExecution {
+  return row.execution ?? 'local'
 }
 
 function isCancellable(status: EvaluationStatus | string): boolean {
@@ -66,10 +77,14 @@ export default function EvalsPage() {
   const cancelEvaluation = useEvalStore((state) => state.cancelEvaluation)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [cloudFilter, setCloudFilter] = useState(false)
 
   useEffect(() => {
-    void loadEvaluations()
-  }, [loadEvaluations])
+    void loadEvaluations(cloudFilter ? { execution: 'cloud' } : {})
+    // Switching the filter drops the previous selection: a cursor (and the
+    // rows it paged in) is only valid for the filter set it was issued under.
+    setSelectedId(null)
+  }, [cloudFilter, loadEvaluations])
 
   function handleSelectRow(row: EvaluationDetail) {
     setSelectedId(row.id)
@@ -126,9 +141,21 @@ export default function EvalsPage() {
       </div>
 
       <section className="card" aria-labelledby="eval-list-heading">
-        <h2 id="eval-list-heading" className="text-base font-semibold text-gray-900 mb-3">
-          Past evaluations
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <h2 id="eval-list-heading" className="text-base font-semibold text-gray-900">
+            Past evaluations
+          </h2>
+          <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              data-testid="eval-cloud-filter"
+              className="h-4 w-4 rounded border-gray-300 text-primary-600"
+              checked={cloudFilter}
+              onChange={(event) => setCloudFilter(event.target.checked)}
+            />
+            Cloud
+          </label>
+        </div>
 
         {listLoading && evaluations.length === 0 && (
           <p className="text-sm text-gray-500">Loading evaluations…</p>
@@ -167,6 +194,12 @@ export default function EvalsPage() {
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-xs font-medium text-gray-700 uppercase">{row.kind}</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium uppercase ${EXECUTION_CLASSES[executionOf(row)]}`}
+                      data-testid={`eval-lane-${row.id}`}
+                    >
+                      {executionOf(row)}
+                    </span>
                     <span
                       className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusClasses(row.status)}`}
                     >

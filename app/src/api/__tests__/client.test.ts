@@ -49,6 +49,21 @@ describe('api.health / api.models', () => {
     expect(spy.mock.calls[0][1]?.method).toBe('GET')
   })
 
+  it('surfaces cloud_evals.configured from /health', async () => {
+    mockFetch(
+      jsonResponse({
+        status: 'ok',
+        aws: { region: 'us-east-1', credentials: 'ok' },
+        config_store: { configured: true, reachable: true },
+        cloud_evals: { configured: true }
+      })
+    )
+
+    const health = await api.health()
+
+    expect(health.cloud_evals).toEqual({ configured: true })
+  })
+
   it('GETs /models', async () => {
     const spy = mockFetch(jsonResponse({ models: [], cached: true }))
 
@@ -209,6 +224,14 @@ describe('api.runs', () => {
     expect(urlOf(spy)).toBe(
       `${BASE}/runs?model_id=anthropic.claude-3-sonnet&scenario_id=s1&status=completed&cursor=c1&limit=50`
     )
+  })
+
+  it('lists cloud-lane runs with ?execution=cloud', async () => {
+    const spy = mockFetch(jsonResponse({ items: [], next_cursor: null }))
+
+    await api.runs.list({ execution: 'cloud' })
+
+    expect(urlOf(spy)).toBe(`${BASE}/runs?execution=cloud`)
   })
 
   it('gets and deletes a run', async () => {
@@ -396,6 +419,26 @@ describe('api.evaluations', () => {
     expect(failed.error).toEqual({ code: 'throttled' })
     const done = events[5] as EvalCompleteEvent
     expect(done.status).toBe('completed')
+  })
+
+  it('lists cloud-lane evaluations with ?execution=cloud', async () => {
+    const spy = mockFetch(jsonResponse({ items: [], next_cursor: null }))
+
+    await api.evaluations.list({ execution: 'cloud' })
+
+    expect(urlOf(spy)).toBe(`${BASE}/evaluations?execution=cloud`)
+  })
+
+  it('forwards execution:"cloud" on create', async () => {
+    const spy = mockFetch(jsonResponse({ id: 'e1', status: 'pending' }, 202))
+
+    await api.evaluations.create({
+      kind: 'determinism',
+      run_config: { model_id: 'm', user_prompt: 'p' },
+      execution: 'cloud'
+    })
+
+    expect(bodyOf(spy)).toMatchObject({ execution: 'cloud' })
   })
 
   it('surfaces a 409 conflict when cancelling a finished evaluation', async () => {
