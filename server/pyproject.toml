@@ -31,6 +31,7 @@ worker = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=7.1.0",
     "respx>=0.21",
     "ruff>=0.6",
 ]
