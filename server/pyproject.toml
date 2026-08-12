@@ -16,6 +16,17 @@ dependencies = [
     "aiosqlite>=0.20",
 ]
 
+# The cloud evaluation lane's AgentCore worker (server/promptatron/worker/).
+# Deliberately an extra rather than a base dependency: the SDK drags in
+# OpenTelemetry + MCP + its own uvicorn pin, and only the deployment artifact
+# needs it. `promptatron.worker.agentcore_app` imports cleanly without it, so
+# the test suite exercises the worker without every developer paying for the
+# SDK. Installed by scripts/package-eval-worker.sh into the artifact.
+[project.optional-dependencies]
+worker = [
+    "bedrock-agentcore>=1.0",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

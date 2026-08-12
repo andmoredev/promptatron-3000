@@ -60,6 +60,7 @@ __all__ = [
     "SESSION_ID_MIN_LENGTH",
     "load_seam",
     "normalize_outcome",
+    "parse_request",
     "run_evaluation",
     "session_id_for",
     "validate_payload",
@@ -104,19 +105,29 @@ class EvalEngineUnavailable(RuntimeError):
 
 @runtime_checkable
 class RunStore(Protocol):
-    """Where the engine persists individual run records.
+    """The store surface the engine requires.
 
-    The local lane's implementation writes SQLite rows; the cloud lane's
-    (:class:`promptatron.worker.ddb.DynamoEvalStore`) writes ``RUN#`` items.
-    Both speak plain dicts keyed by the ``runs`` table's column names.
+    Structurally identical to ``promptatron.evals.engine.EvalStore``, restated
+    here so the worker can be type-checked and tested without importing the
+    engine (see :func:`load_seam` for why that import stays late). The cloud
+    lane's implementation is
+    :class:`promptatron.worker.ddb.DynamoEvalStore`; the local lane's is
+    ``SqliteEvalStore``.
     """
 
-    def save_run(self, run: dict[str, Any]) -> None:
-        """Persist one finished run. Called before its ``run_completed`` event."""
+    #: The evaluation every ``save_evaluation`` call targets.
+    evaluation_id: str
+
+    def save_evaluation(self, **fields: Any) -> None:
+        """Partially update the evaluation record (``status``, ``result``, ...)."""
         ...
 
-    def get_run(self, run_id: str) -> dict[str, Any] | None:
-        """Load a previously stored run, or ``None`` if it is gone."""
+    def load_run(self, run_id: str) -> Any:
+        """Read a run record back. Raises ``NotFoundError`` if it is gone."""
+        ...
+
+    def save_run(self, run_id: str) -> None:
+        """Publish a just-finished run, before its ``run_completed`` event."""
         ...
 
 
@@ -250,6 +261,25 @@ def normalize_outcome(returned: Any) -> EvalOutcome:
     }
 
 
+def parse_request(request: dict[str, Any]) -> Any:
+    """Turn the payload's ``request`` object into an ``EvaluationRequest``.
+
+    The engine's seam takes the validated pydantic model, not a dict — the
+    worker receives JSON off the wire, so somebody has to bridge the two, and
+    doing it here means the worker never duplicates (or drifts from) the eval
+    schema. Imported lazily for the same reason as :func:`load_seam`.
+
+    Raises:
+        InvalidPayload: if the body is not a valid ``EvaluationRequest``.
+    """
+    from promptatron.evals.schemas import EvaluationRequest
+
+    try:
+        return EvaluationRequest.model_validate(request)
+    except Exception as exc:
+        raise InvalidPayload(f"request is not a valid EvaluationRequest: {exc}") from exc
+
+
 async def run_evaluation(
     request: dict[str, Any],
     emit: Emit,
@@ -258,11 +288,14 @@ async def run_evaluation(
 ) -> EvalOutcome:
     """Execute one evaluation through the engine seam.
 
-    Awaits the seam if it is a coroutine function, so the engine is free to be
-    either — the worker's background task is async regardless.
+    ``request`` arrives as a plain dict and is validated into an
+    ``EvaluationRequest`` on the way in. The seam is awaited if it is a
+    coroutine function, so the engine is free to be either — the worker's
+    background task is async regardless.
     """
     seam = load_seam()
-    returned = seam(request=request, emit=emit, store=store, cancelled=cancelled)
+    parsed = parse_request(request)
+    returned = seam(parsed, emit, store, cancelled)
     if inspect.isawaitable(returned):
         returned = await returned
     return normalize_outcome(returned)

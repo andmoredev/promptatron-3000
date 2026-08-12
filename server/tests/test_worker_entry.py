@@ -13,10 +13,10 @@ import asyncio
 import json
 
 import pytest
-from tests.fake_dynamodb import FakeDynamoDBClient
 
 from promptatron.worker import agentcore_app, interfaces
 from promptatron.worker.ddb import DynamoEvalStore
+from tests.fake_dynamodb import FakeDynamoDBClient
 
 TABLE = "promptatron-config-ScenariosTable-TEST"
 EVAL_ID = "0123456789abcdef0123456789abcdef"
@@ -184,14 +184,14 @@ async def test_dispatch_writes_pending_then_running_before_acking(client, store_
 
 async def test_background_task_is_strongly_referenced(client, store_factory):
     """``asyncio`` only weakly references running tasks; a lost one dies silently."""
-    started = asyncio.Event()
+    store = store_factory(EVAL_ID)
+    store.begin(REQUEST)
 
     async def job(evaluation_id, request, store):
-        started.set()
         await asyncio.sleep(0)
         store.complete("completed", result={})
 
-    task = agentcore_app._spawn(job(EVAL_ID, REQUEST, store_factory(EVAL_ID)))
+    task = agentcore_app._spawn(job(EVAL_ID, REQUEST, store))
     assert task in agentcore_app._BACKGROUND_TASKS
     await task
     assert task not in agentcore_app._BACKGROUND_TASKS
@@ -207,12 +207,16 @@ async def test_execute_drives_the_engine_and_writes_the_terminal_state(
 ):
     result = {"grade": "A", "score": 0.95, "run_ids": ["run-1"]}
 
-    async def fake_seam(*, request, emit, store, cancelled):
-        assert request == REQUEST
+    async def fake_seam(request, emit, store, cancelled=None, **_kwargs):
+        # The seam receives the validated model, not the raw dict.
+        assert request.kind == "determinism"
         assert cancelled() is False
         emit({"type": "eval_start", "evaluation_id": EVAL_ID, "kind": "determinism", "n": 2})
-        store.save_run({"id": "run-1", "status": "completed"})
+        store.put_run({"id": "run-1", "status": "completed"})
         emit({"type": "run_completed", "index": 0, "run_id": "run-1", "status": "completed"})
+        # The engine settles the row, then publishes -- the store reorders the
+        # two writes so the terminal status never lands first.
+        store.save_evaluation(status="completed", result=result, error=None)
         emit({"type": "eval_complete", "status": "completed", "result": result})
         return {"status": "completed", "result": result, "error": None, "run_ids": ["run-1"]}
 
@@ -240,7 +244,7 @@ async def test_execute_drives_the_engine_and_writes_the_terminal_state(
 async def test_execute_short_circuits_when_cancelled_before_it_starts(
     monkeypatch, client, store_factory
 ):
-    async def never_called(**_kwargs):  # pragma: no cover - must not run
+    async def never_called(*_args, **_kwargs):  # pragma: no cover - must not run
         raise AssertionError("engine ran despite a pending cancel")
 
     monkeypatch.setattr(interfaces, "load_seam", lambda: never_called)
@@ -259,7 +263,7 @@ async def test_execute_records_an_engine_crash_as_a_terminal_error(
 ):
     """A detached task that raises would otherwise leave the eval at ``running``."""
 
-    async def exploding(**_kwargs):
+    async def exploding(*_args, **_kwargs):
         raise ValueError("judge exploded")
 
     monkeypatch.setattr(interfaces, "load_seam", lambda: exploding)
@@ -294,10 +298,10 @@ async def test_execute_reports_a_missing_engine_seam(monkeypatch, client, store_
 async def test_execute_survives_a_dynamodb_failure_on_the_terminal_write(
     monkeypatch, client, store_factory
 ):
-    async def exploding(**_kwargs):
+    async def exploding(*_args, **_kwargs):
         raise ValueError("boom")
 
-    monkeypatch.setattr(interfaces, "load_seam", exploding)
+    monkeypatch.setattr(interfaces, "load_seam", lambda: exploding)
 
     store = store_factory(EVAL_ID)
     store.begin(REQUEST)

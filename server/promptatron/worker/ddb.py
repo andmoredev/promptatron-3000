@@ -101,6 +101,16 @@ _TERMINAL_STATUSES = frozenset({"completed", "error", "cancelled"})
 #: table's TEXT-holding-JSON columns exactly (see ``promptatron.store.models``).
 _RUN_JSON_FIELDS = ("config", "tool_transcript", "metrics", "guardrail_trace", "error")
 
+#: Meta fields that are JSON-encoded on the way in, matching the SQLite
+#: ``evaluations`` table. ``progress`` is not in the contract's table but is a
+#: SQLite column the engine writes mid-flight; carrying it costs nothing and
+#: keeps the two lanes' rows comparable.
+_META_JSON_FIELDS = frozenset({"result", "error", "progress", "run_ids"})
+
+#: DynamoDB reserved words among the meta attribute names, which have to be
+#: aliased in an UpdateExpression.
+_RESERVED_META_WORDS = frozenset({"status", "result", "error", "config", "ts"})
+
 #: Run fields stored as plain strings.
 _RUN_TEXT_FIELDS = (
     "id",
@@ -163,6 +173,21 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _meta_attribute(field: str, value: Any) -> dict[str, Any]:
+    """Encode one evaluation-meta field the way the contract declares it.
+
+    ``run_ids`` is a JSON *string* rather than a native DynamoDB list, matching
+    the SQLite ``evaluations.run_ids`` TEXT column and the rest of the row's
+    JSON-as-string convention. The reader decodes it with the same
+    ``json.loads`` it uses for ``config`` and ``result``.
+    """
+    if field == "run_ids":
+        return {"S": json.dumps(list(value or []), default=str)}
+    if field in _META_JSON_FIELDS:
+        return _json(value)
+    return _text(value)
+
+
 def unwrap(item: dict[str, Any]) -> dict[str, Any]:
     """Deserialize a raw DynamoDB item into plain Python values.
 
@@ -170,6 +195,43 @@ def unwrap(item: dict[str, Any]) -> dict[str, Any]:
     ``get_run``.
     """
     return {key: _deserializer.deserialize(value) for key, value in item.items()}
+
+
+def _to_run_record(record: dict[str, Any]) -> Any:
+    """Build a ``history.RunRecord`` from a plain run dict.
+
+    The engine's :class:`~promptatron.evals.engine.EvalStore` protocol hands
+    back the same dataclass in both lanes, so the outcome-building code does not
+    branch on where the run came from.
+    """
+    from promptatron.store import history
+
+    ts = record.get("ts")
+    if isinstance(ts, str):
+        try:
+            ts = datetime.fromisoformat(ts)
+        except ValueError:
+            ts = datetime.now(UTC)
+    elif not isinstance(ts, datetime):
+        ts = datetime.now(UTC)
+
+    return history.RunRecord(
+        id=str(record.get("id", "")),
+        ts=ts,
+        model_id=str(record.get("model_id") or ""),
+        scenario_id=record.get("scenario_id"),
+        system_prompt=record.get("system_prompt") or "",
+        user_prompt=record.get("user_prompt") or "",
+        dataset_id=record.get("dataset_id"),
+        dataset_hash=record.get("dataset_hash"),
+        config=record.get("config") or {},
+        output=record.get("output"),
+        tool_transcript=record.get("tool_transcript"),
+        metrics=record.get("metrics"),
+        guardrail_trace=record.get("guardrail_trace"),
+        status=str(record.get("status") or "completed"),
+        error=record.get("error"),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -219,6 +281,8 @@ class DynamoEvalStore:
         self._saved_runs: list[str] = []
         self._emitted_complete = False
         self._terminal = False
+        self._pending_terminal: dict[str, Any] | None = None
+        self._finalizing = False
         self._cancelled = False
         self._ts = _now_iso()
 
@@ -318,6 +382,42 @@ class DynamoEvalStore:
                 return
             raise
 
+    def save_evaluation(self, **fields: Any) -> None:
+        """Partially update the evaluation record (the :class:`EvalStore` hook).
+
+        Called by ``promptatron.evals.engine.execute_evaluation_with_seam``
+        exactly as the local lane's ``SqliteEvalStore`` is — the engine does not
+        know which lane it is running in.
+
+        **Terminal updates are buffered, not written.** The engine settles the
+        row and *then* publishes ``eval_complete``:
+
+        .. code-block:: python
+
+            seam.store.save_evaluation(status=status, result=result, error=error)
+            seam.publish(EvalCompleteEvent(status=status, result=result))
+
+        Writing the terminal status straight through would open exactly the race
+        the contract's reader rules cannot tolerate: a reader that stops polling
+        on terminal status could cut the NDJSON stream before ``eval_complete``
+        was appended. So a terminal ``save_evaluation`` is held here and flushed
+        by :meth:`emit` the moment ``eval_complete`` lands (or by
+        :meth:`finalize` if it never does). That reorders the two writes without
+        the engine having to know about DynamoDB's read semantics.
+        """
+        if self._terminal:
+            raise RuntimeError(f"eval {self.evaluation_id} is already terminal")
+
+        status = fields.get("status")
+        if status in _TERMINAL_STATUSES:
+            self._pending_terminal = dict(fields)
+            return
+
+        if status is not None and status not in {"pending", "running"}:
+            raise ValueError(f"unknown evaluation status {status!r}")
+        if fields:
+            self._write_meta_fields(fields)
+
     def complete(
         self,
         status: str,
@@ -326,24 +426,44 @@ class DynamoEvalStore:
         error: dict[str, Any] | None = None,
         run_ids: list[str] | None = None,
     ) -> None:
-        """Write the terminal state, appending ``eval_complete`` first if needed.
+        """Settle the evaluation terminally, right now.
 
-        The single ``UpdateItem`` is what makes "terminal status only after
-        result/error and all run items" true by construction: there is no
-        intermediate item version in which ``status`` is terminal and ``result``
-        is not yet set.
+        The worker's own path to a terminal state, for the cases the engine
+        never reaches: a cancel observed before execution started, an engine
+        crash, a missing seam. Equivalent to a terminal
+        :meth:`save_evaluation` followed by :meth:`finalize`.
         """
         if status not in _TERMINAL_STATUSES:
             raise ValueError(f"{status!r} is not a terminal status {sorted(_TERMINAL_STATUSES)}")
-        if self._terminal:
-            raise RuntimeError(f"eval {self.evaluation_id} is already terminal")
+        self.save_evaluation(status=status, result=result, error=error, run_ids=run_ids)
+        self.finalize()
+
+    def finalize(self) -> bool:
+        """Flush a buffered terminal update, synthesizing ``eval_complete`` if needed.
+
+        Returns whether anything was written. Idempotent and safe to call on
+        every path — the worker calls it after the engine returns, which covers
+        an engine that settled the row but died before publishing.
+        """
+        if self._terminal or self._finalizing or self._pending_terminal is None:
+            return False
+
+        # Guard against re-entry: the synthesized eval_complete below goes
+        # through `emit`, which flushes a pending terminal update itself.
+        self._finalizing = True
+
+        pending = self._pending_terminal
+        status = pending["status"]
+        result = pending.get("result")
+        error = pending.get("error")
 
         if not self._emitted_complete:
-            # The engine did not emit its own eval_complete (it crashed, or was
-            # never reached). The reader's stream ends on this line, so one must
-            # exist -- and it must land before the status flip.
+            # The engine never published its own eval_complete. The reader's
+            # stream ends on this line, so one has to exist -- and it has to
+            # land before the status flip, not after.
             self.emit({"type": "eval_complete", "status": status, "result": result})
 
+        run_ids = pending.get("run_ids")
         effective_run_ids = self._saved_runs if run_ids is None else [str(r) for r in run_ids]
 
         self.client.update_item(
@@ -366,7 +486,35 @@ class DynamoEvalStore:
                 ":seq_count": _av(self._seq),
             },
         )
+        self._pending_terminal = None
+        self._finalizing = False
         self._terminal = True
+        return True
+
+    def _write_meta_fields(self, fields: dict[str, Any]) -> None:
+        """Write a non-terminal partial update to the meta item."""
+        assignments: list[str] = []
+        names: dict[str, str] = {}
+        values: dict[str, Any] = {}
+        for index, (field, value) in enumerate(fields.items()):
+            placeholder = f":v{index}"
+            if field in _RESERVED_META_WORDS:
+                alias = f"#n{index}"
+                names[alias] = field
+                assignments.append(f"{alias} = {placeholder}")
+            else:
+                assignments.append(f"{field} = {placeholder}")
+            values[placeholder] = _meta_attribute(field, value)
+
+        kwargs: dict[str, Any] = {
+            "TableName": self.table_name,
+            "Key": self._meta_key(),
+            "UpdateExpression": "SET " + ", ".join(assignments),
+            "ExpressionAttributeValues": values,
+        }
+        if names:
+            kwargs["ExpressionAttributeNames"] = names
+        self.client.update_item(**kwargs)
 
     # -- events ------------------------------------------------------------ #
 
@@ -416,11 +564,84 @@ class DynamoEvalStore:
                 seq,
                 exc_info=True,
             )
+
+        if self._emitted_complete and self._pending_terminal is not None:
+            # The engine settled the row before publishing this event; now that
+            # the last line is durable, the status may safely go terminal.
+            self.finalize()
         return seq
 
     # -- runs -------------------------------------------------------------- #
 
-    def save_run(self, run: dict[str, Any]) -> None:
+    def save_run(self, run_id: str) -> None:
+        """Publish a just-finished run (the :class:`EvalStore` hook).
+
+        The engine executes runs through the ordinary run engine, which writes
+        each row to the process-local SQLite database — inside AgentCore that is
+        the microVM's own ephemeral disk, invisible to anyone else. This copies
+        the row to DynamoDB, which is what makes it durable and readable from
+        another machine.
+
+        Called before the run's ``run_completed`` event, per the contract.
+        A run that is not in SQLite came from DynamoDB in the first place
+        (``kind="grade"`` over an earlier cloud evaluation's runs), so there is
+        nothing to mirror.
+        """
+        record = self._load_local_run(str(run_id))
+        if record is None:
+            logger.debug("run %s is not in the local store; nothing to mirror", run_id)
+            return
+        self.put_run(record)
+
+    def load_run(self, run_id: str) -> Any:
+        """Read a run back as a ``history.RunRecord`` (the :class:`EvalStore` hook).
+
+        Local SQLite first, then the DynamoDB item — the same precedence
+        ``GET /runs/{id}`` uses. Determinism runs are found locally (this process
+        just executed them); ``kind="grade"`` inputs from an earlier cloud
+        evaluation are found in DynamoDB.
+
+        Raises:
+            NotFoundError: if the run is in neither store.
+        """
+        from promptatron.errors import NotFoundError
+
+        run_id = str(run_id)
+        record = self._load_local_run(run_id)
+        if record is not None:
+            return _to_run_record(record)
+
+        stored = self.get_run(run_id)
+        if stored is None:
+            raise NotFoundError("Run not found", detail={"run_id": run_id})
+        return _to_run_record(stored)
+
+    @staticmethod
+    def _load_local_run(run_id: str) -> dict[str, Any] | None:
+        """The run's row from the process-local SQLite store, if it has one.
+
+        Imported lazily: the worker's module-import path should not construct a
+        SQLModel engine, and a runtime that only ever grades DynamoDB-resident
+        runs never touches SQLite at all.
+        """
+        from dataclasses import asdict
+
+        from sqlmodel import Session
+
+        from promptatron.errors import NotFoundError
+        from promptatron.store import history
+        from promptatron.store.db import get_engine
+
+        try:
+            with Session(get_engine()) as session:
+                return asdict(history.get_run(session, run_id))
+        except NotFoundError:
+            return None
+        except Exception:  # noqa: BLE001 - a missing local DB is not fatal
+            logger.warning("run %s: local store lookup failed", run_id, exc_info=True)
+            return None
+
+    def put_run(self, run: dict[str, Any]) -> None:
         """Persist one run record as ``RUN#{run_id}/META``.
 
         Mirrors the SQLite ``runs`` row field-for-field (JSON columns as JSON

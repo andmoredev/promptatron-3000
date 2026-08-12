@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 
 import pytest
-from tests.fake_dynamodb import FakeDynamoDBClient
 
 from promptatron.worker.ddb import (
     CANCEL_SK,
@@ -25,6 +24,7 @@ from promptatron.worker.ddb import (
     event_sk,
     unwrap,
 )
+from tests.fake_dynamodb import FakeDynamoDBClient
 
 TABLE = "promptatron-config-ScenariosTable-TEST"
 EVAL_ID = "0123456789abcdef0123456789abcdef"
@@ -84,7 +84,7 @@ def test_begin_writes_pending_meta_with_gsi1_and_ttl(store, client):
 def test_every_item_carries_a_ninety_day_ttl(store, client):
     store.begin(REQUEST)
     store.emit({"type": "eval_start", "evaluation_id": EVAL_ID, "kind": "determinism", "n": 3})
-    store.save_run({"id": "run-1", "status": "completed"})
+    store.put_run({"id": "run-1", "status": "completed"})
     store.request_cancel()
 
     expected = int(FIXED_NOW) + TTL_DAYS * 24 * 60 * 60
@@ -137,6 +137,91 @@ def test_complete_rejects_a_non_terminal_status(store):
         store.complete("running")
 
 
+# --------------------------------------------------------------------------- #
+# save_evaluation -- the EvalStore hook the engine drives
+# --------------------------------------------------------------------------- #
+
+
+def test_save_evaluation_writes_non_terminal_fields_immediately(store, client):
+    store.begin(REQUEST)
+    store.save_evaluation(status="running")
+    assert meta(client)["status"] == {"S": "running"}
+
+    store.save_evaluation(
+        run_ids=["run-1", "run-2"],
+        progress={"completed": 2, "failed": 0, "total": 3},
+    )
+    item = meta(client)
+    assert json.loads(item["run_ids"]["S"]) == ["run-1", "run-2"]
+    assert json.loads(item["progress"]["S"]) == {"completed": 2, "failed": 0, "total": 3}
+    # Still mid-flight.
+    assert item["status"] == {"S": "running"}
+
+
+def test_save_evaluation_rejects_an_unknown_status(store):
+    store.begin(REQUEST)
+    with pytest.raises(ValueError, match="unknown evaluation status"):
+        store.save_evaluation(status="halfway")
+
+
+def test_a_terminal_save_evaluation_is_buffered_until_eval_complete_lands(store, client):
+    """The engine settles the row *then* publishes; the store reorders the two.
+
+    Written straight through, the terminal status would become visible before
+    the ``eval_complete`` line existed -- and a reader that stops polling on
+    terminal status would truncate the stream.
+    """
+    store.begin(REQUEST)
+    result = {"grade": "A", "run_ids": ["run-1"]}
+
+    store.save_evaluation(status="completed", result=result, error=None)
+
+    # Nothing terminal is visible yet.
+    assert meta(client)["status"] == {"S": "pending"}
+
+    store.emit({"type": "eval_complete", "status": "completed", "result": result})
+
+    item = meta(client)
+    assert item["status"] == {"S": "completed"}
+    assert json.loads(item["result"]["S"]) == result
+    events = client.items_with_prefix(f"EVAL#{EVAL_ID}", "EVENT#")
+    assert json.loads(events[-1]["event"]["S"])["type"] == "eval_complete"
+
+
+def test_finalize_settles_an_engine_that_never_published(store, client):
+    """An engine that saved the row and then died still terminates the stream."""
+    store.begin(REQUEST)
+    store.save_evaluation(status="error", error={"code": "internal_error", "message": "boom"})
+
+    assert store.finalize() is True
+
+    item = meta(client)
+    assert item["status"] == {"S": "error"}
+    assert json.loads(item["error"]["S"])["code"] == "internal_error"
+    assert json.loads(
+        client.items_with_prefix(f"EVAL#{EVAL_ID}", "EVENT#")[-1]["event"]["S"]
+    )["type"] == "eval_complete"
+
+
+def test_finalize_is_a_no_op_with_nothing_buffered(store):
+    store.begin(REQUEST)
+    assert store.finalize() is False
+
+
+def test_finalize_is_idempotent(store, client):
+    store.begin(REQUEST)
+    store.save_evaluation(status="completed", result={"grade": "A"})
+    assert store.finalize() is True
+    assert store.finalize() is False
+
+
+def test_save_evaluation_after_terminal_is_refused(store):
+    store.begin(REQUEST)
+    store.complete("completed", result={})
+    with pytest.raises(RuntimeError, match="already terminal"):
+        store.save_evaluation(status="running")
+
+
 def test_complete_is_a_single_write_so_terminal_status_never_precedes_the_result(store, client):
     """The contract's core reader guarantee, enforced by atomicity.
 
@@ -145,7 +230,7 @@ def test_complete_is_a_single_write_so_terminal_status_never_precedes_the_result
     """
     store.begin(REQUEST)
     store.mark_running()
-    store.save_run({"id": "run-a", "status": "completed"})
+    store.put_run({"id": "run-a", "status": "completed"})
     client.calls.clear()
 
     result = {"grade": "A", "score": 0.9, "run_ids": ["run-a"]}
@@ -170,8 +255,8 @@ def test_complete_is_a_single_write_so_terminal_status_never_precedes_the_result
 
 def test_complete_defaults_run_ids_to_the_runs_actually_saved(store, client):
     store.begin(REQUEST)
-    store.save_run({"id": "run-1", "status": "completed"})
-    store.save_run({"id": "run-2", "status": "completed"})
+    store.put_run({"id": "run-1", "status": "completed"})
+    store.put_run({"id": "run-2", "status": "completed"})
     store.complete("completed", result={"grade": "A"})
 
     assert json.loads(meta(client)["run_ids"]["S"]) == ["run-1", "run-2"]
@@ -313,7 +398,7 @@ RUN = {
 
 
 def test_run_item_matches_the_contract_field_for_field(store, client):
-    store.save_run(RUN)
+    store.put_run(RUN)
 
     item = client.item("RUN#run-abc", "META")
     assert item is not None
@@ -347,7 +432,7 @@ def test_run_item_matches_the_contract_field_for_field(store, client):
 
 
 def test_run_item_declares_every_contract_field(store, client):
-    store.save_run({"id": "run-min", "status": "running"})
+    store.put_run({"id": "run-min", "status": "running"})
 
     item = client.item("RUN#run-min", "META")
     expected = {
@@ -358,13 +443,74 @@ def test_run_item_declares_every_contract_field(store, client):
     assert expected <= set(item)
 
 
-def test_save_run_requires_an_id(store):
+def test_put_run_requires_an_id(store):
     with pytest.raises(ValueError, match="no id"):
-        store.save_run({"status": "completed"})
+        store.put_run({"status": "completed"})
+
+
+def test_save_run_mirrors_the_local_sqlite_row_into_dynamodb(store, client, monkeypatch):
+    """The run engine writes SQLite; only this copy is durable or shareable.
+
+    Inside AgentCore that SQLite file is the microVM's own ephemeral disk, so a
+    run that is never mirrored disappears with the session.
+    """
+    monkeypatch.setattr(
+        type(store), "_load_local_run", staticmethod(lambda run_id: dict(RUN, id=run_id))
+    )
+
+    store.save_run("run-abc")
+
+    item = client.item("RUN#run-abc", "META")
+    assert item is not None
+    assert item["output"] == {"S": "hi there"}
+    assert store.saved_run_ids == ["run-abc"]
+
+
+def test_save_run_ignores_a_run_that_was_never_local(store, client, monkeypatch):
+    """``kind="grade"`` inputs already live in DynamoDB; there is nothing to copy."""
+    monkeypatch.setattr(type(store), "_load_local_run", staticmethod(lambda run_id: None))
+
+    store.save_run("run-elsewhere")
+
+    assert client.item("RUN#run-elsewhere", "META") is None
+    assert store.saved_run_ids == []
+
+
+def test_load_run_prefers_the_local_row(store, monkeypatch):
+    monkeypatch.setattr(
+        type(store), "_load_local_run", staticmethod(lambda run_id: dict(RUN, id=run_id))
+    )
+
+    record = store.load_run("run-abc")
+
+    assert record.id == "run-abc"
+    assert record.output == "hi there"
+    assert record.config == RUN["config"]
+
+
+def test_load_run_falls_back_to_dynamodb(store, monkeypatch):
+    """The same SQLite-then-DynamoDB precedence ``GET /runs/{id}`` uses."""
+    store.put_run(RUN)
+    monkeypatch.setattr(type(store), "_load_local_run", staticmethod(lambda run_id: None))
+
+    record = store.load_run("run-abc")
+
+    assert record.id == "run-abc"
+    assert record.metrics == {"latency_ms": 1200}
+    assert record.ts.isoformat() == RUN["ts"]
+
+
+def test_load_run_raises_when_the_run_is_in_neither_store(store, monkeypatch):
+    from promptatron.errors import NotFoundError
+
+    monkeypatch.setattr(type(store), "_load_local_run", staticmethod(lambda run_id: None))
+
+    with pytest.raises(NotFoundError):
+        store.load_run("ghost")
 
 
 def test_get_run_round_trips_json_columns(store):
-    store.save_run(RUN)
+    store.put_run(RUN)
     loaded = store.get_run("run-abc")
 
     assert loaded is not None
@@ -380,7 +526,7 @@ def test_get_run_returns_none_when_missing(store):
 
 
 def test_unwrap_decodes_attribute_values(store, client):
-    store.save_run(RUN)
+    store.put_run(RUN)
     record = unwrap(client.item("RUN#run-abc", "META"))
     assert record["id"] == "run-abc"
     assert record["evaluation_id"] == EVAL_ID

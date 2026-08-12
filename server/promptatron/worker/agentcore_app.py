@@ -119,16 +119,22 @@ async def execute(
 
         outcome = await interfaces.run_evaluation(
             request,
-            emit=store.emit,
-            store=store,
-            cancelled=store.cancel_requested,
+            store.emit,
+            store,
+            store.cancel_requested,
         )
-        store.complete(
-            outcome["status"],
-            result=outcome["result"],
-            error=outcome["error"],
-            run_ids=outcome["run_ids"],
-        )
+        # The engine settles the row itself (`save_evaluation(status=...)`), which
+        # the store buffers until `eval_complete` is durable; `finalize` flushes
+        # it. A `False` return means the engine returned without settling at all,
+        # so the worker settles from the outcome instead -- either way the
+        # evaluation ends terminal and the reader stops polling.
+        if not store.finalize():
+            store.complete(
+                outcome["status"],
+                result=outcome["result"],
+                error=outcome["error"],
+                run_ids=outcome["run_ids"],
+            )
         logger.info("eval %s finished: %s", evaluation_id, outcome["status"])
 
     except asyncio.CancelledError:
@@ -136,6 +142,10 @@ async def execute(
         # awaiting anything -- a suspension point here re-raises immediately.
         _finalize_quietly(store, "cancelled", None)
         raise
+
+    except interfaces.InvalidPayload as exc:
+        logger.error("eval %s: unusable request body: %s", evaluation_id, exc)
+        _finalize_quietly(store, "error", {"code": "invalid_request", "message": str(exc)})
 
     except interfaces.EvalEngineUnavailable as exc:
         logger.error("eval %s: evaluation engine unavailable: %s", evaluation_id, exc)
@@ -162,7 +172,8 @@ def _finalize_quietly(
     rather than allowed to mask the original failure.
     """
     try:
-        store.complete(status, error=error)
+        if not store.finalize():
+            store.complete(status, error=error)
     except Exception:  # noqa: BLE001
         logger.exception("failed to write terminal state for eval %s", store.evaluation_id)
 

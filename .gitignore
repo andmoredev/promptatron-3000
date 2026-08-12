@@ -48,3 +48,4 @@ data/
 history.json
 templates.json
 dist/
+.build/

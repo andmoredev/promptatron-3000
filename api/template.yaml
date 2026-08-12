@@ -10,6 +10,45 @@ Parameters:
     Default: '*'
     Description: Value used for Access-Control-Allow-Origin. Set to a specific origin in production.
 
+  # --------------------------------------------------------------------------
+  # Cloud evaluation lane (see docs/cloud-evals.md + docs/cloud-evals-infra.md)
+  # --------------------------------------------------------------------------
+  EvalWorkerArtifactKey:
+    Type: String
+    Default: ''
+    Description: >
+      S3 key (within EvalWorkerArtifactBucket) of the eval worker's CodeZip
+      artifact. Empty (the default) means the worker is not deployed and the
+      cloud lane stays unavailable -- the rest of the stack is unaffected.
+
+      The key MUST change whenever the artifact changes: AgentCore reads the zip
+      at create/update time, and CloudFormation only rolls the runtime when a
+      property it can see has changed. A static key means a stale bundle keeps
+      serving forever. `scripts/package-eval-worker.sh` therefore emits a
+      content-hash-versioned key (eval-worker/<sha256>.zip) and `make
+      deploy-worker` passes it through.
+
+      CAUTION: this is a plain parameter with an empty default, so running a
+      bare `sam deploy` (i.e. `make deploy-api`) after the worker exists resets
+      it to '' and DELETES the runtime. Once the worker is deployed, use `make
+      deploy-worker`, which deploys the whole stack including the worker.
+
+  EvalWorkerConfigApiKey:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: >
+      API key the worker presents to this stack's own config store API when an
+      evaluation references a stored scenario/prompt/dataset. CloudFormation
+      cannot read an AWS::ApiGateway::ApiKey's value, so it has to be passed in:
+        aws apigateway get-api-key --api-key <ApiKeyId output> --include-value
+      Leave empty if evaluations only ever use inline prompts.
+
+Conditions:
+  # The worker is opt-in. Everything below is skipped entirely until an artifact
+  # key is supplied, so the config store deploys exactly as it did before.
+  DeployEvalWorker: !Not [!Equals [!Ref EvalWorkerArtifactKey, '']]
+
 Metadata:
   esbuild-properties: &esbuild-properties
     Format: esm
@@ -354,6 +393,160 @@ Resources:
             Method: PUT
 
   # ---------------------------------------------------------------------------
+  # Cloud evaluation lane
+  #
+  # An AgentCore Runtime that executes evaluations out-of-process and persists
+  # job state, progress events, and run records to ScenariosTable above -- the
+  # same table the config store uses, under EVAL#/RUN# partitions. See
+  # docs/cloud-evals.md for the item contract and docs/cloud-evals-infra.md for
+  # the packaging decision and the list of things only a real deploy can prove.
+  #
+  # Inbound auth is IAM (SigV4), not JWT: the only caller is the FastAPI server
+  # holding AWS credentials, and there is no browser socket in this design.
+  # Omitting AuthorizerConfiguration selects IAM -- a runtime is JWT- OR
+  # IAM-authorized, never both.
+  # ---------------------------------------------------------------------------
+
+  # Always created (not conditional) so the first `make deploy-worker` has
+  # somewhere to upload before the runtime exists. Versioned because the
+  # AgentCore runtime holds a reference to a specific key.
+  EvalWorkerArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          # Superseded artifacts are dead weight: each deploy uploads a new
+          # content-hashed key and the runtime only ever reads the current one.
+          - Id: ExpireOldArtifacts
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+
+  EvalWorkerRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Condition: DeployEvalWorker
+    Properties:
+      # AgentRuntimeName is matched against [a-zA-Z][a-zA-Z0-9_]{0,47} -- no
+      # hyphens, so this cannot be derived from ${AWS::StackName}.
+      AgentRuntimeName: promptatron_eval_worker
+      Description: Executes Promptatron evaluations and persists them to DynamoDB
+      AgentRuntimeArtifact:
+        CodeConfiguration:
+          Code:
+            S3:
+              Bucket: !Ref EvalWorkerArtifactBucket
+              Prefix: !Ref EvalWorkerArtifactKey
+          # The zip's root-level entry module. AgentCore executes it; it starts
+          # the bedrock-agentcore SDK's server on :8080 (/invocations + /ping).
+          # See scripts/package-eval-worker.sh, which writes this shim.
+          EntryPoint:
+            - agentcore_app.py
+          # The server package targets 3.12 (server/pyproject.toml
+          # requires-python) and the artifact's wheels are built for it.
+          Runtime: PYTHON_3_12
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      # No AuthorizerConfiguration => IAM (SigV4) inbound auth. The FastAPI
+      # server calls InvokeAgentRuntime with its own AWS credentials.
+      RoleArn: !GetAtt EvalWorkerRole.Arn
+      EnvironmentVariables:
+        # Worker-owned (docs/cloud-evals.md "Configuration").
+        TABLE_NAME: !Ref ScenariosTable
+        # Consumed by promptatron.config.Settings (PROMPTATRON_ prefix), which
+        # evals.engine.default_deps() builds from the environment because the
+        # worker has no FastAPI request to hang dependencies off.
+        PROMPTATRON_AWS_REGION: !Ref AWS::Region
+        # The container filesystem is not a durable or necessarily writable
+        # place; /tmp is. This SQLite file is scratch space for the run engine,
+        # which writes each run there before save_run mirrors it to DynamoDB.
+        PROMPTATRON_DB_PATH: /tmp/promptatron-worker.db
+        PROMPTATRON_CONFIG_API_URL: !Sub https://${Api}.execute-api.${AWS::Region}.${AWS::URLSuffix}/api
+        PROMPTATRON_CONFIG_API_KEY: !Ref EvalWorkerConfigApiKey
+
+  EvalWorkerRole:
+    Type: AWS::IAM::Role
+    Condition: DeployEvalWorker
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*
+      Policies:
+        - PolicyName: EvalWorkerPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              # Read the CodeZip artifact at create/update time.
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub ${EvalWorkerArtifactBucket.Arn}/*
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt EvalWorkerArtifactBucket.Arn
+              # The evaluation itself: the model under test, plus the judge.
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                  - bedrock:Converse
+                  - bedrock:ConverseStream
+                Resource:
+                  - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/*
+                  - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
+              # Guardrail-backed runs evaluate the configured guardrail inline.
+              - Effect: Allow
+                Action: bedrock:ApplyGuardrail
+                Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail/*
+              # Job state: EVAL# meta/events, the CANCEL flag, RUN# records.
+              # No Scan and no Query -- the worker only ever touches items whose
+              # keys it already knows.
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt ScenariosTable.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                  - logs:DescribeLogGroups
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/*
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: '*'
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: bedrock-agentcore
+
+  # ---------------------------------------------------------------------------
   # API key / usage plan
   # ---------------------------------------------------------------------------
 
@@ -400,3 +593,17 @@ Outputs:
   TableName:
     Description: DynamoDB table name (pass to the seeder as --table or $TABLE_NAME)
     Value: !Ref ScenariosTable
+  EvalWorkerArtifactBucket:
+    Description: S3 bucket the eval worker's CodeZip artifact is uploaded to
+    Value: !Ref EvalWorkerArtifactBucket
+  EvalWorkerRuntimeArn:
+    Condition: DeployEvalWorker
+    Description: >
+      AgentCore Runtime ARN for the cloud evaluation lane. Set this as
+      PROMPTATRON_EVAL_RUNTIME_ARN on the FastAPI server (with
+      PROMPTATRON_EVAL_TABLE=TableName) to enable the cloud lane.
+    Value: !GetAtt EvalWorkerRuntime.AgentRuntimeArn
+  EvalWorkerRuntimeId:
+    Condition: DeployEvalWorker
+    Description: AgentCore Runtime id (useful for CLI calls that take an id, not an ARN)
+    Value: !GetAtt EvalWorkerRuntime.AgentRuntimeId

@@ -205,6 +205,25 @@ wheels = [
 ]
 
 [[package]]
+name = "bedrock-agentcore"
+version = "1.21.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "boto3" },
+    { name = "botocore" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+    { name = "urllib3" },
+    { name = "uvicorn" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6c/86/1923fb5c5249768d4bf70ecd145b68f7e5fc8c8ef5de524d05d9744f7a4a/bedrock_agentcore-1.21.0.tar.gz", hash = "sha256:429174e42e2ebd2b82c691862caf0a6f2ad9c3182f1f6c48912570691491b7ce", size = 1106118, upload-time = "2026-08-06T14:47:42.461Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7d/11/e917fd7ef38a612f7f955d6abb47978d860531f24f9b702ea20d1fd28802/bedrock_agentcore-1.21.0-py3-none-any.whl", hash = "sha256:be1ce7440455b994e9c5bbbc6329cce8528512441590240aa1a6f25cadbe1dcf", size = 482831, upload-time = "2026-08-06T14:47:41.006Z" },
+]
+
+[[package]]
 name = "boto3"
 version = "1.43.69"
 source = { registry = "https://pypi.org/simple" }
@@ -1136,6 +1155,11 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"] },
 ]
 
+[package.optional-dependencies]
+worker = [
+    { name = "bedrock-agentcore" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
@@ -1147,6 +1171,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20" },
+    { name = "bedrock-agentcore", marker = "extra == 'worker'", specifier = ">=1.0" },
     { name = "boto3", specifier = ">=1.34" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
@@ -1156,6 +1181,7 @@ requires-dist = [
     { name = "strands-agents-evals", specifier = ">=0.1.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
+provides-extras = ["worker"]
 
 [package.metadata.requires-dev]
 dev = [
