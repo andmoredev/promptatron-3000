@@ -97,6 +97,8 @@ describe('loadScenarios', () => {
     ])
 
     expect(scenariosListMock).toHaveBeenCalledTimes(1)
+    // `limit` is capped at 20 by the config store; the store always asks for a full page.
+    expect(scenariosListMock).toHaveBeenCalledWith({ limit: 20 })
     const state = useScenarioStore.getState()
     expect(state.scenarios).toEqual(listResponse.items)
     expect(state.scenariosLoaded).toBe(true)
@@ -133,6 +135,7 @@ describe('loadScenarios', () => {
       message: 'config store unreachable'
     })
     expect(useScenarioStore.getState().scenariosLoaded).toBe(false)
+    expect(useScenarioStore.getState().scenariosLoading).toBe(false)
 
     scenariosListMock.mockResolvedValueOnce(listResponse)
     await useScenarioStore.getState().loadScenarios()
@@ -201,6 +204,18 @@ describe('loadModels', () => {
 
     expect(useScenarioStore.getState().modelsError).toEqual({ code: 'http_error', message: 'down' })
     expect(useScenarioStore.getState().modelsLoading).toBe(false)
+  })
+
+  it('retries on a later call after a failed fetch, rather than replaying the stale in-flight request', async () => {
+    modelsListMock.mockRejectedValueOnce(new ApiError('down', { code: 'http_error' }))
+    await useScenarioStore.getState().loadModels()
+    expect(modelsListMock).toHaveBeenCalledTimes(1)
+
+    modelsListMock.mockResolvedValueOnce(modelsResponse)
+    await useScenarioStore.getState().loadModels()
+
+    expect(modelsListMock).toHaveBeenCalledTimes(2)
+    expect(useScenarioStore.getState().modelsLoaded).toBe(true)
   })
 })
 
@@ -383,6 +398,26 @@ describe('loadScenario', () => {
     expect(state.detailError.missing).toEqual({ code: 'not_found', message: 'no such scenario' })
     expect(state.detailError.shipping ?? null).toBeNull()
     expect(state.details.shipping).toBe(detail)
+
+    // Starting a fresh load for a *different* scenario must not wipe the
+    // error already recorded for 'missing'.
+    await useScenarioStore.getState().loadScenario('shipping', true)
+    expect(useScenarioStore.getState().detailError.missing).toEqual({
+      code: 'not_found',
+      message: 'no such scenario'
+    })
+  })
+
+  it('retries on a later call after a failed fetch, rather than replaying the stale in-flight request', async () => {
+    scenariosGetMock.mockRejectedValueOnce(new ApiError('boom', { code: 'http_error' }))
+    await useScenarioStore.getState().loadScenario('flaky')
+    expect(scenariosGetMock).toHaveBeenCalledTimes(1)
+
+    scenariosGetMock.mockResolvedValueOnce(detail)
+    const result = await useScenarioStore.getState().loadScenario('flaky')
+
+    expect(scenariosGetMock).toHaveBeenCalledTimes(2)
+    expect(result).toBe(detail)
   })
 
   it('selectScenarioDetail tolerates a null id', () => {

@@ -176,6 +176,22 @@ describe('fixture replay through handleEvent', () => {
     expect(toolEvents[1].inputJson).toBe('{"x":1}')
   })
 
+  it('concatenates onto the correct entry\'s prior inputJson, not the first tool event in the list', () => {
+    const { handleEvent } = useRunStore.getState()
+    handleEvent({ type: 'tool_use_start', tool_use_id: 'a', name: 'first' })
+    handleEvent({ type: 'tool_use_start', tool_use_id: 'b', name: 'second' })
+    // Give the *first* entry ('a') some prior content...
+    handleEvent({ type: 'tool_input_delta', tool_use_id: 'a', json: 'AAA' })
+    // ...then a delta for the *second* entry ('b'), which started empty.
+    handleEvent({ type: 'tool_input_delta', tool_use_id: 'b', json: 'BBB' })
+
+    const toolEvents = useRunStore.getState().toolEvents
+    expect(toolEvents.find((e) => e.tool_use_id === 'a')?.inputJson).toBe('AAA')
+    // If the lookup ignored tool_use_id and grabbed the first entry's stale
+    // inputJson, this would wrongly read 'AAABBB'.
+    expect(toolEvents.find((e) => e.tool_use_id === 'b')?.inputJson).toBe('BBB')
+  })
+
   it('collects messages and the guardrail trace', () => {
     const { handleEvent } = useRunStore.getState()
     handleEvent({ type: 'message', role: 'assistant', content: [{ text: 'hi' }] })
@@ -306,6 +322,7 @@ describe('startRun', () => {
     const state = useRunStore.getState()
     expect(state.status).toBe('cancelled')
     expect(state.error).toBeNull()
+    expect(state.endedAt).not.toBeNull()
     expect(selectRobotMood(state)).toBe('idle')
     // a cancelled run is still persisted server-side
     expect(useHistoryStore.getState().stale).toBe(true)

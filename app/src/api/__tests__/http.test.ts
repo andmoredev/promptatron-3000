@@ -76,14 +76,14 @@ describe('request', () => {
     expect(bodyOf(spy)).toEqual({ model_id: 'm', stream: false })
   })
 
-  it('returns undefined for a 204', async () => {
-    mockFetch(fakeResponse({ status: 204, statusText: 'No Content' }))
+  it('returns undefined for a 204, even if the body is non-empty (a well-behaved server never sends one, but the check must not depend on that)', async () => {
+    mockFetch(fakeResponse({ status: 204, statusText: 'No Content', text: '{"ignored":true}' }))
 
     await expect(http.delete('/runs/r1')).resolves.toBeUndefined()
   })
 
-  it('returns undefined for a 205 too (both no-content statuses)', async () => {
-    mockFetch(fakeResponse({ status: 205, statusText: 'Reset Content' }))
+  it('returns undefined for a 205 too (both no-content statuses), even with a non-empty body', async () => {
+    mockFetch(fakeResponse({ status: 205, statusText: 'Reset Content', text: '{"ignored":true}' }))
 
     await expect(http.delete('/runs/r1')).resolves.toBeUndefined()
   })
@@ -241,6 +241,7 @@ describe('error handling', () => {
     const error = (await http.get('/models').catch(e => e)) as ApiError
 
     expect(error.code).toBe('invalid_response')
+    expect(error.message).toBe('Response body was not valid JSON')
   })
 
   it('falls back to the status text when reading the error body itself throws', async () => {
@@ -272,6 +273,19 @@ describe('error handling', () => {
     expect(error).toBeInstanceOf(ApiError)
     expect(error.code).toBe('network_error')
     expect(error.status).toBe(0)
+  })
+
+  it('falls back to a generic message when fetch rejects with something that is not an Error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject('the network fell over'))
+    )
+
+    const error = (await http.get('/models').catch(e => e)) as ApiError
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.code).toBe('network_error')
+    expect(error.message).toBe('Network request failed')
   })
 
   it('converts an aborted request into StreamAbortedError', async () => {

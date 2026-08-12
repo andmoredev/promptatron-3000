@@ -200,6 +200,16 @@ describe('applyScenarioDefaults', () => {
     expect(state.system_prompt).toBe('You are a terse support agent.')
   })
 
+  it('never clobbers a system prompt the user already typed, while still filling the empty user prompt', () => {
+    useRunConfigStore.getState().setSystemPrompt('my own system prompt')
+    useRunConfigStore.getState().applyScenarioDefaults(scenario)
+
+    const state = useRunConfigStore.getState()
+    expect(state.system_prompt).toBe('my own system prompt')
+    expect(state.system_prompt_id).toBeNull()
+    expect(state.user_prompt).toBe('Where is order B456?')
+  })
+
   it('is pure via scenarioDefaults and tolerates an empty scenario', () => {
     const empty: ScenarioDetail = {
       ...scenario,

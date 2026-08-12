@@ -131,6 +131,7 @@ describe('detail cache', () => {
 
     await useGuardrailStore.getState().loadGuardrail('gr-1', '2')
     expect(getMock).toHaveBeenCalledTimes(2)
+    expect(getMock).toHaveBeenLastCalledWith('gr-1', { version: '2' })
 
     const details = useGuardrailStore.getState().details
     expect(details[guardrailCacheKey('gr-1')]).toBeDefined()
@@ -204,6 +205,7 @@ describe('CRUD', () => {
 
     expect(created).toBeNull()
     expect(useGuardrailStore.getState().guardrails).toEqual([])
+    expect(useGuardrailStore.getState().saving).toBe(false)
     expect(useGuardrailStore.getState().saveError).toEqual({
       code: 'conflict',
       message: 'name already in use'
@@ -238,6 +240,7 @@ describe('CRUD', () => {
     const ok = await useGuardrailStore.getState().removeGuardrail('gr-1', '2')
 
     expect(ok).toBe(true)
+    expect(removeMock).toHaveBeenCalledWith('gr-1', { version: '2' })
     const state = useGuardrailStore.getState()
     // The guardrail row itself and its DRAFT detail survive; only @2 and the
     // versions list entry are gone.
@@ -270,6 +273,7 @@ describe('CRUD', () => {
 
     expect(updated).toBeNull()
     const state = useGuardrailStore.getState()
+    expect(state.saving).toBe(false)
     expect(state.saveError).toEqual({ code: 'validation_error', message: 'bad config' })
     expect(state.details['gr-1']).toBe(detail)
   })
@@ -449,5 +453,72 @@ describe('CRUD cache precision', () => {
 
     expect(useGuardrailStore.getState().versions['gr-1']).toBeUndefined()
     expect(useGuardrailStore.getState().versions['gr-2']).toBeDefined()
+  })
+})
+
+describe('force bypasses every cache', () => {
+  it('loadGuardrails retries on a later call after a failed fetch, rather than replaying the stale in-flight request', async () => {
+    listMock.mockRejectedValueOnce(new ApiError('boom', { code: 'http_error' }))
+    await useGuardrailStore.getState().loadGuardrails()
+    expect(listMock).toHaveBeenCalledTimes(1)
+
+    listMock.mockResolvedValueOnce({ guardrails: [toSummary(detail)] })
+    await useGuardrailStore.getState().loadGuardrails()
+
+    expect(listMock).toHaveBeenCalledTimes(2)
+    expect(useGuardrailStore.getState().loaded).toBe(true)
+  })
+
+  it('loadGuardrails: force re-fetches even when already loaded', async () => {
+    listMock.mockResolvedValue({ guardrails: [toSummary(detail)] })
+    await useGuardrailStore.getState().loadGuardrails()
+    expect(listMock).toHaveBeenCalledTimes(1)
+
+    await useGuardrailStore.getState().loadGuardrails(true)
+    expect(listMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('loadGuardrail: force re-fetches even when the detail is already cached', async () => {
+    getMock.mockResolvedValue(detail)
+    await useGuardrailStore.getState().loadGuardrail('gr-1')
+    expect(getMock).toHaveBeenCalledTimes(1)
+
+    await useGuardrailStore.getState().loadGuardrail('gr-1', undefined, true)
+    expect(getMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('loadVersions: force re-fetches even when versions are already cached', async () => {
+    versionsListMock.mockResolvedValue({ versions: [publishedVersion] })
+    await useGuardrailStore.getState().loadVersions('gr-1')
+    expect(versionsListMock).toHaveBeenCalledTimes(1)
+
+    await useGuardrailStore.getState().loadVersions('gr-1', true)
+    expect(versionsListMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('cache selectivity across multiple guardrails', () => {
+  it("removeGuardrail's whole-guardrail delete only drops the targeted guardrail's row, keeping others", async () => {
+    createMock.mockResolvedValueOnce(detail)
+    await useGuardrailStore.getState().createGuardrail({ name: 'pii-blocker' })
+    createMock.mockResolvedValueOnce({ ...detail, id: 'gr-2' })
+    await useGuardrailStore.getState().createGuardrail({ name: 'other' })
+
+    removeMock.mockResolvedValueOnce(undefined)
+    await useGuardrailStore.getState().removeGuardrail('gr-1')
+
+    expect(useGuardrailStore.getState().guardrails.map((r) => r.id)).toEqual(['gr-2'])
+  })
+
+  it('invalidateGuardrail only drops keys for the targeted guardrail, keeping another guardrail\'s cache', async () => {
+    getMock.mockResolvedValueOnce(detail)
+    await useGuardrailStore.getState().loadGuardrail('gr-1')
+    getMock.mockResolvedValueOnce({ ...detail, id: 'gr-2' })
+    await useGuardrailStore.getState().loadGuardrail('gr-2')
+
+    useGuardrailStore.getState().invalidateGuardrail('gr-1')
+
+    expect(useGuardrailStore.getState().details[guardrailCacheKey('gr-1')]).toBeUndefined()
+    expect(useGuardrailStore.getState().details[guardrailCacheKey('gr-2')]).toBeDefined()
   })
 })

@@ -81,6 +81,7 @@ describe('paging', () => {
     const state = useHistoryStore.getState()
     expect(state.items.map((item) => item.id)).toEqual(['r1', 'r2', 'r3'])
     expect(state.next_cursor).toBeNull()
+    expect(state.loaded).toBe(true)
     expect(selectHasMore(state)).toBe(false)
   })
 
@@ -189,10 +190,33 @@ describe('filters', () => {
 
     await useHistoryStore.getState().setFilters({ model_id: 'm1', scenario_id: 's1', status: 'error' })
     await useHistoryStore.getState().setFilters({ model_id: undefined })
-    expect(useHistoryStore.getState().filters).toEqual({ scenario_id: 's1', status: 'error' })
+    // `toEqual` ignores undefined-valued keys, so assert the key is actually
+    // gone (not merely set to undefined) via `toStrictEqual`/key presence.
+    expect(useHistoryStore.getState().filters).toStrictEqual({ scenario_id: 's1', status: 'error' })
+    expect(useHistoryStore.getState().filters).not.toHaveProperty('model_id')
 
     await useHistoryStore.getState().setFilters({ scenario_id: '' })
-    expect(useHistoryStore.getState().filters).toEqual({ status: 'error' })
+    expect(useHistoryStore.getState().filters).toStrictEqual({ status: 'error' })
+    expect(useHistoryStore.getState().filters).not.toHaveProperty('scenario_id')
+  })
+
+  it('setFilters resets items to empty and loaded to false synchronously, before loadFirstPage resolves', async () => {
+    listMock.mockResolvedValueOnce(page([summary('r1'), summary('r2')], null))
+    await useHistoryStore.getState().loadFirstPage()
+    expect(useHistoryStore.getState().items).toHaveLength(2)
+
+    let resolveList!: (p: ReturnType<typeof page>) => void
+    listMock.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveList = resolve })
+    )
+
+    const pending = useHistoryStore.getState().setFilters({ status: 'error' })
+    // Right after the synchronous reset (before loadFirstPage's fetch settles).
+    expect(useHistoryStore.getState().items).toEqual([])
+    expect(useHistoryStore.getState().loaded).toBe(false)
+
+    resolveList(page([], null))
+    await pending
   })
 
   it('carries filters into loadMore', async () => {
@@ -346,6 +370,35 @@ describe('detail cache and removal', () => {
     const state = useHistoryStore.getState()
     expect(state.items.map((item) => item.id)).toEqual(['r2'])
     expect(state.details.r1).toBeUndefined()
+  })
+
+  it('remove() drops only the targeted run\'s cached detail, keeping another run\'s detail cache', async () => {
+    listMock.mockResolvedValueOnce(page([summary('r1'), summary('r2')], null))
+    getMock.mockImplementation(async (id: string) => ({ ...detail, id }))
+    removeMock.mockResolvedValue(undefined)
+
+    await useHistoryStore.getState().loadFirstPage()
+    await useHistoryStore.getState().getRunDetail('r1')
+    await useHistoryStore.getState().getRunDetail('r2')
+    await useHistoryStore.getState().remove('r1')
+
+    const state = useHistoryStore.getState()
+    expect(state.details.r1).toBeUndefined()
+    expect(state.details.r2).toBeDefined()
+  })
+
+  it('remove() swallows an abort without recording an error, but records a real failure', async () => {
+    listMock.mockResolvedValueOnce(page([summary('r1')], null))
+    await useHistoryStore.getState().loadFirstPage()
+
+    removeMock.mockRejectedValueOnce(new StreamAbortedError())
+    await useHistoryStore.getState().remove('r1')
+    expect(useHistoryStore.getState().error).toBeNull()
+    expect(useHistoryStore.getState().items).toHaveLength(1) // not removed
+
+    removeMock.mockRejectedValueOnce(new ApiError('boom', { code: 'http_error' }))
+    await useHistoryStore.getState().remove('r1')
+    expect(useHistoryStore.getState().error).toEqual({ code: 'http_error', message: 'boom' })
   })
 
   it('keeps the row when the delete fails', async () => {

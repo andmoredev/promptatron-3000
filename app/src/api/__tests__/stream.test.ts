@@ -125,6 +125,23 @@ describe('streamNdjson: chunk boundaries', () => {
 })
 
 describe('streamNdjson: aborting', () => {
+  it('treats an AbortError from the reader itself as a cancellation, even with no signal wired up', async () => {
+    // No `signal` option at all: `signal?.aborted` is always undefined/falsy
+    // here, so this only passes if the `isAbortError(error)` half of the `||`
+    // is what's doing the work.
+    const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' })
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        return Promise.reject(abortError)
+      }
+    })
+    mockFetch(fakeResponse({ status: 200, statusText: 'OK', body }))
+
+    await expect(
+      streamNdjson('/runs', {}, { onEvent: () => undefined })
+    ).rejects.toBeInstanceOf(StreamAbortedError)
+  })
+
   it('rejects with StreamAbortedError and cancels the reader', async () => {
     const source = controlledStream()
     mockFetch(fakeResponse({ status: 200, statusText: 'OK', body: source.stream }))
@@ -175,6 +192,32 @@ describe('streamNdjson: aborting', () => {
     await expect(streamNdjson('/runs', {}, { onEvent: () => undefined })).rejects.toBeInstanceOf(
       StreamAbortedError
     )
+  })
+
+  it('wraps a non-abort fetch failure as a network_error ApiError, using the Error message when there is one', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('Failed to fetch')))
+    )
+
+    const error = await streamNdjson('/runs', {}, { onEvent: () => undefined }).catch((e) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).code).toBe('network_error')
+    expect((error as ApiError).message).toBe('Failed to fetch')
+  })
+
+  it('falls back to a generic message when fetch rejects with something that is not an Error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject('the network fell over'))
+    )
+
+    const error = await streamNdjson('/runs', {}, { onEvent: () => undefined }).catch((e) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).code).toBe('network_error')
+    expect((error as ApiError).message).toBe('Network request failed')
   })
 
   it('registers the abort listener as {once: true} on "abort" and removes it when the stream ends', async () => {

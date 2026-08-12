@@ -233,6 +233,15 @@ describe('progress derivation', () => {
     expect(state.result).toBe(result) // the previously-set result survives
   })
 
+  it('eval_complete with a truthy result sets it directly, even with no prior grading_completed', () => {
+    const patch = reduceEvalEvent(INITIAL_EVAL_STATE, {
+      type: 'eval_complete',
+      status: 'completed',
+      result
+    })
+    expect(patch.result).toBe(result)
+  })
+
   it('reduceEvalEvent leaves status/result untouched for an unrecognized event type', () => {
     const state = { ...INITIAL_EVAL_STATE, status: 'running' as const }
     // @ts-expect-error deliberately an event type reduceEvalEvent doesn't know
@@ -331,6 +340,43 @@ describe('startEvaluation', () => {
 
     expect(useEvalStore.getState().progress.total).toBe(0)
     eventsResolve()
+    await pending
+  })
+
+  it('seeds progress.total as 0 when the created row carries no config object at all', async () => {
+    createMock.mockResolvedValueOnce({ ...createdRow, config: undefined })
+    eventsMock.mockImplementation(() => new Promise<void>(() => {}))
+
+    void useEvalStore.getState().startEvaluation({ kind: 'determinism' })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(useEvalStore.getState().progress.total).toBe(0)
+  })
+
+  it('resets to starting synchronously, preserving the existing list/cursor/listLoaded, before create() resolves', async () => {
+    useEvalStore.setState({
+      evaluations: [{ ...createdRow, id: 'old-1' }],
+      nextCursor: 'cursor-x',
+      listLoaded: true,
+      status: 'idle'
+    })
+    let resolveCreate!: (row: typeof createdRow) => void
+    createMock.mockImplementationOnce(
+      () => new Promise<typeof createdRow>((resolve) => { resolveCreate = resolve })
+    )
+
+    const pending = useEvalStore.getState().startEvaluation({ kind: 'determinism' })
+    await Promise.resolve()
+
+    const mid = useEvalStore.getState()
+    expect(mid.status).toBe('starting')
+    expect(mid.evaluations.map((r) => r.id)).toEqual(['old-1'])
+    expect(mid.nextCursor).toBe('cursor-x')
+    expect(mid.listLoaded).toBe(true)
+
+    eventsMock.mockResolvedValueOnce(undefined)
+    resolveCreate(createdRow)
     await pending
   })
 
@@ -666,6 +712,7 @@ describe('list ops', () => {
     listMock.mockRejectedValueOnce(new ApiError('nope', { code: 'http_error' }))
     await useEvalStore.getState().loadMoreEvaluations()
     expect(useEvalStore.getState().listError).toEqual({ code: 'http_error', message: 'nope' })
+    expect(useEvalStore.getState().listLoading).toBe(false)
   })
 
   it('loadEvaluations sets listLoading:true (clearing a stale listError) synchronously, before the request resolves', async () => {
@@ -716,5 +763,14 @@ describe('list ops', () => {
     // e1 was refreshed, but the *active* evaluation is e2 — untouched.
     expect(state.activeEvaluation?.id).toBe('e2')
     expect(state.activeEvaluation?.status).toBe('pending')
+  })
+
+  it('refreshEvaluation DOES update activeEvaluation when the refreshed row is the active one', async () => {
+    useEvalStore.setState({ activeEvaluationId: 'e1', activeEvaluation: createdRow })
+
+    getMock.mockResolvedValueOnce({ ...createdRow, id: 'e1', status: 'completed' })
+    await useEvalStore.getState().refreshEvaluation('e1')
+
+    expect(useEvalStore.getState().activeEvaluation?.status).toBe('completed')
   })
 })
