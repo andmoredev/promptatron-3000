@@ -108,8 +108,11 @@ export default [
       }
     },
     rules: {
-      // Use typescript-eslint recommended rules (no type-aware rules for speed)
-      ...tseslint.configs.recommended[0].rules,
+      // Full typescript-eslint recommended rule set (no type-aware rules for
+      // speed). The reduce merges every config in the array — including the
+      // eslint-recommended overrides that switch off core rules like no-undef
+      // and no-unused-vars that misfire on TypeScript syntax.
+      ...tseslint.configs.recommended.reduce((acc, c) => ({ ...acc, ...(c.rules ?? {}) }), {}),
 
       // React 17+ / React 19 JSX transform
       'react/react-in-jsx-scope': 'off',

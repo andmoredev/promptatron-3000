@@ -287,8 +287,10 @@ const runs = {
 
 const evaluations = {
   /**
-   * FORWARD-TYPED: `POST /evaluations` -> 202 `EvaluationDetail`. The endpoint
-   * is being added by a concurrent work item; the read endpoints below exist.
+   * `POST /evaluations` -> 202 with the `pending` row. The work then runs in
+   * the background; follow it with `events(id)` and re-read it with `get(id)`.
+   * A `determinism` body needs `run_config`, a `grade` body needs `run_ids` —
+   * either missing is a 400 envelope, and an unknown `run_id` is a 404.
    */
   create: (body: EvaluationRequest, options: CallOptions = {}): Promise<EvaluationDetail> =>
     http.post<EvaluationDetail>('/evaluations', body, { signal: options.signal }),
@@ -312,11 +314,19 @@ const evaluations = {
   get: (evaluationId: string, options: CallOptions = {}): Promise<EvaluationDetail> =>
     http.get<EvaluationDetail>(`/evaluations/${encode(evaluationId)}`, { signal: options.signal }),
 
-  /** FORWARD-TYPED: `GET /evaluations/{id}/events` — NDJSON progress stream. */
+  /**
+   * `GET /evaluations/{id}/events` — NDJSON progress stream. Events are
+   * retained, so a late subscriber replays the log from the beginning; the
+   * stream always ends with `eval_complete`.
+   */
   events: (evaluationId: string, options: StreamOptions<EvalStreamEvent>): Promise<void> =>
     getNdjson<EvalStreamEvent>(`/evaluations/${encode(evaluationId)}/events`, options),
 
-  /** FORWARD-TYPED: `DELETE /evaluations/{id}` — cancel an in-flight evaluation. */
+  /**
+   * `DELETE /evaluations/{id}` — cancel a running evaluation (204). Resolves
+   * only once `cancelled` is persisted. An already-finished evaluation is a
+   * 409 `conflict` (`ApiError.detail.status` carries its final status).
+   */
   cancel: (evaluationId: string, options: CallOptions = {}): Promise<void> =>
     http.delete<void>(`/evaluations/${encode(evaluationId)}`, { signal: options.signal })
 }

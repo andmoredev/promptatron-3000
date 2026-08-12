@@ -360,91 +360,100 @@ export interface EvaluationListParams {
 }
 
 /**
- * FORWARD-TYPED: `POST /api/v1/evaluations` is being added by a concurrent work
- * item; this shape comes from that work item's description, not from code that
- * exists in the tree yet. Re-verify against `routers/runs.py` once it lands.
+ * Which model judges an evaluation, and with what system prompt.
+ * `evals/schemas.py::GraderConfig` — both fields are optional (the server
+ * defaults `model_id` to its own judge model).
  */
 export interface EvaluationGraderConfig {
-  model_id: string
-  system_prompt: string
+  model_id?: string
+  system_prompt?: string | null
 }
 
-/** FORWARD-TYPED: body of `POST /api/v1/evaluations` -> 202 `EvaluationDetail`. */
+/**
+ * Body of `POST /api/v1/evaluations` -> 202 `EvaluationDetail`.
+ * `evals/schemas.py::EvaluationRequest`.
+ *
+ * - `kind: "determinism"` requires `run_config`; it is executed `n` times
+ *   (clamped server-side into `[2, 25]`, default 10) with `stream` forced off.
+ * - `kind: "grade"` requires `run_ids`; already-stored runs are judged as-is.
+ *
+ * Unknown fields are ignored, and a missing requirement is a 400 envelope.
+ */
 export interface EvaluationRequest {
-  kind: string
-  /** The run configuration replayed for each of the `n` runs. */
-  run_config: RunRequest
-  /** Number of runs to execute (determinism-style evaluations). */
+  kind: EvaluationKind
+  /** Required for `determinism`; the run replayed `n` times. */
+  run_config?: RunRequest | null
+  /** Defaults to 10, clamped into `[2, 25]`. */
   n?: number
-  /** Pre-existing runs to evaluate instead of executing new ones. */
+  /** Required for `grade`. */
   run_ids?: string[]
-  rubric?: string
+  rubric?: string | null
   grader?: EvaluationGraderConfig
 }
 
 /* -------------------------------------------------------------------------- */
-/* Evaluation stream events (NDJSON) — FORWARD-TYPED                          */
+/* Evaluation stream events (NDJSON) — evals/events.py                        */
 /* -------------------------------------------------------------------------- */
 
 /**
- * FORWARD-TYPED: `GET /api/v1/evaluations/{id}/events` NDJSON stream. The event
- * `type` literals are fixed by the concurrent work item's description; the
- * per-event payload fields are a best-effort mirror and should be re-checked
- * against the server once that work item lands.
+ * `GET /api/v1/evaluations/{id}/events`.
+ *
+ * Unlike the run stream these events are retained in the job's event log: a
+ * subscriber that connects mid-run (or after the job finished) replays the
+ * exact same lines a live subscriber saw. The stream is always terminated by
+ * `eval_complete`.
  */
 export interface EvalStartEvent {
   type: 'eval_start'
   evaluation_id: string
   kind: string
-  /** Total number of runs this evaluation will execute/grade. */
-  total: number
+  /** Number of runs this evaluation will report on. */
+  n: number
 }
 
 export interface EvalRunStartedEvent {
   type: 'run_started'
-  evaluation_id: string
-  run_id: string
-  /** 0-based position within the evaluation. */
+  /** 0-based position in the batch; stable across retries. */
   index: number
+}
+
+/** Per-run rollup carried by `run_completed`. */
+export interface EvalRunSummary {
+  output_chars: number
+  tool_calls: number
+  duration_ms: number
 }
 
 export interface EvalRunCompletedEvent {
   type: 'run_completed'
-  evaluation_id: string
-  run_id: string
   index: number
-  status: RunStatus
+  run_id: string
+  status: string
+  summary: EvalRunSummary
 }
 
 export interface EvalRunFailedEvent {
   type: 'run_failed'
-  evaluation_id: string
-  run_id: string | null
   index: number
-  code: string
-  message: string
+  error: Record<string, unknown> | null
 }
 
 export interface EvalGradingStartedEvent {
   type: 'grading_started'
-  evaluation_id: string
-  run_ids: string[]
 }
 
 export interface EvalGradingCompletedEvent {
   type: 'grading_completed'
-  evaluation_id: string
-  result: unknown
+  result: EvaluationResult
 }
 
 export interface EvalCompleteEvent {
   type: 'eval_complete'
-  evaluation_id: string
-  status: string
-  result: unknown | null
+  status: 'completed' | 'error' | 'cancelled'
+  result: EvaluationResult | null
 }
 
-/** FORWARD-TYPED evaluation stream union, discriminated on `type`. */
+/** The full `EvalEvent` union from evals/events.py, discriminated on `type`. */
 export type EvalStreamEvent =
   | EvalStartEvent
   | EvalRunStartedEvent

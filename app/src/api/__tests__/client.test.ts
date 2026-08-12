@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '../client'
+import { ApiError } from '../errors'
 import type {
+  EvalCompleteEvent,
+  EvalRunCompletedEvent,
+  EvalRunFailedEvent,
+  EvalStartEvent,
+  EvalStreamEvent,
   MetricsEvent,
   RunCompleteEvent,
   RunStartEvent,
@@ -330,8 +336,12 @@ describe('api.evaluations', () => {
       jsonResponse({ items: [detail], next_cursor: null }),
       jsonResponse(detail),
       ndjsonResponse([
-        '{"type":"eval_start","evaluation_id":"e1","kind":"determinism","total":2}\n',
-        '{"type":"eval_complete","evaluation_id":"e1","status":"completed","result":null}\n'
+        '{"type":"eval_start","evaluation_id":"e1","kind":"determinism","n":2}\n',
+        '{"type":"run_started","index":0}\n',
+        '{"type":"run_completed","index":0,"run_id":"r1","status":"completed","summary":{"output_chars":12,"tool_calls":1,"duration_ms":900}}\n',
+        '{"type":"run_failed","index":1,"error":{"code":"throttled"}}\n',
+        '{"type":"grading_started"}\n',
+        '{"type":"eval_complete","status":"completed","result":null}\n'
       ]),
       noContent()
     )
@@ -345,8 +355,8 @@ describe('api.evaluations', () => {
     await api.evaluations.list({ kind: 'determinism', limit: 10 })
     await api.evaluations.get('e1')
 
-    const types: string[] = []
-    await api.evaluations.events('e1', { onEvent: event => types.push(event.type) })
+    const events: EvalStreamEvent[] = []
+    await api.evaluations.events('e1', { onEvent: event => events.push(event) })
     await api.evaluations.cancel('e1')
 
     expect(urlsOf(spy)).toEqual([
@@ -369,7 +379,46 @@ describe('api.evaluations', () => {
       n: 2,
       grader: { model_id: 'grader-model', system_prompt: 'grade it' }
     })
-    expect(types).toEqual(['eval_start', 'eval_complete'])
+
+    expect(events.map(event => event.type)).toEqual([
+      'eval_start',
+      'run_started',
+      'run_completed',
+      'run_failed',
+      'grading_started',
+      'eval_complete'
+    ])
+    const start = events[0] as EvalStartEvent
+    expect(start.n).toBe(2)
+    const completed = events[2] as EvalRunCompletedEvent
+    expect(completed.summary).toEqual({ output_chars: 12, tool_calls: 1, duration_ms: 900 })
+    const failed = events[3] as EvalRunFailedEvent
+    expect(failed.error).toEqual({ code: 'throttled' })
+    const done = events[5] as EvalCompleteEvent
+    expect(done.status).toBe('completed')
+  })
+
+  it('surfaces a 409 conflict when cancelling a finished evaluation', async () => {
+    mockFetch(
+      fakeResponse({
+        status: 409,
+        statusText: 'Conflict',
+        text: JSON.stringify({
+          error: {
+            code: 'conflict',
+            message: "Evaluation 'e1' already finished",
+            detail: { status: 'completed' }
+          }
+        })
+      })
+    )
+
+    const error = (await api.evaluations.cancel('e1').catch(e => e)) as ApiError
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.code).toBe('conflict')
+    expect(error.status).toBe(409)
+    expect(error.detail).toEqual({ status: 'completed' })
   })
 })
 

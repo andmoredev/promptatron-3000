@@ -230,7 +230,7 @@ describe('streamNdjson: failures before the stream', () => {
 describe('getNdjson', () => {
   it('GETs with NDJSON accept and serialized query params', async () => {
     const spy = mockFetch(
-      ndjsonResponse(['{"type":"eval_start","evaluation_id":"e1","kind":"determinism","total":3}\n'])
+      ndjsonResponse(['{"type":"eval_start","evaluation_id":"e1","kind":"determinism","n":3}\n'])
     )
     const events: unknown[] = []
 
@@ -243,7 +243,7 @@ describe('getNdjson', () => {
     expect(spy.mock.calls[0][1]?.method).toBe('GET')
     expect(headersOf(spy).accept).toBe('application/x-ndjson')
     expect(events).toEqual([
-      { type: 'eval_start', evaluation_id: 'e1', kind: 'determinism', total: 3 }
+      { type: 'eval_start', evaluation_id: 'e1', kind: 'determinism', n: 3 }
     ])
   })
 })
