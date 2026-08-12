@@ -2,8 +2,15 @@ version = 0.1
 
 [default.deploy.parameters]
 stack_name = "promptatron-config"
-resolve_s3 = true
-capabilities = "CAPABILITY_IAM"
+# NOTE: no `resolve_s3` here on purpose. CI deploys pass an explicit
+# `--s3-bucket` (the org artifacts bucket), and SAM rejects the two together.
+# The Makefile adds `--resolve-s3` itself when no bucket is supplied, so local
+# deploys keep their managed bucket.
+#
+# CAPABILITY_AUTO_EXPAND is required because this template pulls openapi.yaml in
+# through the AWS::Include macro; without it CloudFormation refuses the change
+# set.
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
 # Change this to the AWS region you actually want to deploy into.
 region = "us-east-1"
 # Non-interactive so `make deploy-api` / `sam deploy` can run unattended.

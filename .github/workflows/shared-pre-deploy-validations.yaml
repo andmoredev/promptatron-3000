@@ -1,0 +1,86 @@
+name: Pre-deployment Validations
+
+# Fast gate in front of every deploy: lint and unit tests only. The heavier
+# signals (coverage thresholds, Playwright e2e, mutation testing) stay in
+# ci.yml, which runs on the same events in parallel.
+on:
+  workflow_call:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Lint app
+        working-directory: app
+        run: npm run lint
+
+      - name: Typecheck app
+        working-directory: app
+        run: npm run typecheck
+
+      - name: Install server dependencies
+        working-directory: server
+        run: uv sync --dev
+
+      - name: Lint server
+        working-directory: server
+        run: uv run ruff check .
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            app/package-lock.json
+            api/package-lock.json
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: App
+        working-directory: app
+        run: npm ci && npm test
+
+      - name: Api
+        working-directory: api
+        run: npm ci && npm test
+
+      - name: Server
+        working-directory: server
+        run: uv sync --dev && uv run pytest -q
+
+  validate-template:
+    name: Validate SAM Template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      # Plain `validate`, not `--lint`: the latter still trips on four
+      # pre-existing W1100 YAML-merge warnings from the esbuild anchors.
+      - name: Validate template
+        working-directory: api
+        run: sam validate --region us-east-1

@@ -11,9 +11,20 @@ STACK_NAME ?= promptatron-config
 # Region for deploys. Empty means "whatever samconfig.toml/AWS_REGION says";
 # CI sets it explicitly so the stack can never land in a surprise region.
 DEPLOY_REGION ?=
+# Shared org artifacts bucket for SAM's packaging (CI passes
+# secrets.ARTIFACTS_BUCKET_NAME). Empty locally -> --resolve-s3 and SAM's own
+# managed bucket. The two are mutually exclusive, hence the either/or below.
+DEPLOY_S3_BUCKET ?=
+# Role CloudFormation itself assumes to create resources (CI passes
+# secrets.CLOUDFORMATION_EXECUTION_ROLE). Empty locally -> your own creds.
+DEPLOY_ROLE_ARN ?=
 # Threaded into every `sam deploy`. Do not inline these flags at the call
 # sites -- there are five of them and they must stay identical.
-SAM_DEPLOY_ARGS ?= --stack-name $(STACK_NAME) $(if $(DEPLOY_REGION),--region $(DEPLOY_REGION),)
+SAM_DEPLOY_ARGS ?= --stack-name $(STACK_NAME) \
+	$(if $(DEPLOY_REGION),--region $(DEPLOY_REGION),) \
+	$(if $(DEPLOY_S3_BUCKET),--s3-bucket $(DEPLOY_S3_BUCKET),--resolve-s3) \
+	$(if $(DEPLOY_ROLE_ARN),--role-arn $(DEPLOY_ROLE_ARN),) \
+	--no-fail-on-empty-changeset
 # Where scripts/package-eval-worker.sh stages and zips the worker artifact.
 EVAL_WORKER_BUILD_DIR ?= $(CURDIR)/.build/eval-worker
 # Where scripts/package-server.sh stages and zips the FastAPI server artifact.

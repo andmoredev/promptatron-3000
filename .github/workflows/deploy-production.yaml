@@ -1,0 +1,29 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  pre-deployment-validations:
+    name: Pre-deployment Validations
+    uses: ./.github/workflows/shared-pre-deploy-validations.yaml
+
+  deploy:
+    name: Deploy
+    needs: [pre-deployment-validations]
+    uses: ./.github/workflows/shared-deploy.yaml
+    with:
+      ENVIRONMENT: Production
+      STACK_NAME: promptatron-production
+    secrets: inherit

@@ -1,0 +1,35 @@
+name: Deploy Staging
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  # One shared Staging stack, so deploys queue rather than cancel: interrupting
+  # `sam deploy` strands the stack in UPDATE_IN_PROGRESS and the next run cannot
+  # touch it.
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  pre-deployment-validations:
+    name: Pre-deployment Validations
+    # Forks never receive org secrets, so the deploy could not authenticate.
+    # Skip the whole pipeline rather than fail it confusingly.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/shared-pre-deploy-validations.yaml
+
+  deploy:
+    name: Deploy
+    needs: [pre-deployment-validations]
+    uses: ./.github/workflows/shared-deploy.yaml
+    with:
+      ENVIRONMENT: Staging
+      STACK_NAME: promptatron-staging
+    secrets: inherit

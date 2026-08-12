@@ -128,36 +128,36 @@ https://d1234abcd.cloudfront.net/api/v1/...  → the server
 
 ### Continuous deployment (GitHub Actions + OIDC)
 
-`.github/workflows/deploy.yml` deploys **Staging on every pull request** and **Production on merge
-to `main`**, using short-lived OIDC credentials — there are no long-lived AWS keys in GitHub.
-Each environment is its own CloudFormation stack, so a PR can never touch production.
+Deployment follows the same shape as the other `nullchecktv` services (see
+`stream-post-processor`) and reuses the **same org-level secrets** — nothing repo-specific to
+provision:
 
-One-time setup:
+| Secret | Used for |
+| --- | --- |
+| `PIPELINE_EXECUTION_ROLE` | the role GitHub Actions assumes via OIDC |
+| `CLOUDFORMATION_EXECUTION_ROLE` | passed as `sam deploy --role-arn`, so CloudFormation builds resources under its own role |
+| `ARTIFACTS_BUCKET_NAME` | passed as `sam deploy --s3-bucket` for packaging artifacts |
 
-1. **Create the deployment roles** — once per environment. An AWS account may hold only one GitHub
-   OIDC provider, so the second run passes `CreateOidcProvider=false`:
-   ```bash
-   aws cloudformation deploy --template-file infra/github-oidc-role.yaml \
-     --stack-name promptatron-ci-staging --capabilities CAPABILITY_NAMED_IAM \
-     --parameter-overrides EnvironmentName=Staging TargetStackName=promptatron-staging
+| Workflow | Trigger | Stack |
+| --- | --- | --- |
+| `deploy-staging.yaml` | pull request to `main` (or manual) | `promptatron-staging` |
+| `deploy-production.yaml` | push to `main` (or manual) | `promptatron-production` |
 
-   aws cloudformation deploy --template-file infra/github-oidc-role.yaml \
-     --stack-name promptatron-ci-production --capabilities CAPABILITY_NAMED_IAM \
-     --parameter-overrides EnvironmentName=Production TargetStackName=promptatron-config \
-       CreateOidcProvider=false
-   ```
-2. **Create the GitHub Environments** `Staging` and `Production` (spelled exactly that way — the
-   role's trust policy pins the OIDC subject claim to
-   `repo:OWNER/REPO:environment:<name>`, so a typo means the role simply cannot be assumed).
-3. **Add the secret** `AWS_DEPLOYMENT_ROLE_ARN` to each environment, set to that environment's
-   `DeploymentRoleArn` output.
-4. Optional per-environment variables: `AWS_REGION` (default `us-east-1`) and `STACK_NAME` if you
-   want names other than `promptatron-staging` / `promptatron-config`.
+Both call `shared-pre-deploy-validations.yaml` (lint, typecheck, unit tests, `sam validate`) and
+then `shared-deploy.yaml` with `secrets: inherit`. Staging and Production are separate stacks, so
+a PR can never touch production, and each environment deploys one at a time. Fork PRs are skipped
+— they never receive org secrets.
 
-Recommended protections, since the deployed app is unauthenticated: restrict the `Production`
-environment's deployment branches to `main`, and enable branch protection on `main` requiring the
-CI checks — the deploy workflow does not re-run them, it relies on that gate. Add required
-reviewers on `Production` if you want a human in the loop before each release.
+The deploy job runs the same `make deploy` used locally, so there is one deploy definition rather
+than a CI copy that drifts. Local runs keep SAM's managed bucket and your own credentials; CI
+supplies the org bucket and roles through `DEPLOY_S3_BUCKET` / `DEPLOY_ROLE_ARN`.
+
+> **Two permissions worth checking on the first run.** `make deploy` does a few things outside
+> CloudFormation, under `PIPELINE_EXECUTION_ROLE`: uploading the server zip to the stack's own
+> artifact bucket, syncing the SPA to S3, invalidating CloudFront, and **seeding the config store
+> in DynamoDB**. The first three match what the other services already do; the DynamoDB seed is
+> unique to this repo, so that role may need `dynamodb:PutItem`/`GetItem` on
+> `promptatron-*` tables added.
 
 One sharp edge: `ServerArtifactKey` is a CloudFormation parameter with an empty default, and an
 empty value deletes the server. `make deploy-api` and `make deploy-worker` do not pass it, so
