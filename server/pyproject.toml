@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "strands-agents>=0.1.0",
+    "strands-agents[anthropic,ollama,openai]>=0.1.0",
     "strands-agents-evals>=0.1.0",
     "boto3>=1.34",
     "httpx>=0.27",
