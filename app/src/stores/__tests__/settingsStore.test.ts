@@ -16,10 +16,11 @@ beforeEach(() => {
 })
 
 describe('defaults', () => {
-  it('starts with system theme, the robot on, nova-pro grading and n=10', () => {
+  it('starts with system theme, the robot on, Chad on, nova-pro grading and n=10', () => {
     const state = useSettingsStore.getState()
     expect(state.theme).toBe('system')
     expect(state.robotEnabled).toBe(true)
+    expect(state.chadEnabled).toBe(true)
     expect(state.defaultGraderModelId).toBe('amazon.nova-pro-v1:0')
     expect(state.defaultN).toBe(10)
   })
@@ -30,6 +31,7 @@ describe('defaults', () => {
     expect(DEFAULT_SETTINGS).toEqual({
       theme: 'system',
       robotEnabled: true,
+      chadEnabled: true,
       defaultGraderModelId: 'amazon.nova-pro-v1:0',
       defaultN: 10
     })
@@ -41,12 +43,14 @@ describe('setters', () => {
     const state = useSettingsStore.getState()
     state.setTheme('dark')
     state.setRobotEnabled(false)
+    state.setChadEnabled(false)
     state.setDefaultGraderModelId('anthropic.claude-3-sonnet')
     state.setDefaultN(25)
 
     expect(useSettingsStore.getState()).toMatchObject({
       theme: 'dark',
       robotEnabled: false,
+      chadEnabled: false,
       defaultGraderModelId: 'anthropic.claude-3-sonnet',
       defaultN: 25
     })
@@ -67,6 +71,7 @@ describe('persistence', () => {
     expect(parsed.state).toEqual({
       theme: 'light',
       robotEnabled: true,
+      chadEnabled: true,
       defaultGraderModelId: 'amazon.nova-pro-v1:0',
       defaultN: 10
     })
@@ -88,6 +93,27 @@ describe('persistence', () => {
       robotEnabled: false,
       defaultN: 3
     })
+  })
+
+  it('a pre-chadEnabled (v1) payload merges cleanly, defaulting chadEnabled to true', async () => {
+    // Simulates a payload persisted before `chadEnabled` existed: the key is
+    // simply absent, not `undefined`-valued.
+    const legacyState: Record<string, unknown> = {
+      theme: 'dark',
+      robotEnabled: true,
+      defaultGraderModelId: 'amazon.nova-pro-v1:0',
+      defaultN: 10
+    }
+    expect('chadEnabled' in legacyState).toBe(false)
+
+    localStorage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({ version: 1, state: legacyState })
+    )
+
+    await useSettingsStore.persist.rehydrate()
+
+    expect(useSettingsStore.getState().chadEnabled).toBe(true)
   })
 })
 

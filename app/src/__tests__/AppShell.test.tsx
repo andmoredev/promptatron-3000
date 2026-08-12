@@ -12,11 +12,13 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import AppShell, { TABS } from '../AppShell'
 import {
   DEFAULT_RUN_CONFIG,
+  DEFAULT_SETTINGS,
   INITIAL_RUN_STATE,
   useGuardrailStore,
   useRunConfigStore,
   useRunStore,
-  useScenarioStore
+  useScenarioStore,
+  useSettingsStore
 } from '../stores'
 
 /** Test ids rendered by each page, keyed by tab. */
@@ -30,8 +32,10 @@ const PAGE_TEST_IDS: Record<string, string> = {
 }
 
 beforeEach(() => {
+  localStorage.clear()
   useRunStore.setState({ ...INITIAL_RUN_STATE })
   useRunConfigStore.setState({ ...DEFAULT_RUN_CONFIG })
+  useSettingsStore.setState({ ...DEFAULT_SETTINGS })
   // Stub the loaders so mounting the Workbench never reaches the network.
   useScenarioStore.setState({
     models: [],
@@ -97,5 +101,30 @@ describe('AppShell', () => {
     const panel = screen.getByRole('tabpanel')
     expect(panel).toHaveAttribute('id', 'tabpanel-about')
     expect(panel).toHaveAttribute('aria-labelledby', 'tab-about')
+  })
+
+  it('floats Chad outside the tabpanel by default, with no bring-back button', () => {
+    render(<AppShell />)
+
+    expect(screen.getByTestId('floating-chad')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Bring back Chad' })).not.toBeInTheDocument()
+  })
+
+  it('shows the bring-back button only once Chad is dismissed, and it re-enables him', () => {
+    render(<AppShell />)
+
+    expect(screen.queryByRole('button', { name: 'Bring back Chad' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss Chad' }))
+
+    expect(screen.queryByTestId('floating-chad')).not.toBeInTheDocument()
+    const bringBack = screen.getByRole('button', { name: 'Bring back Chad' })
+    expect(bringBack).toBeInTheDocument()
+
+    fireEvent.click(bringBack)
+
+    expect(useSettingsStore.getState().chadEnabled).toBe(true)
+    expect(screen.getByTestId('floating-chad')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Bring back Chad' })).not.toBeInTheDocument()
   })
 })

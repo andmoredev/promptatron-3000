@@ -5,8 +5,10 @@
  * `components/RobotMascot.tsx`), which yields exactly the four state keys
  * `RobotGraphic` accepts. The old app-state-shape mapping layer
  * (`RobotGraphicContainer`, `useRobotState`, `stateMapping`) and the Chad
- * reveal easter egg (`useChadReveal`, `ChadRevealButton`, `FloatingChad`) went
- * with App.jsx.
+ * reveal easter egg (`useChadReveal`, `ChadRevealButton`) went with App.jsx
+ * for good. Chad himself is back — always visible, not revealed — as
+ * `components/FloatingChad.tsx`, one directory up; it renders `ChadFace`
+ * (below) directly rather than going through `RobotGraphic`.
  */
 
 export {

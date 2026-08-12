@@ -8,6 +8,7 @@
  */
 
 import { useState } from 'react'
+import FloatingChad from './components/FloatingChad'
 import RobotMascot from './components/RobotMascot'
 import AboutPage from './features/about/AboutPage'
 import EvalsPage from './features/evals/EvalsPage'
@@ -15,6 +16,7 @@ import GuardrailsPage from './features/guardrails/GuardrailsPage'
 import HistoryPage from './features/history/HistoryPage'
 import ScenariosPage from './features/scenarios/ScenariosPage'
 import WorkbenchPage from './features/workbench/WorkbenchPage'
+import { useSettingsStore } from './stores'
 
 export type TabId = 'workbench' | 'evals' | 'history' | 'guardrails' | 'scenarios' | 'about'
 
@@ -51,6 +53,8 @@ function TabPage({ tab }: { tab: TabId }) {
 
 export default function AppShell() {
   const [activeTab, setActiveTab] = useState<TabId>('workbench')
+  const chadEnabled = useSettingsStore((state) => state.chadEnabled)
+  const setChadEnabled = useSettingsStore((state) => state.setChadEnabled)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-tertiary-50 to-secondary-100">
@@ -69,33 +73,47 @@ export default function AppShell() {
               </div>
             </div>
 
-            <nav
-              role="tablist"
-              aria-label="Sections"
-              className="flex flex-wrap justify-center rounded-lg border border-gray-200 bg-white p-1 shadow-sm"
-            >
-              {TABS.map((tab) => {
-                const selected = tab.id === activeTab
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    role="tab"
-                    id={`tab-${tab.id}`}
-                    aria-selected={selected}
-                    aria-controls={`tabpanel-${tab.id}`}
-                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 ${
-                      selected
-                        ? 'bg-primary-600 text-white'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                    }`}
-                    onClick={() => setActiveTab(tab.id)}
-                  >
-                    {tab.label}
-                  </button>
-                )
-              })}
-            </nav>
+            <div className="flex items-center gap-2">
+              <nav
+                role="tablist"
+                aria-label="Sections"
+                className="flex flex-wrap justify-center rounded-lg border border-gray-200 bg-white p-1 shadow-sm"
+              >
+                {TABS.map((tab) => {
+                  const selected = tab.id === activeTab
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      id={`tab-${tab.id}`}
+                      aria-selected={selected}
+                      aria-controls={`tabpanel-${tab.id}`}
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 ${
+                        selected
+                          ? 'bg-primary-600 text-white'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      }`}
+                      onClick={() => setActiveTab(tab.id)}
+                    >
+                      {tab.label}
+                    </button>
+                  )
+                })}
+              </nav>
+
+              {!chadEnabled && (
+                <button
+                  type="button"
+                  aria-label="Bring back Chad"
+                  title="Bring back Chad"
+                  onClick={() => setChadEnabled(true)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-base shadow-sm hover:bg-gray-50"
+                >
+                  <span aria-hidden="true">😎</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -108,6 +126,8 @@ export default function AppShell() {
       >
         <TabPage tab={activeTab} />
       </main>
+
+      <FloatingChad />
     </div>
   )
 }
