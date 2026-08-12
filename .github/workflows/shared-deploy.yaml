@@ -56,6 +56,12 @@ jobs:
           aws-region: us-east-1
           role-to-assume: ${{ secrets.PIPELINE_EXECUTION_ROLE }}
 
+      # The api/ functions build with `BuildMethod: esbuild`, and SAM's esbuild
+      # builder needs the binary on PATH -- it looks in the CodeUri directory
+      # (api/functions), which has no package.json of its own to resolve it from.
+      - name: Install esbuild
+        run: npm install -g esbuild
+
       # One deploy definition, shared with local `make deploy`: package the
       # server zip, upload it, deploy the stack, seed the config store, build
       # the SPA, sync it to S3, invalidate CloudFront.

@@ -158,7 +158,9 @@ jobs:
       - run: npx playwright install --with-deps chromium
         working-directory: app
 
+      # No PLAYWRIGHT_BROWSERS_PATH here on purpose: `playwright install` above
+      # already uses the default cache location, and a `~` in a YAML env value
+      # is NOT shell-expanded -- it resolved to a literal ./~/.cache directory
+      # and every spec failed with "Executable doesn't exist".
       - run: npx playwright test
         working-directory: app
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: ~/.cache/ms-playwright
