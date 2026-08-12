@@ -1,11 +1,19 @@
 .PHONY: dev dev-server dev-app lint lint-app lint-server test test-app test-api test-server \
 	install install-app install-api install-server deploy-api seed-api e2e smoke \
-	package-eval-worker deploy-worker
+	package-eval-worker deploy-worker package-server deploy
 
 # CloudFormation stack the api/ SAM template deploys into (see api/samconfig.toml).
 STACK_NAME ?= promptatron-config
 # Where scripts/package-eval-worker.sh stages and zips the worker artifact.
 EVAL_WORKER_BUILD_DIR ?= $(CURDIR)/.build/eval-worker
+# Where scripts/package-server.sh stages and zips the FastAPI server artifact.
+SERVER_BUILD_DIR ?= $(CURDIR)/.build/server
+# Baked into the SPA at build time. "/" (not "") is deliberate: app/src/api/http.ts
+# treats a blank VITE_API_URL as unset and falls back to http://localhost:8000,
+# whereas "/" trims to "" and makes apiUrl() emit relative "/api/v1/..." paths --
+# which is exactly right behind CloudFront, where the SPA and the API share an
+# origin. Override to point a build at a server somewhere else.
+DEPLOY_API_URL ?= /
 
 # --------------------------------------------------------------------------- #
 # dev
@@ -111,16 +119,21 @@ smoke:
 
 deploy-api:
 	@set -e; \
-	CURRENT_WORKER_KEY=$$(aws cloudformation describe-stacks --stack-name promptatron-config \
-		--query "Stacks[0].Parameters[?ParameterKey=='EvalWorkerArtifactKey'].ParameterValue" \
-		--output text 2>/dev/null || true); \
-	if [ -n "$$CURRENT_WORKER_KEY" ] && [ "$$CURRENT_WORKER_KEY" != "None" ]; then \
-		echo "deploy-api: preserving deployed eval worker artifact $$CURRENT_WORKER_KEY"; \
-		WORKER_OVERRIDE="--parameter-overrides EvalWorkerArtifactKey=$$CURRENT_WORKER_KEY"; \
-	else \
-		WORKER_OVERRIDE=""; \
-	fi; \
-	cd api && npm ci && sam build && sam deploy $$WORKER_OVERRIDE && \
+	current_param() { \
+		aws cloudformation describe-stacks --stack-name promptatron-config \
+			--query "Stacks[0].Parameters[?ParameterKey=='$$1'].ParameterValue" \
+			--output text 2>/dev/null || true; \
+	}; \
+	OVERRIDES=""; \
+	for PARAM in EvalWorkerArtifactKey ServerArtifactKey; do \
+		VALUE=$$(current_param $$PARAM); \
+		if [ -n "$$VALUE" ] && [ "$$VALUE" != "None" ]; then \
+			echo "deploy-api: preserving deployed $$PARAM=$$VALUE"; \
+			OVERRIDES="$$OVERRIDES $$PARAM=$$VALUE"; \
+		fi; \
+	done; \
+	if [ -n "$$OVERRIDES" ]; then OVERRIDES="--parameter-overrides$$OVERRIDES"; fi; \
+	cd api && npm ci && sam build && sam deploy $$OVERRIDES && \
 	TABLE_NAME=$$(aws cloudformation describe-stacks --stack-name promptatron-config --query "Stacks[0].Outputs[?OutputKey=='TableName'].OutputValue" --output text) && \
 	if [ -z "$$TABLE_NAME" ] || [ "$$TABLE_NAME" = "None" ]; then \
 		echo "deploy-api: could not resolve TableName from stack 'promptatron-config' outputs" >&2; \
@@ -173,8 +186,16 @@ deploy-worker:
 	. $(EVAL_WORKER_BUILD_DIR)/artifact.env; \
 	echo "deploy-worker: uploading $$ARTIFACT_KEY to s3://$$BUCKET"; \
 	aws s3 cp "$$ARTIFACT_ZIP" "s3://$$BUCKET/$$ARTIFACT_KEY"; \
+	CURRENT_SERVER_KEY=$$(aws cloudformation describe-stacks --stack-name $(STACK_NAME) \
+		--query "Stacks[0].Parameters[?ParameterKey=='ServerArtifactKey'].ParameterValue" \
+		--output text 2>/dev/null || true); \
+	if [ "$$CURRENT_SERVER_KEY" = "None" ]; then CURRENT_SERVER_KEY=""; fi; \
+	if [ -n "$$CURRENT_SERVER_KEY" ]; then \
+		echo "deploy-worker: preserving deployed server artifact $$CURRENT_SERVER_KEY"; \
+	fi; \
 	( cd api && npm ci && sam build && sam deploy --parameter-overrides \
 		"EvalWorkerArtifactKey=$$ARTIFACT_KEY" \
+		$${CURRENT_SERVER_KEY:+"ServerArtifactKey=$$CURRENT_SERVER_KEY"} \
 		$${EVAL_WORKER_CONFIG_API_KEY:+"EvalWorkerConfigApiKey=$$EVAL_WORKER_CONFIG_API_KEY"} ); \
 	ARN=$$(resolve_output EvalWorkerRuntimeArn); \
 	TABLE=$$(resolve_output TableName); \
@@ -182,6 +203,83 @@ deploy-worker:
 	echo "Cloud eval lane deployed. Point the server at it:"; \
 	echo "  PROMPTATRON_EVAL_RUNTIME_ARN=$$ARN"; \
 	echo "  PROMPTATRON_EVAL_TABLE=$$TABLE"
+
+# --------------------------------------------------------------------------- #
+# deployed server + SPA (docs/serverless-deploy-infra.md)
+#
+# `package-server` builds the server's Lambda zip and nothing else -- no AWS
+# calls, safe to run anywhere. `deploy` is the whole thing:
+#
+#   package -> upload -> sam deploy -> seed -> build SPA -> s3 sync -> invalidate
+#
+# `deploy` is a SUPERSET of deploy-api and orthogonal to deploy-worker: it
+# passes ServerArtifactKey, and reads the stack's CURRENT EvalWorkerArtifactKey
+# and passes that back unchanged (exactly as deploy-api does), so deploying the
+# server never deletes a deployed eval worker. The converse is NOT true --
+# `deploy-worker` does not preserve ServerArtifactKey, so once the server
+# exists, `make deploy` is the target to use.
+#
+# Optional overrides:
+#   SERVER_MEMORY=2048 make deploy       # bigger Lambda (faster cold start)
+#   DEPLOY_API_URL=https://... make deploy   # SPA pointed elsewhere
+# --------------------------------------------------------------------------- #
+
+package-server:
+	SERVER_BUILD_DIR=$(SERVER_BUILD_DIR) ./scripts/package-server.sh
+
+deploy:
+	@set -e; \
+	resolve_output() { \
+		aws cloudformation describe-stacks --stack-name $(STACK_NAME) \
+			--query "Stacks[0].Outputs[?OutputKey=='$$1'].OutputValue" \
+			--output text 2>/dev/null || true; \
+	}; \
+	BUCKET=$$(resolve_output ArtifactBucket); \
+	if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
+		echo "deploy: stack '$(STACK_NAME)' has no artifact bucket yet -- bootstrapping"; \
+		( cd api && npm ci && sam build && sam deploy ); \
+		BUCKET=$$(resolve_output ArtifactBucket); \
+	fi; \
+	if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
+		echo "deploy: could not resolve ArtifactBucket from stack '$(STACK_NAME)'" >&2; \
+		exit 1; \
+	fi; \
+	SERVER_BUILD_DIR=$(SERVER_BUILD_DIR) ./scripts/package-server.sh; \
+	. $(SERVER_BUILD_DIR)/artifact.env; \
+	echo "deploy: uploading $$ARTIFACT_KEY to s3://$$BUCKET"; \
+	aws s3 cp "$$ARTIFACT_ZIP" "s3://$$BUCKET/$$ARTIFACT_KEY"; \
+	WORKER_KEY=$$(aws cloudformation describe-stacks --stack-name $(STACK_NAME) \
+		--query "Stacks[0].Parameters[?ParameterKey=='EvalWorkerArtifactKey'].ParameterValue" \
+		--output text 2>/dev/null || true); \
+	if [ -n "$$WORKER_KEY" ] && [ "$$WORKER_KEY" != "None" ]; then \
+		echo "deploy: preserving deployed eval worker artifact $$WORKER_KEY"; \
+	else \
+		WORKER_KEY=""; \
+	fi; \
+	( cd api && npm ci && sam build && sam deploy --parameter-overrides \
+		"ServerArtifactKey=$$ARTIFACT_KEY" \
+		$${WORKER_KEY:+"EvalWorkerArtifactKey=$$WORKER_KEY"} \
+		$${SERVER_MEMORY:+"ServerMemorySize=$$SERVER_MEMORY"} ); \
+	TABLE=$$(resolve_output TableName); \
+	if [ -z "$$TABLE" ] || [ "$$TABLE" = "None" ]; then \
+		echo "deploy: could not resolve TableName from stack '$(STACK_NAME)'" >&2; \
+		exit 1; \
+	fi; \
+	( cd api && npm run seed -- --table "$$TABLE" ); \
+	APP_BUCKET=$$(resolve_output AppBucket); \
+	DIST_ID=$$(resolve_output AppDistributionId); \
+	APP_URL=$$(resolve_output AppUrl); \
+	if [ -z "$$APP_BUCKET" ] || [ "$$APP_BUCKET" = "None" ]; then \
+		echo "deploy: could not resolve AppBucket from stack '$(STACK_NAME)'" >&2; \
+		exit 1; \
+	fi; \
+	echo "deploy: building the SPA with VITE_API_URL=$(DEPLOY_API_URL)"; \
+	( cd app && npm ci && VITE_API_URL="$(DEPLOY_API_URL)" npm run build ); \
+	aws s3 sync app/dist "s3://$$APP_BUCKET" --delete; \
+	echo "deploy: invalidating $$DIST_ID"; \
+	aws cloudfront create-invalidation --distribution-id "$$DIST_ID" --paths '/*' >/dev/null; \
+	echo; \
+	echo "Deployed: $$APP_URL"
 
 # Runs just the seeder against an already-deployed table. Requires TABLE_NAME, e.g.:
 #   make seed-api TABLE_NAME=promptatron-config-ScenariosTable-XXXXXXXXXXXX

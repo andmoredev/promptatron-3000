@@ -14,6 +14,17 @@ This is the contract between the server-side work (history backend, lane
 gating) and the infra work (Lambda hosting, packaging, CDN). Names here are
 normative.
 
+The infra half is built. See
+[`serverless-deploy-infra.md`](./serverless-deploy-infra.md) for how it is
+packaged and wired, with citations and the list of things only a real deploy
+can prove — including three places where the implementation deliberately
+diverges from the sketch below: CORS is the empty list rather than the
+CloudFront domain (same-origin needs none, and deriving it would be circular),
+SPA fallback is a per-behaviour CloudFront Function rather than
+distribution-wide `CustomErrorResponses` (which would corrupt the API's own
+403/404s), and stack discovery stays **on** for `config_api_key` alone, since
+CloudFormation cannot read an API key's value.
+
 ## Compute shape
 
 | Piece | Deployed as |

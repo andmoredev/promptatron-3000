@@ -92,6 +92,50 @@ PROMPTATRON_FAKE_MODEL=1 make dev
 Either way, the app opens at `http://localhost:3000` and talks to the server at
 `http://localhost:8000`.
 
+## Deploy to AWS (serverless)
+
+Everything runs local-first and always will — this is optional. When you do want the harness on
+the internet, it is serverless end to end: **no containers anywhere**, one Lambda for the FastAPI
+server (unchanged, behind the [AWS Lambda Web Adapter](https://github.com/aws/aws-lambda-web-adapter)),
+S3 + CloudFront for the SPA, DynamoDB for history, and the existing AgentCore Runtime for
+evaluations.
+
+```bash
+AWS_PROFILE=your-profile make deploy
+```
+
+One command, idempotent, prints the URL at the end. It packages the server's arm64 Lambda zip,
+uploads it under a content-hashed key, deploys the SAM stack (server function + Function URL +
+S3 bucket + CloudFront distribution), seeds the table, builds the SPA with `VITE_API_URL=/`,
+syncs it to S3, and invalidates the CDN.
+
+The result is a single origin: the SPA at `/`, the API at `/api/v1` on the same domain — so
+there is no CORS in production and no API URL to configure in the app.
+
+```
+https://d1234abcd.cloudfront.net/            → the app
+https://d1234abcd.cloudfront.net/api/v1/...  → the server
+```
+
+> **Read this before you deploy.** v1 has **no authentication**. The Lambda Function URL is
+> `AuthType: NONE`, and CloudFront in front of it is a second unauthenticated front door, not a
+> gate. Anyone who learns either URL can run models on your Bedrock account, read and delete run
+> history, and create and delete guardrails. The only protection is that the URL is unguessable
+> and unpublished. This is a personal-deployment posture — see
+> [`docs/serverless-deploy-infra.md`](docs/serverless-deploy-infra.md) for why `AWS_IAM` +
+> CloudFront OAC is not a drop-in replacement (browsers cannot send the required request-body
+> hash) and what the realistic hardening paths are.
+
+One sharp edge: `ServerArtifactKey` is a CloudFormation parameter with an empty default, and an
+empty value deletes the server. `make deploy-api` and `make deploy-worker` do not pass it, so
+**once the server is deployed, use `make deploy`** — it is a superset of both `deploy-api` and
+(for preservation purposes) `deploy-worker`.
+
+Details — the adapter layer, packaging and artifact size, the CloudFront origin/behaviour setup,
+exact IAM, and the list of things only a real deploy can prove — are in
+[`docs/serverless-deploy.md`](docs/serverless-deploy.md) (the contract) and
+[`docs/serverless-deploy-infra.md`](docs/serverless-deploy-infra.md) (the build).
+
 ## Make targets
 
 | Target | What it does |
@@ -104,6 +148,8 @@ Either way, the app opens at `http://localhost:3000` and talks to the server at
 | `make test` | `app` (`vitest`) + `api` (`vitest`) + `server` (`pytest`) |
 | `make deploy-api` | `sam build && sam deploy` for the `api/` stack, then seeds it from `api/seed/fixtures/**` |
 | `make seed-api TABLE_NAME=...` | Re-runs just the seeder against an already-deployed table |
+| `make package-server` | Builds the FastAPI server's arm64 Lambda zip. No AWS calls |
+| `make deploy` | [Full serverless deploy](#deploy-to-aws-serverless): package + upload + `sam deploy` + seed + build SPA + S3 sync + CloudFront invalidation |
 
 `make dev` runs both processes as background jobs of one recipe with a `trap ... EXIT INT TERM`
 so `Ctrl-C` (or any exit) tears down both — no orphaned `uvicorn`/`vite` process left behind. If
@@ -148,6 +194,10 @@ Bedrock-only.
 | `VITE_API_URL` | `http://localhost:8000` | Base URL of the FastAPI server |
 
 Copy `app/.env.example` to `app/.env.local` to override it.
+
+Set it to `/` for a same-origin build (what `make deploy` does behind CloudFront) — the API calls
+then go to relative `/api/v1/...` paths. Note that `/`, not `""`, is the value: a blank
+`VITE_API_URL` counts as unset and falls back to `http://localhost:8000`.
 
 ## Add a scenario
 
