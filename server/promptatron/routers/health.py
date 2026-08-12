@@ -8,6 +8,7 @@ import httpx
 from fastapi import APIRouter, Depends
 
 from promptatron.config import Settings, get_settings
+from promptatron.evals import cloud as evals_cloud
 
 logger = logging.getLogger(__name__)
 
@@ -69,4 +70,7 @@ async def health(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
             "configured": settings.config_api_url is not None,
             "reachable": reachable,
         },
+        # Both an AgentCore runtime ARN and a DynamoDB table are needed before
+        # the UI may offer "Cloud — persisted" (docs/cloud-evals.md).
+        "cloud_evals": {"configured": evals_cloud.is_configured(settings)},
     }

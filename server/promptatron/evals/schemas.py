@@ -48,6 +48,9 @@ class EvaluationRequest(BaseModel):
     run_ids: list[str] = Field(default_factory=list)
     rubric: str | None = None
     grader: GraderConfig = Field(default_factory=GraderConfig)
+    #: Which lane executes this evaluation -- in-process ("local", the default)
+    #: or the AgentCore Runtime worker ("cloud"). See ``docs/cloud-evals.md``.
+    execution: Literal["local", "cloud"] = "local"
 
     @model_validator(mode="after")
     def _check_kind_requirements(self) -> EvaluationRequest:

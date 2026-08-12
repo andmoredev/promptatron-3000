@@ -9,6 +9,23 @@ pipeline either as an NDJSON stream or as the finished ``RunDetail``.
 answers ``202`` with the ``pending`` row, and hands the work to a background
 task (:mod:`promptatron.evals.engine`). Progress is followed through
 ``GET /evaluations/{id}/events`` and stopped through ``DELETE /evaluations/{id}``.
+
+Two lanes
+---------
+``POST /evaluations`` branches on ``execution``: ``"local"`` (the default) is the
+in-process background task described above, ``"cloud"`` hands the work to an
+AgentCore Runtime worker with state in DynamoDB (:mod:`promptatron.evals.cloud`,
+contract in ``docs/cloud-evals.md``).
+
+**Lane detection on reads is "SQLite first, then DynamoDB".** A cloud evaluation
+has no SQLite row at all -- the id is minted at submit time and only the worker
+writes it anywhere -- so a local miss is unambiguous: ``get_evaluation``,
+``stream_evaluation_events``, ``cancel_evaluation`` and ``get_run`` fall through
+to the cloud reader (and re-raise the local ``404`` when the lane is
+unconfigured). No lane hint is carried in the id or the URL, so a stale
+bookmark keeps working after the lane is turned on. *Listings* are the one
+exception, because there is nothing to miss on: cloud rows appear only under
+``?execution=cloud``, which reads the GSI1 partition instead of SQLite.
 """
 
 from __future__ import annotations
@@ -28,9 +45,12 @@ from promptatron.engine.events import ErrorEvent, RunEvent, RunStartEvent
 from promptatron.engine.model_factory import ModelFactory, build_model
 from promptatron.engine.runner import execute_run
 from promptatron.engine.schemas import RunRequest
-from promptatron.errors import ConflictError, InternalError, UpstreamError
+from promptatron.errors import ConflictError, InternalError, NotFoundError, UpstreamError
+from promptatron.evals import cloud as evals_cloud
 from promptatron.evals import engine as evals_engine
 from promptatron.evals import jobs as evals_jobs
+from promptatron.evals.cloud import Invoker, get_eval_table, get_invoker
+from promptatron.evals.ddb_reader import EvalTable
 from promptatron.evals.events import EvalCompleteEvent
 from promptatron.evals.judge import JudgeFactory, get_judge_factory
 from promptatron.evals.schemas import EvaluationRequest
@@ -142,14 +162,25 @@ def list_runs(
     since: datetime | None = None,
     cursor: str | None = None,
     limit: int = Query(default=25, ge=1, le=100),
+    execution: str | None = None,
     session: Session = Depends(get_session),
+    table: EvalTable | None = Depends(get_eval_table),
 ):
     """List runs newest-first (paginated), or export all matches as NDJSON.
 
     With ``Accept: application/x-ndjson`` this ignores ``cursor``/``limit``
     and streams every run matching the other filters as NDJSON ``RunDetail``
     lines instead of returning a page envelope.
+
+    ``?execution=cloud`` lists the DynamoDB GSI1 ``RUN`` partition instead of
+    SQLite; the other filters do not apply there (the index is keyed on time
+    alone) and the NDJSON export stays local-only.
     """
+    if execution == "cloud":
+        return evals_cloud.list_runs(
+            evals_cloud.require_table(table), cursor=cursor, limit=limit
+        )
+
     if request.headers.get("accept") == NDJSON_MEDIA_TYPE:
         return StreamingResponse(
             _export_ndjson(model_id, scenario_id, status, since),
@@ -172,8 +203,18 @@ def list_runs(
 
 
 @router.get("/runs/{run_id}", response_model=RunDetail)
-def get_run(run_id: str, session: Session = Depends(get_session)):
-    record = history.get_run(session, run_id)
+def get_run(
+    run_id: str,
+    session: Session = Depends(get_session),
+    table: EvalTable | None = Depends(get_eval_table),
+):
+    """A run from SQLite, falling back to the cloud lane's ``RUN#{id}/META``."""
+    try:
+        record = history.get_run(session, run_id)
+    except NotFoundError:
+        if table is None:
+            raise
+        return evals_cloud.get_run(table, run_id)
     return RunDetail.model_validate(record)
 
 
@@ -189,8 +230,24 @@ def list_evaluations(
     status: str | None = None,
     cursor: str | None = None,
     limit: int = Query(default=25, ge=1, le=100),
+    execution: str | None = None,
     session: Session = Depends(get_session),
+    table: EvalTable | None = Depends(get_eval_table),
 ):
+    """List evaluations newest-first.
+
+    The default listing is SQLite (local evaluations only). ``?execution=cloud``
+    reads the DynamoDB GSI1 ``EVAL`` partition instead; the two are never mixed.
+    """
+    if execution == "cloud":
+        return evals_cloud.list_evaluations(
+            evals_cloud.require_table(table),
+            kind=kind,
+            status=status,
+            cursor=cursor,
+            limit=limit,
+        )
+
     items, next_cursor = history.list_evaluations(
         session, kind=kind, status=status, cursor=cursor, limit=limit
     )
@@ -212,6 +269,7 @@ async def create_evaluation(
     model_factory: ModelFactory = Depends(get_model_factory),
     judge_factory: JudgeFactory = Depends(get_judge_factory),
     session: Session = Depends(get_session),
+    invoker: Invoker | None = Depends(get_invoker),
 ):
     """Accept an evaluation and run it in the background.
 
@@ -219,7 +277,15 @@ async def create_evaluation(
     ``run_id`` is a 404 rather than a job that fails a second later -- and the
     row exists as ``pending`` before the response is sent, so the id in the body
     is immediately usable against ``/evaluations/{id}`` and its event stream.
+
+    ``execution="cloud"`` short-circuits all of that: the work goes to the
+    AgentCore worker and the ``202`` is synthesized from the request, with no
+    SQLite row written at all (400 ``cloud_lane_unavailable`` when the lane is
+    not configured).
     """
+    if payload.execution == "cloud":
+        return await evals_cloud.submit(payload, settings=settings, invoker=invoker)
+
     if payload.kind == "grade":
         for run_id in payload.run_ids:
             history.get_run(session, run_id)
@@ -245,8 +311,18 @@ async def create_evaluation(
 
 
 @router.get("/evaluations/{evaluation_id}", response_model=EvaluationDetail)
-def get_evaluation(evaluation_id: str, session: Session = Depends(get_session)):
-    record = history.get_evaluation(session, evaluation_id)
+def get_evaluation(
+    evaluation_id: str,
+    session: Session = Depends(get_session),
+    table: EvalTable | None = Depends(get_eval_table),
+):
+    """An evaluation from SQLite, falling back to the cloud lane's ``META`` item."""
+    try:
+        record = history.get_evaluation(session, evaluation_id)
+    except NotFoundError:
+        if table is None:
+            raise
+        return evals_cloud.get_evaluation(table, evaluation_id)
     return EvaluationDetail.model_validate(record)
 
 
@@ -266,32 +342,61 @@ def _replay_finished(record: history.EvaluationRecord) -> Iterator[str]:
 
 
 @router.get("/evaluations/{evaluation_id}/events")
-def stream_evaluation_events(evaluation_id: str, session: Session = Depends(get_session)):
+def stream_evaluation_events(
+    evaluation_id: str,
+    session: Session = Depends(get_session),
+    table: EvalTable | None = Depends(get_eval_table),
+):
     """Follow an evaluation as NDJSON: replay what happened, then live events.
 
     A subscriber that connects mid-run gets every event already emitted before
     the live ones; a subscriber that connects after the job finished gets the
     whole log and then EOF.
+
+    A cloud evaluation has neither a job nor a row, so it falls through to the
+    DynamoDB event log -- read here rather than inside the generator so an
+    unknown id is still a 404 envelope instead of an empty 200 stream.
     """
     job = evals_jobs.get(evaluation_id)
     if job is not None:
         return StreamingResponse(job.follow(), media_type=NDJSON_MEDIA_TYPE)
 
-    record = history.get_evaluation(session, evaluation_id)
+    try:
+        record = history.get_evaluation(session, evaluation_id)
+    except NotFoundError:
+        if table is None:
+            raise
+        evals_cloud.get_evaluation(table, evaluation_id)  # 404s before streaming
+        return StreamingResponse(
+            evals_cloud.stream_events(table, evaluation_id), media_type=NDJSON_MEDIA_TYPE
+        )
     return StreamingResponse(_replay_finished(record), media_type=NDJSON_MEDIA_TYPE)
 
 
 @router.delete("/evaluations/{evaluation_id}", status_code=http_status.HTTP_204_NO_CONTENT)
 async def cancel_evaluation(
-    evaluation_id: str, session: Session = Depends(get_session)
+    evaluation_id: str,
+    session: Session = Depends(get_session),
+    table: EvalTable | None = Depends(get_eval_table),
 ) -> Response:
     """Cancel a running evaluation (204); a finished one is a 409.
 
     The response is sent only once the job has persisted ``cancelled`` and
     emitted its final event, so a client that immediately re-reads the row sees
     the cancellation. Runs that already completed keep their ids on the row.
+
+    A cloud evaluation cannot be waited on that way: the ``CANCEL`` item goes
+    into DynamoDB and the 204 is immediate, with the worker noticing between
+    runs.
     """
-    record = history.get_evaluation(session, evaluation_id)
+    try:
+        record = history.get_evaluation(session, evaluation_id)
+    except NotFoundError:
+        if table is None:
+            raise
+        evals_cloud.cancel_evaluation(table, evaluation_id)
+        return Response(status_code=http_status.HTTP_204_NO_CONTENT)
+
     job = evals_jobs.get(evaluation_id)
 
     if job is not None and not job.finished:

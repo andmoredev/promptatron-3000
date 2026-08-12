@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     fake_model: bool = False
 
+    # -- the cloud evaluation lane (docs/cloud-evals.md) -------------------- #
+    #: AgentCore Runtime ARN of the evaluation worker. None = lane unavailable.
+    eval_runtime_arn: str | None = None
+    #: DynamoDB table holding cloud evaluation state (the config-store table).
+    eval_table: str | None = None
+
 
 def get_settings() -> Settings:
     """Return a fresh Settings instance (re-reads the environment)."""

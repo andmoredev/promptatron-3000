@@ -9,7 +9,7 @@ item is allowed to create.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -71,3 +71,7 @@ class EvaluationDetail(BaseModel):
     result: Any | None = None
     progress: Any | None = None
     error: Any | None = None
+    #: Which lane ran this evaluation. SQLite rows carry no such column, so a
+    #: local row (including every row that predates the cloud lane) falls back
+    #: to the default. See ``docs/cloud-evals.md``.
+    execution: Literal["local", "cloud"] = "local"

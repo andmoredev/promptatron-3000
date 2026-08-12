@@ -54,7 +54,16 @@ class EvalJob:
 
     def emit(self, event: EvalEvent) -> EventDict:
         """Append an event to the log and fan it out to every subscriber."""
-        entry = event.as_log_entry()
+        return self.emit_entry(event.as_log_entry())
+
+    def emit_entry(self, entry: EventDict) -> EventDict:
+        """:meth:`emit` for an event that is already in its wire shape.
+
+        This is the local lane's emitter seam (see
+        :func:`promptatron.evals.engine.execute_evaluation_with_seam`), which
+        hands its events over as plain dicts so the cloud worker can write the
+        very same dicts to DynamoDB.
+        """
         self.log.append(entry)
         for queue in self._subscribers:
             queue.put_nowait(entry)
