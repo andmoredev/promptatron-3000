@@ -15,8 +15,10 @@ import pytest
 from promptatron.tools import registry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FRAUD_SCENARIO = REPO_ROOT / "app" / "src" / "scenarios" / "fraud-detection" / "scenario.json"
-SHIPPING_SCENARIO = REPO_ROOT / "app" / "src" / "scenarios" / "shipping-logistics" / "scenario.json"
+FRAUD_SCENARIO = REPO_ROOT / "api" / "seed" / "fixtures" / "fraud-detection" / "scenario.json"
+SHIPPING_SCENARIO = (
+    REPO_ROOT / "api" / "seed" / "fixtures" / "shipping-logistics" / "scenario.json"
+)
 
 
 def _load_scenario(path: Path) -> dict:
