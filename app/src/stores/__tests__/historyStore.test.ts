@@ -1,0 +1,235 @@
+/** historyStore: cursor paging, filter resets, invalidation, detail cache. */
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Page, RunDetail, RunSummary } from '../../api'
+
+const listMock = vi.fn()
+const getMock = vi.fn()
+const removeMock = vi.fn()
+
+vi.mock('../../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api')>()
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      runs: { ...actual.api.runs, list: listMock, get: getMock, remove: removeMock }
+    }
+  }
+})
+
+const { ApiError } = await import('../../api')
+const {
+  useHistoryStore,
+  selectHasMore,
+  selectNeedsRefresh,
+  selectHasFilters,
+  INITIAL_HISTORY_STATE
+} = await import('../historyStore')
+
+function summary(id: string, overrides: Partial<RunSummary> = {}): RunSummary {
+  return {
+    id,
+    ts: '2026-08-11T18:00:00Z',
+    model_id: 'anthropic.claude-3-sonnet',
+    scenario_id: 'shipping',
+    dataset_id: null,
+    status: 'completed',
+    metrics: { total_tokens: 100 },
+    ...overrides
+  }
+}
+
+function page(items: RunSummary[], next_cursor: string | null): Page<RunSummary> {
+  return { items, next_cursor }
+}
+
+beforeEach(() => {
+  listMock.mockReset()
+  getMock.mockReset()
+  removeMock.mockReset()
+  useHistoryStore.getState().clear()
+})
+
+describe('paging', () => {
+  it('loadFirstPage replaces items and records the cursor', async () => {
+    listMock.mockResolvedValueOnce(page([summary('r1'), summary('r2')], 'cursor-1'))
+
+    await useHistoryStore.getState().loadFirstPage()
+
+    expect(listMock).toHaveBeenCalledWith({ limit: 25 })
+    const state = useHistoryStore.getState()
+    expect(state.items.map((item) => item.id)).toEqual(['r1', 'r2'])
+    expect(state.next_cursor).toBe('cursor-1')
+    expect(state.loading).toBe(false)
+    expect(state.loaded).toBe(true)
+    expect(selectHasMore(state)).toBe(true)
+  })
+
+  it('loadMore appends the second page and clears the cursor at the end', async () => {
+    listMock
+      .mockResolvedValueOnce(page([summary('r1'), summary('r2')], 'cursor-1'))
+      .mockResolvedValueOnce(page([summary('r3')], null))
+
+    await useHistoryStore.getState().loadFirstPage()
+    await useHistoryStore.getState().loadMore()
+
+    expect(listMock).toHaveBeenCalledTimes(2)
+    expect(listMock).toHaveBeenLastCalledWith({ limit: 25, cursor: 'cursor-1' })
+
+    const state = useHistoryStore.getState()
+    expect(state.items.map((item) => item.id)).toEqual(['r1', 'r2', 'r3'])
+    expect(state.next_cursor).toBeNull()
+    expect(selectHasMore(state)).toBe(false)
+  })
+
+  it('loadMore is a no-op without a cursor', async () => {
+    listMock.mockResolvedValueOnce(page([summary('r1')], null))
+    await useHistoryStore.getState().loadFirstPage()
+    await useHistoryStore.getState().loadMore()
+    expect(listMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('records an ApiError as {code, message} and stops loading', async () => {
+    listMock.mockRejectedValueOnce(
+      new ApiError('database is locked', { code: 'internal_error', status: 500 })
+    )
+
+    await useHistoryStore.getState().loadFirstPage()
+
+    const state = useHistoryStore.getState()
+    expect(state.error).toEqual({ code: 'internal_error', message: 'database is locked' })
+    expect(state.loading).toBe(false)
+    expect(state.items).toEqual([])
+  })
+})
+
+describe('filters', () => {
+  it('setFilters resets paging and refetches with the new query', async () => {
+    listMock
+      .mockResolvedValueOnce(page([summary('r1'), summary('r2')], 'cursor-1'))
+      .mockResolvedValueOnce(page([summary('r9', { status: 'error' })], null))
+
+    await useHistoryStore.getState().loadFirstPage()
+    expect(useHistoryStore.getState().next_cursor).toBe('cursor-1')
+
+    await useHistoryStore.getState().setFilters({ status: 'error' })
+
+    expect(listMock).toHaveBeenLastCalledWith({ limit: 25, status: 'error' })
+    const state = useHistoryStore.getState()
+    expect(state.filters).toEqual({ status: 'error' })
+    expect(state.items.map((item) => item.id)).toEqual(['r9'])
+    // the old cursor was dropped, not carried into the new query
+    expect(state.next_cursor).toBeNull()
+    expect(selectHasFilters(state)).toBe(true)
+  })
+
+  it('merges filter patches and clears a key set to null', async () => {
+    listMock.mockResolvedValue(page([], null))
+
+    await useHistoryStore.getState().setFilters({ model_id: 'm1' })
+    await useHistoryStore.getState().setFilters({ scenario_id: 'shipping' })
+    expect(useHistoryStore.getState().filters).toEqual({
+      model_id: 'm1',
+      scenario_id: 'shipping'
+    })
+
+    await useHistoryStore.getState().setFilters({ model_id: null })
+    expect(useHistoryStore.getState().filters).toEqual({ scenario_id: 'shipping' })
+    expect(listMock).toHaveBeenLastCalledWith({ limit: 25, scenario_id: 'shipping' })
+  })
+
+  it('carries filters into loadMore', async () => {
+    listMock
+      .mockResolvedValueOnce(page([summary('r1')], 'cursor-1'))
+      .mockResolvedValueOnce(page([summary('r2')], null))
+
+    await useHistoryStore.getState().setFilters({ model_id: 'm1' })
+    await useHistoryStore.getState().loadMore()
+
+    expect(listMock).toHaveBeenLastCalledWith({ limit: 25, model_id: 'm1', cursor: 'cursor-1' })
+  })
+})
+
+describe('invalidate', () => {
+  it('marks the list stale without fetching, and the next load clears it', async () => {
+    listMock.mockResolvedValue(page([summary('r1')], null))
+    await useHistoryStore.getState().loadFirstPage()
+    expect(selectNeedsRefresh(useHistoryStore.getState())).toBe(false)
+
+    useHistoryStore.getState().invalidate()
+    expect(listMock).toHaveBeenCalledTimes(1)
+    expect(useHistoryStore.getState().stale).toBe(true)
+    expect(selectNeedsRefresh(useHistoryStore.getState())).toBe(true)
+
+    await useHistoryStore.getState().loadFirstPage()
+    expect(useHistoryStore.getState().stale).toBe(false)
+  })
+
+  it('reports a never-loaded list as needing a refresh', () => {
+    expect(selectNeedsRefresh(INITIAL_HISTORY_STATE)).toBe(true)
+  })
+})
+
+describe('detail cache and removal', () => {
+  const detail = { id: 'r1', status: 'completed' } as unknown as RunDetail
+
+  it('getRunDetail fetches once and serves the cache afterwards', async () => {
+    getMock.mockResolvedValue(detail)
+
+    const first = await useHistoryStore.getState().getRunDetail('r1')
+    const second = await useHistoryStore.getState().getRunDetail('r1')
+
+    expect(getMock).toHaveBeenCalledTimes(1)
+    expect(first).toBe(detail)
+    expect(second).toBe(detail)
+    expect(useHistoryStore.getState().details.r1).toBe(detail)
+  })
+
+  it('shares one request between concurrent callers', async () => {
+    getMock.mockResolvedValue(detail)
+
+    const [a, b] = await Promise.all([
+      useHistoryStore.getState().getRunDetail('r1'),
+      useHistoryStore.getState().getRunDetail('r1')
+    ])
+
+    expect(getMock).toHaveBeenCalledTimes(1)
+    expect(a).toBe(detail)
+    expect(b).toBe(detail)
+  })
+
+  it('force refetches', async () => {
+    getMock.mockResolvedValue(detail)
+    await useHistoryStore.getState().getRunDetail('r1')
+    await useHistoryStore.getState().getRunDetail('r1', true)
+    expect(getMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('remove() drops the row and its cached detail', async () => {
+    listMock.mockResolvedValueOnce(page([summary('r1'), summary('r2')], null))
+    getMock.mockResolvedValue(detail)
+    removeMock.mockResolvedValue(undefined)
+
+    await useHistoryStore.getState().loadFirstPage()
+    await useHistoryStore.getState().getRunDetail('r1')
+    await useHistoryStore.getState().remove('r1')
+
+    expect(removeMock).toHaveBeenCalledWith('r1')
+    const state = useHistoryStore.getState()
+    expect(state.items.map((item) => item.id)).toEqual(['r2'])
+    expect(state.details.r1).toBeUndefined()
+  })
+
+  it('keeps the row when the delete fails', async () => {
+    listMock.mockResolvedValueOnce(page([summary('r1')], null))
+    removeMock.mockRejectedValueOnce(new ApiError('gone', { code: 'not_found', status: 404 }))
+
+    await useHistoryStore.getState().loadFirstPage()
+    await useHistoryStore.getState().remove('r1')
+
+    const state = useHistoryStore.getState()
+    expect(state.items.map((item) => item.id)).toEqual(['r1'])
+    expect(state.error).toEqual({ code: 'not_found', message: 'gone' })
+  })
+})

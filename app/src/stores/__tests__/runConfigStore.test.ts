@@ -1,0 +1,253 @@
+/** runConfigStore: persistence round-trip, scenario prefill, request building. */
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ScenarioDetail } from '../../api'
+
+vi.mock('../../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api')>()
+  return { ...actual, api: { ...actual.api } }
+})
+
+const {
+  useRunConfigStore,
+  toRunRequest,
+  scenarioDefaults,
+  selectCanRun,
+  DEFAULT_RUN_CONFIG,
+  RUN_CONFIG_STORAGE_KEY
+} = await import('../runConfigStore')
+
+const scenario: ScenarioDetail = {
+  id: 'shipping',
+  name: 'Shipping support',
+  description: 'Carrier lookups',
+  createdAt: '2026-08-01T00:00:00Z',
+  updatedAt: '2026-08-02T00:00:00Z',
+  systemPrompts: [
+    { id: 'sp-1', name: 'Terse agent', content: 'You are a terse support agent.' },
+    { id: 'sp-2', name: 'Chatty agent', content: 'You are chatty.' }
+  ],
+  userPrompts: [
+    { id: 'up-1', name: 'Where is my order', content: 'Where is order B456?' },
+    { id: 'up-2', name: 'Refund', content: 'I want a refund.' }
+  ],
+  tools: [
+    {
+      name: 'getCarrierStatus',
+      description: 'Look up a carrier status',
+      inputSchema: { type: 'object' },
+      handlerKey: 'carrier.status'
+    }
+  ],
+  datasets: [{ id: 'ds-1', name: 'Orders', description: null, contentType: 'text/csv' }]
+}
+
+beforeEach(() => {
+  localStorage.clear()
+  useRunConfigStore.setState({ ...DEFAULT_RUN_CONFIG })
+})
+
+describe('defaults', () => {
+  it('starts from DEFAULT_RUN_CONFIG with streaming on', () => {
+    const state = useRunConfigStore.getState()
+    expect(state.model_id).toBe('')
+    expect(state.stream).toBe(true)
+    expect(state.tools_enabled).toBe(false)
+    expect(state.max_tool_iterations).toBe(10)
+    expect(state.guardrail).toBeNull()
+    expect(state.inference).toEqual({})
+  })
+
+  it('selectCanRun needs a model and a user prompt', () => {
+    expect(selectCanRun(useRunConfigStore.getState())).toBe(false)
+    useRunConfigStore.getState().setModelId('anthropic.claude-3-sonnet')
+    expect(selectCanRun(useRunConfigStore.getState())).toBe(false)
+    useRunConfigStore.getState().setUserPrompt('hello')
+    expect(selectCanRun(useRunConfigStore.getState())).toBe(true)
+  })
+})
+
+describe('setters', () => {
+  it('merges inference patches and deletes keys set to undefined', () => {
+    const { setInference } = useRunConfigStore.getState()
+    setInference({ temperature: 0.2 })
+    setInference({ max_tokens: 512 })
+    expect(useRunConfigStore.getState().inference).toEqual({ temperature: 0.2, max_tokens: 512 })
+
+    setInference({ temperature: undefined })
+    expect(useRunConfigStore.getState().inference).toEqual({ max_tokens: 512 })
+  })
+
+  it('selectSystemPrompt/selectUserPrompt set text and id together', () => {
+    const state = useRunConfigStore.getState()
+    state.selectSystemPrompt('sp-2', 'You are chatty.')
+    state.selectUserPrompt('up-2', 'I want a refund.')
+
+    const next = useRunConfigStore.getState()
+    expect(next.system_prompt).toBe('You are chatty.')
+    expect(next.system_prompt_id).toBe('sp-2')
+    expect(next.user_prompt).toBe('I want a refund.')
+    expect(next.user_prompt_id).toBe('up-2')
+  })
+
+  it('reset() restores the defaults', () => {
+    const state = useRunConfigStore.getState()
+    state.setModelId('m')
+    state.setUserPrompt('p')
+    state.setGuardrail({ id: 'gr-1', version: 'DRAFT', trace: true })
+    state.reset()
+
+    const next = useRunConfigStore.getState()
+    expect(next.model_id).toBe('')
+    expect(next.user_prompt).toBe('')
+    expect(next.guardrail).toBeNull()
+  })
+})
+
+describe('applyScenarioDefaults', () => {
+  it('fills empty prompts from the first system/user prompt', () => {
+    useRunConfigStore.getState().applyScenarioDefaults(scenario)
+
+    const state = useRunConfigStore.getState()
+    expect(state.scenario_id).toBe('shipping')
+    expect(state.system_prompt).toBe('You are a terse support agent.')
+    expect(state.system_prompt_id).toBe('sp-1')
+    expect(state.user_prompt).toBe('Where is order B456?')
+    expect(state.user_prompt_id).toBe('up-1')
+    expect(state.dataset_id).toBe('ds-1')
+    expect(state.tools_enabled).toBe(true)
+  })
+
+  it('never clobbers text the user already typed', () => {
+    useRunConfigStore.getState().setUserPrompt('my own question')
+    useRunConfigStore.getState().applyScenarioDefaults(scenario)
+
+    const state = useRunConfigStore.getState()
+    expect(state.user_prompt).toBe('my own question')
+    expect(state.user_prompt_id).toBeNull()
+    // the empty field is still filled
+    expect(state.system_prompt).toBe('You are a terse support agent.')
+  })
+
+  it('is pure via scenarioDefaults and tolerates an empty scenario', () => {
+    const empty: ScenarioDetail = {
+      ...scenario,
+      id: 'bare',
+      systemPrompts: [],
+      userPrompts: [],
+      tools: [],
+      datasets: []
+    }
+    expect(scenarioDefaults(DEFAULT_RUN_CONFIG, empty)).toEqual({ scenario_id: 'bare' })
+  })
+
+  it('leaves an already-chosen dataset alone', () => {
+    useRunConfigStore.getState().setDatasetId('ds-other')
+    useRunConfigStore.getState().applyScenarioDefaults(scenario)
+    expect(useRunConfigStore.getState().dataset_id).toBe('ds-other')
+  })
+})
+
+describe('toRunRequest', () => {
+  it('omits empty optional fields', () => {
+    const state = useRunConfigStore.getState()
+    state.setModelId('anthropic.claude-3-sonnet')
+    state.setUserPrompt('hi')
+
+    expect(toRunRequest(useRunConfigStore.getState())).toEqual({
+      model_id: 'anthropic.claude-3-sonnet',
+      user_prompt: 'hi',
+      tools_enabled: false,
+      max_tool_iterations: 10,
+      stream: true
+    })
+  })
+
+  it('includes scenario, dataset, inference and guardrail when set', () => {
+    const state = useRunConfigStore.getState()
+    state.setModelId('m')
+    state.setUserPrompt('hi')
+    state.setSystemPrompt('be terse')
+    state.setScenarioId('shipping')
+    state.setDatasetId('ds-1')
+    state.setInference({ temperature: 0.1, top_p: 0.9 })
+    state.setGuardrail({ id: 'gr-1', version: '2', trace: true })
+    state.setToolsEnabled(true)
+    state.setMaxToolIterations(4)
+    state.setStream(false)
+
+    expect(toRunRequest(useRunConfigStore.getState())).toEqual({
+      model_id: 'm',
+      user_prompt: 'hi',
+      system_prompt: 'be terse',
+      scenario_id: 'shipping',
+      dataset_id: 'ds-1',
+      inference: { temperature: 0.1, top_p: 0.9 },
+      guardrail: { id: 'gr-1', version: '2', trace: true },
+      tools_enabled: true,
+      max_tool_iterations: 4,
+      stream: false
+    })
+  })
+})
+
+describe('persistence', () => {
+  it('writes every config field to localStorage under the v1 key', async () => {
+    const state = useRunConfigStore.getState()
+    state.setModelId('anthropic.claude-3-sonnet')
+    state.setSystemPrompt('be terse')
+    state.setUserPrompt('where is B456?')
+    state.setInference({ temperature: 0.3 })
+    state.setGuardrail({ id: 'gr-1', version: 'DRAFT', trace: true })
+
+    const raw = localStorage.getItem(RUN_CONFIG_STORAGE_KEY)
+    expect(raw).not.toBeNull()
+
+    const parsed = JSON.parse(raw as string)
+    expect(parsed.version).toBe(1)
+    expect(parsed.state).toEqual({
+      model_id: 'anthropic.claude-3-sonnet',
+      system_prompt: 'be terse',
+      user_prompt: 'where is B456?',
+      scenario_id: null,
+      dataset_id: null,
+      system_prompt_id: null,
+      user_prompt_id: null,
+      inference: { temperature: 0.3 },
+      tools_enabled: false,
+      max_tool_iterations: 10,
+      guardrail: { id: 'gr-1', version: 'DRAFT', trace: true },
+      stream: true
+    })
+    // no functions leaked into the persisted payload
+    expect(Object.keys(parsed.state)).toHaveLength(12)
+  })
+
+  it('round-trips: a stored payload rehydrates back into the store', async () => {
+    localStorage.setItem(
+      RUN_CONFIG_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        state: {
+          ...DEFAULT_RUN_CONFIG,
+          model_id: 'amazon.nova-pro-v1:0',
+          user_prompt: 'restored prompt',
+          scenario_id: 'shipping',
+          inference: { max_tokens: 256 },
+          stream: false
+        }
+      })
+    )
+
+    await useRunConfigStore.persist.rehydrate()
+
+    const state = useRunConfigStore.getState()
+    expect(state.model_id).toBe('amazon.nova-pro-v1:0')
+    expect(state.user_prompt).toBe('restored prompt')
+    expect(state.scenario_id).toBe('shipping')
+    expect(state.inference).toEqual({ max_tokens: 256 })
+    expect(state.stream).toBe(false)
+    // actions survive rehydration
+    expect(typeof state.applyScenarioDefaults).toBe('function')
+  })
+})
