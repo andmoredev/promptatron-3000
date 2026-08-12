@@ -1,9 +1,0 @@
-{"type":"run_start","run_id":"01JBQZ7K3M9X2VQY8N4F6TWR5A","model_id":"anthropic.claude-3-sonnet","ts":"2026-08-11T18:04:11.512000Z"}
-{"type":"text_delta","text":"Checking "}
-{"type":"text_delta","text":"order "}
-{"type":"text_delta","text":"B456"}
-{"type":"tool_use_start","tool_use_id":"tooluse_9dK1aQ","name":"getCarrierStatus"}
-{"type":"tool_input_delta","tool_use_id":"tooluse_9dK1aQ","json":"{\"order_id\": \"B456\"}"}
-{"type":"tool_result","tool_use_id":"tooluse_9dK1aQ","name":"getCarrierStatus","input":{"order_id":"B456"},"output":{"carrier":"UPS","status":"delayed","eta":"2026-08-14"},"duration_ms":42,"error":null}
-{"type":"metrics","input_tokens":412,"output_tokens":86,"total_tokens":498,"latency_ms":1873,"cycle_count":2}
-{"type":"run_complete","run_id":"01JBQZ7K3M9X2VQY8N4F6TWR5A","status":"completed","final_text":"Checking order B456 — the carrier reports it as delayed, ETA 2026-08-14."}

@@ -50,3 +50,5 @@ templates.json
 dist/
 .build/
 server/mutants/
+.stryker-tmp/
+reports/mutation/
