@@ -445,9 +445,12 @@ async def test_models_endpoint_returns_models_providers_and_cached(
 
 
 @respx.mock
-async def test_models_endpoint_still_502s_on_a_bedrock_failure(
+async def test_bedrock_failure_degrades_like_every_other_provider(
     models_client, stub_bedrock, monkeypatch
 ):
+    """A Bedrock failure must not take the whole catalog down: the response is
+    a 200 with Bedrock contributing nothing, while a configured provider's
+    models still come through — identical in appearance to an Ollama outage."""
     from botocore.exceptions import ClientError
 
     stub_bedrock.list_foundation_models.side_effect = ClientError(
@@ -455,11 +458,17 @@ async def test_models_endpoint_still_502s_on_a_bedrock_failure(
         "ListFoundationModels",
     )
     monkeypatch.setenv("PROMPTATRON_ANTHROPIC_API_KEY", "sk-ant-test")
+    respx.get(ANTHROPIC_MODELS_URL).mock(return_value=httpx.Response(200, json=ANTHROPIC_PAYLOAD))
 
     response = await models_client.get("/api/v1/models")
 
-    assert response.status_code == 502
-    assert response.json()["error"]["code"] == "upstream_error"
+    assert response.status_code == 200
+    body = response.json()
+    sources = {model["source"] for model in body["models"]}
+    assert "bedrock" not in sources
+    assert "anthropic" in sources
+    assert body["providers"]["anthropic"]["configured"] is True
+    assert "bedrock" in body["providers"]
 
 
 @respx.mock

@@ -293,8 +293,8 @@ async def test_list_models_boto_client_called_once_across_two_requests(
 
 # Tests for error handling
 
-async def test_list_models_bedrock_error_mapping(client, mock_bedrock_client):
-    """ClientError from boto3 should map to UpstreamError."""
+async def test_list_models_bedrock_error_degrades(client, mock_bedrock_client):
+    """A Bedrock ClientError degrades to an empty listing, same as any provider."""
     mock_bedrock_client.list_foundation_models.side_effect = ClientError(
         {"Error": {"Code": "ValidationException", "Message": "Invalid region"}},
         "ListFoundationModels",
@@ -302,14 +302,14 @@ async def test_list_models_bedrock_error_mapping(client, mock_bedrock_client):
 
     with patch("promptatron.awscat.catalog.boto3.client", return_value=mock_bedrock_client):
         response = await client.get("/api/v1/models")
-        assert response.status_code == 502
+        assert response.status_code == 200
         body = response.json()
-        assert body["error"]["code"] == "upstream_error"
-        assert "ValidationException" in body["error"]["message"]
+        assert body["models"] == []
+        assert "bedrock" in body["providers"]
 
 
-async def test_list_models_inference_profile_error(client, mock_bedrock_client):
-    """ClientError from inference profiles should map to UpstreamError."""
+async def test_list_models_inference_profile_error_degrades(client, mock_bedrock_client):
+    """ClientError from inference profiles degrades the Bedrock listing to empty."""
     mock_paginator = MagicMock()
     mock_paginator.paginate.side_effect = ClientError(
         {"Error": {"Code": "AccessDeniedException", "Message": "Access denied"}},
@@ -319,9 +319,8 @@ async def test_list_models_inference_profile_error(client, mock_bedrock_client):
 
     with patch("promptatron.awscat.catalog.boto3.client", return_value=mock_bedrock_client):
         response = await client.get("/api/v1/models")
-        assert response.status_code == 502
-        body = response.json()
-        assert body["error"]["code"] == "upstream_error"
+        assert response.status_code == 200
+        assert response.json()["models"] == []
 
 
 # Integration test

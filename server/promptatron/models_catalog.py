@@ -275,14 +275,23 @@ class ProviderCatalog:
     async def collect(self, settings: Settings, bedrock: ModelCatalog) -> CatalogResult:
         """Build the whole ``GET /models`` payload.
 
-        Raises:
-            ClientError: if the Bedrock listing fails (see the module docstring).
+        Never raises for a provider failure: Bedrock degrades to an empty
+        listing exactly like the other three, so an expired session or a
+        missing profile reads as "no Bedrock models offered" (with the detail
+        in the log and in ``/health``'s ``aws.credentials``), not a 502.
         """
-        # Bedrock is always listed, configured or not: the credential check is
-        # advisory, and a listing that works despite it (an assumed role, say)
-        # should still show up.
+        # Bedrock is always attempted, configured or not: the credential check
+        # is advisory, and a listing that works despite it (an assumed role,
+        # say) should still show up.
         bedrock_cached = bedrock.is_cached(settings.aws_region)
-        models = list(bedrock.list_models(settings.aws_region))
+        try:
+            models = list(bedrock.list_models(settings.aws_region))
+        except Exception as exc:
+            # Same one-line, no-traceback treatment the other providers get --
+            # /health polls this on a loop.
+            logger.warning("Failed to list bedrock models: %r", exc)
+            bedrock_cached = False
+            models = []
 
         listings = await self._listings(settings)
         for provider in ("anthropic", "openai", "ollama"):

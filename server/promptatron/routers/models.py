@@ -9,12 +9,10 @@ that are not. Each entry's ``source`` is the value to send back as
 import logging
 from typing import Any
 
-from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends
 
 from promptatron.awscat.catalog import ModelCatalog
 from promptatron.config import Settings, get_settings
-from promptatron.errors import UpstreamError
 from promptatron.models_catalog import ProviderCatalog
 from promptatron.models_catalog import catalog as provider_catalog_singleton
 
@@ -54,16 +52,11 @@ async def list_models(
         for Ollama); ``cached`` is true only when *every* listing came from
         cache.
 
-    A non-Bedrock provider that fails is reported as configured-but-empty rather
-    than failing the request; a Bedrock failure is still a 502.
+    Every provider degrades the same way: a failing listing contributes an
+    empty list (with its ``configured`` flag intact) rather than failing the
+    request, so this endpoint always returns 200.
     """
-    try:
-        result = await provider_catalog.collect(settings, catalog)
-    except ClientError as e:
-        error_code = e.response.get("Error", {}).get("Code", "unknown")
-        message = f"Failed to list models: {error_code}"
-        logger.error(f"{message}: {e}")
-        raise UpstreamError(message, detail={"error_code": error_code}) from e
+    result = await provider_catalog.collect(settings, catalog)
 
     return {
         "models": result.models,
