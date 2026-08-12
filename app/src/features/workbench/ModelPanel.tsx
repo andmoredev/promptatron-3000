@@ -84,9 +84,28 @@ export default function ModelPanel() {
       )}
 
       {error && (
-        <p className="mt-2 text-xs text-red-600" role="alert">
-          Could not load models: {error.message}
-        </p>
+        <div className="mt-2">
+          <p className="text-xs text-red-600" role="alert">
+            Could not load models: {error.message}
+          </p>
+          {/* Dev-mode affordance: without AWS creds the catalog never loads
+              (e.g. PROMPTATRON_FAKE_MODEL runs), so let a model id be typed
+              directly rather than blocking on the dropdown. */}
+          <label
+            htmlFor="model-id-manual"
+            className="block text-xs font-medium text-gray-700 mt-2 mb-1"
+          >
+            Enter model id manually
+          </label>
+          <input
+            id="model-id-manual"
+            type="text"
+            className="input-field font-mono text-xs"
+            placeholder="e.g. anthropic.claude-3-5-sonnet-20241022-v2:0"
+            value={modelId}
+            onChange={(event) => setModelId(event.target.value)}
+          />
+        </div>
       )}
 
       {!loading && !error && models.length === 0 && (

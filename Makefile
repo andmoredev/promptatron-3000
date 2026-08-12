@@ -1,5 +1,5 @@
 .PHONY: dev dev-server dev-app lint lint-app lint-server test test-app test-api test-server \
-	install install-app install-api install-server deploy-api seed-api
+	install install-app install-api install-server deploy-api seed-api e2e smoke
 
 # --------------------------------------------------------------------------- #
 # dev
@@ -69,6 +69,32 @@ test-api:
 
 test-server:
 	cd server && uv run pytest
+
+# --------------------------------------------------------------------------- #
+# e2e / smoke
+#
+# `e2e` runs the Playwright suite against the fake-model full stack (server +
+# app), which `playwright.config.ts` boots itself as `webServer`s -- no AWS
+# credentials needed, nothing to start by hand.
+#
+# `smoke` runs the gated, real-AWS smoke script (scripts/live_smoke.py)
+# against an already-running, non-fake-model server. It refuses to do
+# anything (and makes no network calls) unless RUN_LIVE_BEDROCK=1 is set, so
+# this target never fires real Bedrock calls on its own -- e.g.:
+#   RUN_LIVE_BEDROCK=1 make smoke
+# --------------------------------------------------------------------------- #
+
+e2e:
+	cd app && npx playwright test
+
+smoke:
+	@if [ "$$RUN_LIVE_BEDROCK" != "1" ]; then \
+		echo "smoke: refusing to run -- this hits real, billed AWS Bedrock calls." >&2; \
+		echo "       set RUN_LIVE_BEDROCK=1 explicitly to proceed, e.g.:" >&2; \
+		echo "         RUN_LIVE_BEDROCK=1 make smoke" >&2; \
+		exit 1; \
+	fi
+	cd server && uv run python ../scripts/live_smoke.py
 
 # --------------------------------------------------------------------------- #
 # api deploy / seed
