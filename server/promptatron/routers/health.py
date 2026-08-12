@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends
 
+from promptatron import runtime_config
 from promptatron.config import Settings, get_settings
 from promptatron.evals import cloud as evals_cloud
 from promptatron.models_catalog import catalog as provider_catalog
@@ -22,12 +23,14 @@ _check_aws_credentials = aws_credentials_status
 
 async def _check_config_store(settings: Settings) -> bool | None:
     """Check whether the config store is reachable. None if not configured."""
-    if not settings.config_api_url:
+    api_url = runtime_config.config_api_url(settings).value
+    if not api_url:
         return None
-    url = f"{settings.config_api_url.rstrip('/')}/scenarios"
+    url = f"{api_url.rstrip('/')}/scenarios"
     headers = {}
-    if settings.config_api_key:
-        headers["x-api-key"] = settings.config_api_key
+    api_key = runtime_config.config_api_key(settings).value
+    if api_key:
+        headers["x-api-key"] = api_key
     try:
         async with httpx.AsyncClient(timeout=1.0) as client:
             response = await client.get(url, params={"limit": 1}, headers=headers)
@@ -73,6 +76,8 @@ async def health(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
             "ollama": {"configured": False, "reachable": None},
         }
 
+    resolved_config_api_url = runtime_config.config_api_url(settings)
+
     return {
         "status": "ok",
         "aws": {
@@ -80,13 +85,19 @@ async def health(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
             "credentials": credentials,
         },
         "config_store": {
-            "configured": settings.config_api_url is not None,
+            "configured": resolved_config_api_url.value is not None,
             "reachable": reachable,
+            # Where config_api_url came from: an explicit env/setting value, the
+            # deployed CloudFormation stack, or (null) nowhere -- unconfigured.
+            "source": resolved_config_api_url.source,
         },
         # Which model providers this server can actually run against -- the same
         # object `GET /models` returns, so the UI can read it from either.
         "providers": provider_block,
         # Both an AgentCore runtime ARN and a DynamoDB table are needed before
         # the UI may offer "Cloud — persisted" (docs/cloud-evals.md).
-        "cloud_evals": {"configured": evals_cloud.is_configured(settings)},
+        "cloud_evals": {
+            "configured": evals_cloud.is_configured(settings),
+            "source": runtime_config.cloud_evals_source(settings),
+        },
     }

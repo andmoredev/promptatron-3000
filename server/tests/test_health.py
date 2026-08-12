@@ -53,7 +53,11 @@ async def test_health_config_store_unconfigured(client, monkeypatch):
     monkeypatch.delenv("PROMPTATRON_CONFIG_API_URL", raising=False)
     response = await client.get("/api/v1/health")
     assert response.status_code == 200
-    assert response.json()["config_store"] == {"configured": False, "reachable": None}
+    assert response.json()["config_store"] == {
+        "configured": False,
+        "reachable": None,
+        "source": None,
+    }
 
 
 @respx.mock
@@ -64,7 +68,11 @@ async def test_health_config_store_reachable(client, monkeypatch):
     )
     response = await client.get("/api/v1/health")
     assert response.status_code == 200
-    assert response.json()["config_store"] == {"configured": True, "reachable": True}
+    assert response.json()["config_store"] == {
+        "configured": True,
+        "reachable": True,
+        "source": "env",
+    }
     assert route.called
 
 
@@ -76,7 +84,11 @@ async def test_health_config_store_unreachable(client, monkeypatch):
     )
     response = await client.get("/api/v1/health")
     assert response.status_code == 200
-    assert response.json()["config_store"] == {"configured": True, "reachable": False}
+    assert response.json()["config_store"] == {
+        "configured": True,
+        "reachable": False,
+        "source": "env",
+    }
 
 
 async def test_health_never_raises_on_unexpected_error(client, monkeypatch):

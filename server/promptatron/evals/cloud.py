@@ -39,6 +39,7 @@ import boto3
 from fastapi import Depends
 from starlette.concurrency import run_in_threadpool
 
+from promptatron import runtime_config
 from promptatron.config import Settings, get_settings
 from promptatron.errors import BadRequestError, ConflictError, NotFoundError
 from promptatron.evals import ddb_reader, jobs
@@ -70,7 +71,10 @@ class CloudLaneUnavailableError(BadRequestError):
 
 def is_configured(settings: Settings) -> bool:
     """The lane needs *both* an AgentCore runtime and a DynamoDB table."""
-    return bool(settings.eval_runtime_arn and settings.eval_table)
+    return bool(
+        runtime_config.eval_runtime_arn(settings).value
+        and runtime_config.eval_table(settings).value
+    )
 
 
 def _require_configured(settings: Settings) -> None:
@@ -78,8 +82,8 @@ def _require_configured(settings: Settings) -> None:
         raise CloudLaneUnavailableError(
             "The cloud evaluation lane is not configured on this server",
             detail={
-                "eval_runtime_arn": settings.eval_runtime_arn is not None,
-                "eval_table": settings.eval_table is not None,
+                "eval_runtime_arn": runtime_config.eval_runtime_arn(settings).value is not None,
+                "eval_table": runtime_config.eval_table(settings).value is not None,
             },
         )
 
@@ -161,11 +165,12 @@ _invokers: dict[tuple[str, str], AgentCoreInvoker] = {}
 
 def get_invoker(settings: Settings = Depends(get_settings)) -> Invoker | None:
     """FastAPI dependency: the AgentCore invoker, or ``None`` when unconfigured."""
-    if not settings.eval_runtime_arn:
+    runtime_arn = runtime_config.eval_runtime_arn(settings).value
+    if not runtime_arn:
         return None
-    key = (settings.eval_runtime_arn, settings.aws_region)
+    key = (runtime_arn, settings.aws_region)
     if key not in _invokers:
-        _invokers[key] = AgentCoreInvoker(settings.eval_runtime_arn, settings.aws_region)
+        _invokers[key] = AgentCoreInvoker(runtime_arn, settings.aws_region)
     return _invokers[key]
 
 

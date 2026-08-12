@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     config_api_url: str | None = None
     config_api_key: str | None = None
     db_path: str = "./data/promptatron.db"
+    #: Name of the deployed ``api/template.yaml`` stack, used to auto-discover
+    #: ``config_api_url``/``config_api_key``/``eval_table``/``eval_runtime_arn``
+    #: from its outputs when they are not set explicitly (see
+    #: ``promptatron.runtime_config``). Change this if you deployed the stack
+    #: under a different name than the Makefile default.
+    stack_name: str = "promptatron-config"
+    #: Set false to disable CloudFormation-stack auto-discovery entirely -- no
+    #: ``cloudformation``/``apigateway`` calls are ever made, and the four
+    #: settings above behave exactly as before (env-or-unconfigured).
+    stack_discovery: bool = True
     cors_origins: list[str] = ["http://localhost:3000"]
     fake_model: bool = False
 

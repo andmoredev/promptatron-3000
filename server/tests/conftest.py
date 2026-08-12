@@ -6,7 +6,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from promptatron import models_catalog
+from promptatron import models_catalog, stack_discovery
 from promptatron.errors import BadRequestError
 from promptatron.main import create_app
 
@@ -31,6 +31,23 @@ def isolated_providers(monkeypatch):
     models_catalog.catalog.clear()
     yield
     models_catalog.catalog.clear()
+
+
+@pytest.fixture(autouse=True)
+def isolated_stack_discovery(monkeypatch):
+    """No test talks to CloudFormation/API Gateway unless it opts in.
+
+    ``PROMPTATRON_STACK_DISCOVERY`` defaults on in real usage, but every test
+    that doesn't explicitly enable it (via ``Settings(stack_discovery=True)``
+    or by overriding this env var) must stay offline -- the sandbox's AWS
+    credentials are real enough for boto3 to attempt a live call otherwise.
+    The process-lifetime cache is also cleared on both sides so no test's
+    discovery result leaks into another's.
+    """
+    monkeypatch.setenv("PROMPTATRON_STACK_DISCOVERY", "false")
+    stack_discovery.refresh()
+    yield
+    stack_discovery.refresh()
 
 
 @pytest.fixture(autouse=True)

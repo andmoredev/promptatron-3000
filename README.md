@@ -77,17 +77,17 @@ PROMPTATRON_FAKE_MODEL=1 make dev
    ```bash
    AWS_PROFILE=your-profile make deploy-api
    ```
-   Note the `ApiUrl`/`ApiEndpoint` and `ApiKeyId` stack outputs; fetch the key value with:
+2. Start both apps with the same AWS profile:
    ```bash
-   aws apigateway get-api-key --api-key <ApiKeyId> --include-value
+   AWS_PROFILE=your-profile make dev
    ```
-2. Point the server at it and start both apps:
-   ```bash
-   export AWS_PROFILE=your-profile
-   export PROMPTATRON_CONFIG_API_URL=https://xxxx.execute-api.us-east-1.amazonaws.com/api
-   export PROMPTATRON_CONFIG_API_KEY=your-api-key
-   make dev
-   ```
+   The server auto-discovers `config_api_url`/`config_api_key` (and, once deployed,
+   `eval_runtime_arn`/`eval_table`) from the deployed stack's CloudFormation outputs on first
+   use — no more copying `ApiEndpoint`/`ApiKeyId` by hand. If you deployed the stack under a
+   name other than the Makefile default (`promptatron-config`), set
+   `PROMPTATRON_STACK_NAME` to match. See [Configuration](#configuration) for the env vars that
+   still work as manual overrides, and `GET /health`'s `config_store.source`/`cloud_evals.source`
+   to see where the server actually got each value from (`"env"` or `"stack"`).
 
 Either way, the app opens at `http://localhost:3000` and talks to the server at
 `http://localhost:8000`.
@@ -117,17 +117,24 @@ terminals instead; they run the exact same commands.
 | Env var | Default | Description |
 | --- | --- | --- |
 | `PROMPTATRON_AWS_REGION` | `us-east-1` | AWS region for Bedrock/Guardrails calls |
-| `PROMPTATRON_CONFIG_API_URL` | *(unset)* | Base URL of the deployed `api/` config store |
-| `PROMPTATRON_CONFIG_API_KEY` | *(unset)* | `x-api-key` bearer token for the config store |
+| `PROMPTATRON_CONFIG_API_URL` | *(unset)* | Base URL of the deployed `api/` config store — auto-discovered from the stack's `ApiEndpoint` output; set to override |
+| `PROMPTATRON_CONFIG_API_KEY` | *(unset)* | `x-api-key` bearer token for the config store — auto-discovered from the stack's `ApiKeyId` output; set to override |
 | `PROMPTATRON_DB_PATH` | `./data/promptatron.db` | SQLite path for run/evaluation history |
 | `PROMPTATRON_CORS_ORIGINS` | `["http://localhost:3000"]` | Allowed CORS origins (JSON list) |
 | `PROMPTATRON_FAKE_MODEL` | `false` | Use the scripted fake model + judge instead of live Bedrock |
 | `PROMPTATRON_ANTHROPIC_API_KEY` | *(unset)* | Anthropic API key — enables the `anthropic` provider (falls back to `ANTHROPIC_API_KEY`) |
 | `PROMPTATRON_OPENAI_API_KEY` | *(unset)* | OpenAI API key — enables the `openai` provider (falls back to `OPENAI_API_KEY`) |
 | `PROMPTATRON_OLLAMA_BASE_URL` | *(unset)* | Ollama server base URL, e.g. `http://localhost:11434` — enables the `ollama` provider (falls back to `OLLAMA_HOST`) |
+| `PROMPTATRON_STACK_NAME` | `promptatron-config` | Name of the deployed `api/` stack to auto-discover settings from |
+| `PROMPTATRON_STACK_DISCOVERY` | `true` | Set `false` to disable CloudFormation-stack auto-discovery entirely |
 
 AWS credentials themselves are **not** a setting — they come from the standard boto3 credential
 chain (`AWS_PROFILE`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, SSO, or an instance/task role).
+The same credentials are used to auto-discover `PROMPTATRON_CONFIG_API_URL`,
+`PROMPTATRON_CONFIG_API_KEY`, `PROMPTATRON_EVAL_TABLE`, and `PROMPTATRON_EVAL_RUNTIME_ARN` from
+the deployed stack (`cloudformation:DescribeStacks` plus, when an API key is present,
+`apigateway:GET` on `/apikeys/{id}`); a missing stack or missing credentials just leaves those
+settings unconfigured, exactly as before this existed.
 
 Bedrock is the default provider and the only one that needs no extra configuration. Setting any of
 the three keys above adds that provider's models to `GET /models` and lets runs, evaluations and
@@ -224,12 +231,15 @@ Evals tab (`execution: "local" | "cloud"` on the API):
   tabs.
 
 To enable the cloud lane: `make deploy-worker` (packages the Python worker as an AgentCore
-CodeZip artifact, uploads it, and deploys the runtime alongside the config store), then set
-`PROMPTATRON_EVAL_RUNTIME_ARN` and `PROMPTATRON_EVAL_TABLE` from the stack outputs. The UI
-disables the cloud option until the server reports the lane configured. After the worker exists,
-prefer `make deploy-worker` for stack updates (`make deploy-api` preserves the deployed worker
-artifact automatically). Full design and item shapes: `docs/cloud-evals.md`; infrastructure
-notes and first-deploy verification list: `docs/cloud-evals-infra.md`.
+CodeZip artifact, uploads it, and deploys the runtime alongside the config store). The server
+auto-discovers `PROMPTATRON_EVAL_RUNTIME_ARN` and `PROMPTATRON_EVAL_TABLE` from the stack's
+`EvalWorkerRuntimeArn`/`TableName` outputs on next use — nothing to copy by hand. The UI disables
+the cloud option until the server reports the lane configured (`GET /health`'s
+`cloud_evals.configured`); `cloud_evals.source` shows whether that came from the stack or from an
+env override. After the worker exists, prefer `make deploy-worker` for stack updates
+(`make deploy-api` preserves the deployed worker artifact automatically). Full design and item
+shapes: `docs/cloud-evals.md`; infrastructure notes and first-deploy verification list:
+`docs/cloud-evals-infra.md`.
 
 ## Guardrails
 

@@ -35,6 +35,7 @@ from typing import Any
 import boto3
 from boto3.dynamodb.conditions import Key
 
+from promptatron import runtime_config
 from promptatron.config import Settings
 from promptatron.errors import BadRequestError
 
@@ -215,10 +216,11 @@ def build_eval_table(settings: Settings) -> EvalTable | None:
     Cached per (table, region): a ``boto3`` resource is expensive to build and
     entirely stateless once built.
     """
-    if not settings.eval_table:
+    table_name = runtime_config.eval_table(settings).value
+    if not table_name:
         return None
-    key = (settings.eval_table, settings.aws_region)
+    key = (table_name, settings.aws_region)
     if key not in _tables:
         resource = boto3.resource("dynamodb", region_name=settings.aws_region)
-        _tables[key] = EvalTable(resource.Table(settings.eval_table))
+        _tables[key] = EvalTable(resource.Table(table_name))
     return _tables[key]

@@ -681,13 +681,13 @@ async def test_health_reports_the_cloud_lane_as_configured(client):
     response = await client.get("/api/v1/health")
 
     assert response.status_code == 200
-    assert response.json()["cloud_evals"] == {"configured": True}
+    assert response.json()["cloud_evals"] == {"configured": True, "source": "env"}
 
 
 async def test_health_reports_the_cloud_lane_as_unconfigured(unconfigured_client):
     response = await unconfigured_client.get("/api/v1/health")
 
-    assert response.json()["cloud_evals"] == {"configured": False}
+    assert response.json()["cloud_evals"] == {"configured": False, "source": None}
 
 
 async def test_a_half_configured_lane_is_not_configured():

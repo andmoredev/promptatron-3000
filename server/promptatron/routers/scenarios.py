@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
 
+from promptatron import runtime_config
 from promptatron.config import Settings, get_settings
 from promptatron.configstore.client import ConfigStoreClient
 from promptatron.schemas.scenario import (
@@ -56,7 +57,10 @@ def _build_client(base_url: str | None, api_key: str | None) -> ConfigStoreClien
 
 
 def get_config_store_client(settings: Settings = Depends(get_settings)) -> ConfigStoreClient:
-    return _build_client(settings.config_api_url, settings.config_api_key)
+    return _build_client(
+        runtime_config.config_api_url(settings).value,
+        runtime_config.config_api_key(settings).value,
+    )
 
 
 def _has_handler(scenario_id: str, tool_name: str) -> bool:
