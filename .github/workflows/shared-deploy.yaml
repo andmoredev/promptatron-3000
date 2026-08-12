@@ -4,7 +4,10 @@ name: Deploy
 # Uses the org-level secrets shared with the other nullchecktv services:
 #   PIPELINE_EXECUTION_ROLE       - assumed by Actions via OIDC
 #   CLOUDFORMATION_EXECUTION_ROLE - assumed by CloudFormation to build resources
-# Packaging artifacts go to SAM's managed bucket (resolve_s3 in samconfig.toml).
+#   ARTIFACTS_BUCKET_NAME         - shared bucket for SAM packaging artifacts
+# The bucket is not optional: the pipeline role is scoped to it, so a
+# `--resolve-s3` managed bucket gets AccessDenied when SAM uploads the
+# AWS::Include openapi.yaml.
 # Callers pass `secrets: inherit`.
 on:
   workflow_call:
@@ -70,12 +73,14 @@ jobs:
         env:
           STACK_NAME: ${{ inputs.STACK_NAME }}
           DEPLOY_REGION: us-east-1
+          DEPLOY_S3_BUCKET: ${{ secrets.ARTIFACTS_BUCKET_NAME }}
           DEPLOY_ROLE_ARN: ${{ secrets.CLOUDFORMATION_EXECUTION_ROLE }}
         run: |
           set -euo pipefail
           make deploy \
             STACK_NAME="$STACK_NAME" \
             DEPLOY_REGION="$DEPLOY_REGION" \
+            DEPLOY_S3_BUCKET="$DEPLOY_S3_BUCKET" \
             DEPLOY_ROLE_ARN="$DEPLOY_ROLE_ARN" | tee deploy.log
 
           APP_URL=$(awk '/^Deployed: /{print $2}' deploy.log | tail -1)
