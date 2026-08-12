@@ -1,8 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import AppShell from './AppShell'
-import ErrorBoundary from './components/ErrorBoundary.jsx'
-import ThemeProvider from './components/ThemeProvider.jsx'
+import ErrorBoundary from './components/ErrorBoundary'
+import ThemeProvider from './components/ThemeProvider'
 import './index.css'
 
 /**

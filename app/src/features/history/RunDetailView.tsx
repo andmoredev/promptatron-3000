@@ -126,7 +126,7 @@ export default function RunDetailView({ runId, highlight, className = '' }: RunD
   if (!detail) {
     return (
       <div className={`card ${className}`} data-testid="run-detail-view">
-        <LoadingSpinner size="md" color="primary" text="Loading run…" inline={false} />
+        <LoadingSpinner text="Loading run…" />
         {error && (
           <p className="mt-3 text-xs text-red-600" role="alert">
             {error.message}

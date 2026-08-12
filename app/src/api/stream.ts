@@ -25,7 +25,6 @@ interface FetchInit {
 
 export interface StreamOptions<T> {
   /** Called once per parsed line, in stream order. */
-  // eslint-disable-next-line no-unused-vars -- core rule misreads function-type params
   onEvent: (event: T) => void
   signal?: AbortSignal
   /** Extra headers merged over the defaults. */
@@ -169,7 +168,6 @@ async function readLines<T>(stream: ReadableStream<Uint8Array>, opts: StreamOpti
 /** Parse one NDJSON line and dispatch it. Blank lines are skipped. */
 function emitLine<T>(
   rawLine: string,
-  // eslint-disable-next-line no-unused-vars -- core rule misreads function-type params
   onEvent: (event: T) => void,
   signal?: AbortSignal
 ): void {

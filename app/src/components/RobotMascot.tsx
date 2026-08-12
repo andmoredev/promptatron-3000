@@ -9,7 +9,7 @@
  * `settingsStore.robotEnabled` can switch it off entirely.
  */
 
-import RobotGraphic from './RobotGraphic/RobotGraphic.jsx'
+import RobotGraphic from './RobotGraphic/RobotGraphic'
 import { selectRobotMood, useRunStore, useSettingsStore } from '../stores'
 
 interface RobotMascotProps {

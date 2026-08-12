@@ -356,7 +356,7 @@ export default function HistoryPage() {
         )}
 
         {loading && items.length === 0 && (
-          <LoadingSpinner size="md" color="primary" text="Loading runs…" inline={false} />
+          <LoadingSpinner text="Loading runs…" />
         )}
 
         {loaded && !loading && items.length === 0 && !error && (

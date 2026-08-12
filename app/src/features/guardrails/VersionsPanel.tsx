@@ -70,7 +70,7 @@ export default function VersionsPanel({
       </div>
 
       {loading && (
-        <LoadingSpinner size="md" color="primary" text="Loading versions…" inline={false} />
+        <LoadingSpinner text="Loading versions…" />
       )}
 
       {!loading && versions.length === 0 && (

@@ -9,68 +9,22 @@ export default [
     // Global ignores
     ignores: ['dist/**', 'node_modules/**', 'coverage/**']
   },
+  {
+    linterOptions: {
+      reportUnusedDisableDirectives: true
+    }
+  },
   js.configs.recommended,
   {
-    files: ['**/*.{js,jsx}'],
-    plugins: {
-      react,
-      'react-hooks': reactHooks
-    },
+    // Root-level tool config files (eslint, tailwind, postcss) - plain Node
+    // ESM, no JSX/React involved. Everything under src/ is TypeScript.
+    files: ['*.config.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
-      parserOptions: {
-        ecmaFeatures: { jsx: true }
-      },
       globals: {
-        ...globals.browser,
-        ...globals.node,
-        ...globals.es2021
+        ...globals.node
       }
-    },
-    settings: {
-      react: {
-        version: 'detect'
-      }
-    },
-    rules: {
-      // Base recommended rules from react / react-hooks plugins, applied selectively
-      ...react.configs.recommended.rules,
-      ...reactHooks.configs.recommended.rules,
-
-      // This is a legacy, actively-evolving codebase - keep lint focused on real bugs,
-      // not stylistic nits. Stylistic/formatting concerns are Prettier's job.
-      'no-unused-vars': 'warn',
-      'no-empty': 'warn',
-      'no-constant-condition': 'warn',
-      'no-cond-assign': 'warn',
-      'no-useless-escape': 'warn',
-      'no-prototype-builtins': 'warn',
-      'no-case-declarations': 'warn',
-      'no-fallthrough': 'warn',
-      'no-extra-boolean-cast': 'warn',
-
-      // Real undefined-reference bugs exist pre-existing in this legacy codebase
-      // (missing imports / typo'd destructured props). Fixing them means editing
-      // application logic across multiple in-flight files, out of scope here, so
-      // this is reported as warn rather than left as a blocking error. See
-      // tooling report for the specific occurrences found.
-      'no-undef': 'warn',
-      'no-unreachable': 'warn',
-
-      // React 17+ / React 19 JSX transform - no need to import React in every file
-      'react/react-in-jsx-scope': 'off',
-      'react/jsx-uses-react': 'off',
-
-      // prop-types are not maintained consistently across this codebase; off for now
-      'react/prop-types': 'off',
-      'react/display-name': 'off',
-      'react/no-unescaped-entities': 'off',
-      'react/no-unknown-property': 'warn',
-
-      // Hooks correctness - these catch real bugs, keep them enforced
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn'
     }
   },
   {
@@ -109,7 +63,7 @@ export default [
       'react/react-in-jsx-scope': 'off',
       'react/jsx-uses-react': 'off',
 
-      // prop-types not maintained consistently
+      // Prop validation is TypeScript's job now
       'react/prop-types': 'off',
       'react/display-name': 'off',
       'react/no-unescaped-entities': 'off',

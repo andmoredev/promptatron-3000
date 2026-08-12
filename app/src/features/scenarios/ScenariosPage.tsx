@@ -357,7 +357,7 @@ export default function ScenariosPage() {
 
       <div className="card mt-4">
         {scenariosLoading && scenarios.length === 0 && (
-          <LoadingSpinner size="md" color="primary" text="Loading scenarios…" inline={false} />
+          <LoadingSpinner text="Loading scenarios…" />
         )}
 
         {!scenariosLoading && scenarios.length === 0 && (

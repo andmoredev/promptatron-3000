@@ -338,7 +338,7 @@ export default function GuardrailEditor({
   if (guardrailId && detailLoading && !detail) {
     return (
       <div className="card max-w-3xl mx-auto">
-        <LoadingSpinner size="md" color="primary" text="Loading guardrail…" inline={false} />
+        <LoadingSpinner text="Loading guardrail…" />
       </div>
     )
   }

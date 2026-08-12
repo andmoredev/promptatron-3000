@@ -82,7 +82,6 @@ export function ndjsonResponse(chunks: string[]): Response {
 
 export interface ControlledStream {
   stream: ReadableStream<Uint8Array>
-  // eslint-disable-next-line no-unused-vars -- core rule misreads function-type params
   push: (chunk: string) => void
   close: () => void
   /** Cancel reasons recorded by the underlying source, one per `cancel()`. */

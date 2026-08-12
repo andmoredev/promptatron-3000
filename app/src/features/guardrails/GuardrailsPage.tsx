@@ -166,7 +166,7 @@ function GuardrailList({
       )}
 
       {loading && guardrails.length === 0 && (
-        <LoadingSpinner size="md" color="primary" text="Loading guardrails…" inline={false} />
+        <LoadingSpinner text="Loading guardrails…" />
       )}
 
       {loaded && !loading && guardrails.length === 0 && !error && (

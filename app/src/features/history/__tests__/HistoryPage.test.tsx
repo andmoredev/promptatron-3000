@@ -281,7 +281,7 @@ describe('HistoryPage: compare', () => {
 
 describe('HistoryPage: NDJSON export', () => {
   it('accumulates the exported stream into a Blob and triggers a download', async () => {
-    const createObjectURL = vi.fn(() => 'blob:mock-url')
+    const createObjectURL = vi.fn<(blob: Blob) => string>(() => 'blob:mock-url')
     const revokeObjectURL = vi.fn()
     window.URL.createObjectURL = createObjectURL as unknown as typeof URL.createObjectURL
     window.URL.revokeObjectURL = revokeObjectURL as unknown as typeof URL.revokeObjectURL

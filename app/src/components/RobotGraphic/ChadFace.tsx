@@ -2,41 +2,38 @@
  * @fileoverview ChadFace component that renders SVG-based Chad personality with hat and polo shirt
  */
 
-import { useTheme } from "../ThemeProvider.jsx";
-import { getThemeColor } from "../../utils/themeUtils.js";
-import { robotFacePropTypes, robotFaceDefaultProps } from "./propTypes.js";
-import { getAccessibleColors } from "./accessibility.js";
+import type { ReactElement } from "react";
+import { useTheme } from "../ThemeProvider";
+import { getThemeColor } from "../../utils/themeUtils";
+import { getAccessibleColors } from "./accessibility";
+import type { RobotFaceProps } from "./types";
 import "./RobotFaceAnimations.css";
+
+type ChadFaceColors = Record<string, string>;
 
 /**
  * ChadFace component that renders Chad personality with hat and polo shirt styling
- * @param {Object} props - Component props
- * @param {string} props.expression - The facial expression to render ('happy', 'thinking', 'talking', 'concerned')
- * @param {boolean} [props.animated=true] - Whether to enable animations
- * @param {string} [props.size='md'] - Size variant for scaling
- * @param {Object} [props.theme] - Theme object for color customization
- * @returns {JSX.Element} The ChadFace SVG component
  */
 const ChadFace = ({
   expression,
   animated = true,
   size = "md",
   theme: propTheme,
-}) => {
+}: RobotFaceProps) => {
   const contextTheme = useTheme();
   const theme = propTheme || contextTheme;
 
   // Size configurations for SVG scaling
   const sizeMap = {
-    sm: { width: 40, height: 40, scale: 0.8 },
-    md: { width: 56, height: 56, scale: 1.0 },
-    lg: { width: 80, height: 80, scale: 1.2 },
+    sm: { width: 40, height: 40 },
+    md: { width: 56, height: 56 },
+    lg: { width: 80, height: 80 },
   };
 
-  const { width, height, scale } = sizeMap[size] || sizeMap.md;
+  const { width, height } = sizeMap[size] || sizeMap.md;
 
   // Get theme colors with fallbacks ensuring proper contrast ratios
-  const baseColors = {
+  const baseColors: ChadFaceColors = {
     robotBody: getThemeColor("primary", 50, theme) || "#f8fafc",
     robotStroke: getThemeColor("gray", 600, theme) || "#475569",
     happyMouth: getThemeColor("primary", 700, theme) || "#047857",
@@ -75,7 +72,7 @@ const ChadFace = ({
     role: "presentation",
     "aria-hidden": "true",
     focusable: "false",
-  };
+  } as const;
 
   // Render different expressions based on the expression prop
   const renderExpression = () => {
@@ -97,105 +94,10 @@ const ChadFace = ({
 };
 
 /**
- * Renders Chad's baseball cap hat
- * @param {Object} colors - Theme colors object
- * @returns {JSX.Element} SVG elements for the hat
- */
-const renderChadHat = (colors) => (
-  <g className="chad-hat" transform="rotate(-25 50 18)">
-    {/* Hat crown - rotated sideways */}
-    <ellipse
-      cx="50"
-      cy="18"
-      rx="28"
-      ry="12"
-      fill={colors.hatColor}
-      stroke={colors.robotStroke}
-      strokeWidth="1"
-    />
-
-    {/* Hat crown shadow for depth */}
-    <ellipse
-      cx="52"
-      cy="19"
-      rx="26"
-      ry="11"
-      fill={colors.hatColor}
-      opacity="0.7"
-    />
-
-    {/* Hat brim shadow/back - positioned for sideways look */}
-    <ellipse
-      cx="75"
-      cy="20"
-      rx="35"
-      ry="9"
-      fill={colors.hatVisorColor}
-      opacity="0.6"
-    />
-
-    {/* Hat brim main - extending to the right */}
-    <ellipse
-      cx="73"
-      cy="19"
-      rx="36"
-      ry="10"
-      fill={colors.hatVisorColor}
-      stroke={colors.robotStroke}
-      strokeWidth="1"
-    />
-
-    {/* Hat brim highlight */}
-    <ellipse
-      cx="71"
-      cy="18"
-      rx="32"
-      ry="8"
-      fill={colors.whiteHighlight}
-      opacity="0.15"
-    />
-
-    {/* Hat brim underside shadow */}
-    <ellipse
-      cx="73"
-      cy="21"
-      rx="34"
-      ry="8"
-      fill="none"
-      stroke={colors.robotStroke}
-      strokeWidth="0.5"
-      opacity="0.4"
-    />
-
-    {/* Hat button/logo - positioned on the visible side */}
-    <circle
-      cx="45"
-      cy="15"
-      r="2"
-      fill={colors.whiteHighlight}
-      stroke={colors.robotStroke}
-      strokeWidth="0.5"
-    />
-
-    {/* Hat adjustment strap - visible on the back */}
-    <rect
-      x="25"
-      y="20"
-      width="6"
-      height="2"
-      rx="1"
-      fill={colors.hatVisorColor}
-      opacity="0.8"
-    />
-  </g>
-);
-
-/**
  * Renders Chad's hair
- * @param {Object} colors - Theme colors object
  * @returns {JSX.Element} SVG elements for the hair
  */
-const renderChadHair = (colors) => (
+const renderChadHair = (): ReactElement => (
   <g className="chad-hair">
     {/* Hair base/shadow - removed for all-spike look */}
     {/* <path
@@ -447,100 +349,11 @@ const renderChadHair = (colors) => (
 );
 
 /**
- * Renders Chad's white visor angled upward with 3D perspective
- * @param {Object} colors - Theme colors object
- * @returns {JSX.Element} SVG elements for the visor
- */
-const renderChadVisor = (colors) => (
-  <g className="chad-visor">
-    {/* Left side band - angled upward */}
-    <path
-      d="M 12 35 Q 18 25 28 23 Q 35 22 42 20 L 40 38 Q 32 40 28 39 Q 18 41 12 35 Z"
-      fill="#ffffff"
-      stroke={colors.robotStroke}
-      strokeWidth="1"
-    />
-
-    {/* Right side band - angled upward */}
-    <path
-      d="M 88 35 Q 82 25 72 23 Q 65 22 58 20 L 60 38 Q 68 40 72 39 Q 82 41 88 35 Z"
-      fill="#ffffff"
-      stroke={colors.robotStroke}
-      strokeWidth="1"
-    />
-
-    {/* Visor front brim - angled upward for confident look */}
-    <path
-      d="M 18 28 Q 25 18 35 15 Q 50 12 65 15 Q 75 18 82 28 Q 75 32 65 30 Q 50 28 35 30 Q 25 32 18 28 Z"
-      fill="#ffffff"
-      stroke={colors.robotStroke}
-      strokeWidth="1"
-    />
-
-    {/* Visor brim shadow - angled upward */}
-    <path
-      d="M 20 29 Q 27 19 37 16 Q 50 13 63 16 Q 73 19 80 29 Q 73 33 63 31 Q 50 29 37 31 Q 27 33 20 29 Z"
-      fill="#f0f0f0"
-      opacity="0.6"
-    />
-
-    {/* Visor brim highlight - angled upward */}
-    <path
-      d="M 22 27 Q 28 19 38 16 Q 50 14 62 16 Q 72 19 78 27 Q 72 30 62 29 Q 50 27 38 29 Q 28 30 22 27 Z"
-      fill={colors.whiteHighlight}
-      opacity="0.3"
-    />
-
-    {/* Left side band highlight - angled upward */}
-    <path
-      d="M 18 30 Q 25 22 35 20 Q 38 19 40 20 L 38 30 Q 35 29 32 28 Q 25 30 18 30 Z"
-      fill={colors.whiteHighlight}
-      opacity="0.2"
-    />
-
-    {/* Right side band highlight - angled upward */}
-    <path
-      d="M 82 30 Q 75 22 65 20 Q 62 19 60 20 L 62 30 Q 65 29 68 28 Q 75 30 82 30 Z"
-      fill={colors.whiteHighlight}
-      opacity="0.2"
-    />
-
-    {/* Visor adjustment mechanism on the right side */}
-    <rect
-      x="85"
-      y="31"
-      width="4"
-      height="5"
-      rx="1"
-      fill="#e0e0e0"
-      stroke={colors.robotStroke}
-      strokeWidth="0.3"
-    />
-
-    {/* Velcro/adjustment strap detail */}
-    <rect x="86" y="32" width="2" height="3" fill="#d0d0d0" />
-
-    {/* Small logo on front visor - positioned on angled brim */}
-    <circle cx="45" cy="25" r="1.8" fill={colors.hatColor} opacity="0.9" />
-    <circle cx="45" cy="25" r="1" fill={colors.whiteHighlight} opacity="0.7" />
-
-    {/* Visor underside shadow - shows the upward angle */}
-    <path
-      d="M 20 30 Q 30 22 40 19 Q 50 17 60 19 Q 70 22 80 30"
-      fill="none"
-      stroke={colors.robotStroke}
-      strokeWidth="0.5"
-      opacity="0.3"
-    />
-  </g>
-);
-
-/**
  * Renders Chad's neck area
  * @param {Object} colors - Theme colors object
  * @returns {JSX.Element} SVG elements for the neck
  */
-const renderChadNeck = (colors) => (
+const renderChadNeck = (colors: ChadFaceColors): ReactElement => (
   <g className="chad-neck">
     {/* Neck cylinder */}
     <rect
@@ -602,7 +415,7 @@ const renderChadNeck = (colors) => (
  * @param {Object} colors - Theme colors object
  * @returns {JSX.Element} SVG elements for the polo shirt
  */
-const renderChadShirt = (colors) => (
+const renderChadShirt = (colors: ChadFaceColors): ReactElement => (
   <g className="chad-shirt">
     {/* Shirt body */}
     <rect
@@ -748,7 +561,7 @@ const renderChadShirt = (colors) => (
  * @param {Object} colors - Theme colors object
  * @returns {JSX.Element} SVG elements for happy Chad expression
  */
-const renderHappyExpression = (animated, colors) => (
+const renderHappyExpression = (animated: boolean, colors: ChadFaceColors): ReactElement => (
   <g className="chad-face-happy">
     {/* Chad's neck */}
     {renderChadNeck(colors)}
@@ -924,7 +737,7 @@ const renderHappyExpression = (animated, colors) => (
     />
 
     {/* Chad's hair */}
-    {renderChadHair(colors)}
+    {renderChadHair()}
 
     {/* Chad's white visor - removed */}
     {/* {renderChadVisor(colors)} */}
@@ -954,7 +767,7 @@ const renderHappyExpression = (animated, colors) => (
  * @param {Object} colors - Theme colors object
  * @returns {JSX.Element} SVG elements for thinking Chad expression
  */
-const renderThinkingExpression = (animated, colors) => (
+const renderThinkingExpression = (animated: boolean, colors: ChadFaceColors): ReactElement => (
   <g className="chad-face-thinking">
     {/* Chad's neck */}
     {renderChadNeck(colors)}
@@ -1253,7 +1066,7 @@ const renderThinkingExpression = (animated, colors) => (
     />
 
     {/* Chad's hair */}
-    {renderChadHair(colors)}
+    {renderChadHair()}
 
     {/* Chad's white visor - removed */}
     {/* {renderChadVisor(colors)} */}
@@ -1283,7 +1096,7 @@ const renderThinkingExpression = (animated, colors) => (
  * @param {Object} colors - Theme colors object
  * @returns {JSX.Element} SVG elements for talking Chad expression
  */
-const renderTalkingExpression = (animated, colors) => (
+const renderTalkingExpression = (animated: boolean, colors: ChadFaceColors): ReactElement => (
   <g className="chad-face-talking">
     {/* Chad's neck */}
     {renderChadNeck(colors)}
@@ -1602,7 +1415,7 @@ const renderTalkingExpression = (animated, colors) => (
     />
 
     {/* Chad's hair */}
-    {renderChadHair(colors)}
+    {renderChadHair()}
 
     {/* Chad's white visor - removed */}
     {/* {renderChadVisor(colors)} */}
@@ -1632,7 +1445,7 @@ const renderTalkingExpression = (animated, colors) => (
  * @param {Object} colors - Theme colors object
  * @returns {JSX.Element} SVG elements for concerned Chad expression
  */
-const renderConcernedExpression = (animated, colors) => (
+const renderConcernedExpression = (animated: boolean, colors: ChadFaceColors): ReactElement => (
   <g className="chad-face-concerned">
     {/* Chad's neck */}
     {renderChadNeck(colors)}
@@ -1828,7 +1641,7 @@ const renderConcernedExpression = (animated, colors) => (
     />
 
     {/* Chad's hair */}
-    {renderChadHair(colors)}
+    {renderChadHair()}
 
     {/* Chad's white visor - removed */}
     {/* {renderChadVisor(colors)} */}
@@ -1851,9 +1664,5 @@ const renderConcernedExpression = (animated, colors) => (
     </text>
   </g>
 );
-
-// Set PropTypes and default props
-ChadFace.propTypes = robotFacePropTypes;
-ChadFace.defaultProps = robotFaceDefaultProps;
 
 export default ChadFace;

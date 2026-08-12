@@ -771,7 +771,7 @@ function DatasetRow({
       {expanded && (
         <div className="mt-2">
           {loadingContent && (
-            <LoadingSpinner size="sm" color="primary" text="Loading content…" inline={false} />
+            <LoadingSpinner size="sm" text="Loading content…" />
           )}
           {contentError && (
             <p className="text-red-600" role="alert">
@@ -1072,7 +1072,7 @@ function ToolsSection({ scenarioId, onConfigStoreDown }: SectionProps) {
         Tools
       </h3>
 
-      {loading && <LoadingSpinner size="sm" color="primary" text="Loading tools…" inline={false} />}
+      {loading && <LoadingSpinner size="sm" text="Loading tools…" />}
       {error && (
         <p className="text-xs text-red-600" role="alert">
           {error}
@@ -1128,7 +1128,7 @@ export default function ScenarioDetailEditor({ scenarioId, onConfigStoreDown }: 
   }
 
   if (detailLoading && !detail) {
-    return <LoadingSpinner size="sm" color="primary" text="Loading scenario…" inline={false} />
+    return <LoadingSpinner size="sm" text="Loading scenario…" />
   }
 
   if (detailError && !detail) {

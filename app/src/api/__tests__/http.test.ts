@@ -89,7 +89,7 @@ describe('error handling', () => {
       })
     )
 
-    const error = await http.get('/runs/abc').catch(e => e)
+    const error = (await http.get('/runs/abc').catch(e => e)) as ApiError
 
     expect(error).toBeInstanceOf(ApiError)
     expect(error.code).toBe('not_found')

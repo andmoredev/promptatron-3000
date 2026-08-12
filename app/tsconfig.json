@@ -1,8 +1,6 @@
 {
   "compilerOptions": {
     "strict": true,
-    "allowJs": true,
-    "checkJs": false,
     "noEmit": true,
     "skipLibCheck": true,
     "jsx": "react-jsx",
@@ -11,6 +9,6 @@
     "moduleResolution": "bundler",
     "types": ["vite/client", "node"]
   },
-  "include": ["src/**/*.{ts,tsx}", "src/**/*.jsx", "src/main.tsx"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vitest.setup.ts"],
   "exclude": ["node_modules", "dist"]
 }

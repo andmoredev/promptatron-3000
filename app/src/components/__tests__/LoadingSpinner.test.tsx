@@ -19,7 +19,8 @@ describe('LoadingSpinner', () => {
   it('applies the size class matching the size prop', () => {
     const { container } = render(<LoadingSpinner size="lg" />)
     const svg = container.querySelector('svg')
-    expect(svg.getAttribute('class')).toContain('h-8')
-    expect(svg.getAttribute('class')).toContain('w-8')
+    expect(svg).not.toBeNull()
+    expect(svg?.getAttribute('class')).toContain('h-8')
+    expect(svg?.getAttribute('class')).toContain('w-8')
   })
 })

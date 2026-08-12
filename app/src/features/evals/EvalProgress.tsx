@@ -68,7 +68,7 @@ export default function EvalProgress() {
           {PHASE_LABELS[status]}
         </h3>
         {status === 'grading' && (
-          <LoadingSpinner size="sm" color="primary" text="Grading…" inline={true} />
+          <LoadingSpinner size="sm" text="Grading…" inline />
         )}
       </div>
 
