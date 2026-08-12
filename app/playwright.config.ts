@@ -1,5 +1,11 @@
+import { existsSync } from 'node:fs'
 import { defineConfig, devices } from '@playwright/test'
 import { E2E_DB_PATH } from './e2e/env'
+
+// Sandbox environments preinstall Chromium at a revision @playwright/test
+// doesn't auto-discover; pin it there when present. Elsewhere (CI, dev
+// machines) fall back to Playwright's own browser resolution.
+const PREINSTALLED_CHROMIUM = '/opt/pw-browsers/chromium'
 
 /**
  * E2E config for the fake-model full stack (server + app), both booted as
@@ -51,9 +57,9 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        launchOptions: {
-          executablePath: '/opt/pw-browsers/chromium'
-        }
+        launchOptions: existsSync(PREINSTALLED_CHROMIUM)
+          ? { executablePath: PREINSTALLED_CHROMIUM }
+          : {}
       }
     }
   ],
