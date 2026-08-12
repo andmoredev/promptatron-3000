@@ -10,5 +10,22 @@ export default defineConfig({
       POWERTOOLS_SERVICE_NAME: 'promptatron-test',
       POWERTOOLS_LOG_LEVEL: 'ERROR',
     },
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov', 'json-summary'],
+      include: ['functions/**', 'seed/lib/**'],
+      exclude: [
+        'tests/**',
+        '**/*.d.mts',
+        '**/*.d.ts',
+        'functions/common/types.ts',
+      ],
+      thresholds: {
+        statements: 100,
+        branches: 98,
+        functions: 100,
+        lines: 100,
+      },
+    },
   },
 });

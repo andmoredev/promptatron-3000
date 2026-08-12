@@ -44,6 +44,28 @@ describe('GET /scenarios/{scenarioId}/tools/{toolName}', () => {
 
     expect(res.statusCode).toBe(404);
   });
+
+  it('returns the tool when it exists', async () => {
+    ddbMock.on(GetCommand).callsFake((input) => {
+      if (input.Key.sk === 'METADATA') return { Item: { pk: 'SCENARIO#s1', sk: 'METADATA' } };
+      return {
+        Item: { name: 'freeze_account', description: 'Freeze an account', inputSchema: { type: 'object' }, handlerKey: 'h' },
+      };
+    });
+
+    const res = await handler(
+      fakeApiGatewayEvent({
+        httpMethod: 'GET',
+        path: '/scenarios/s1/tools/freeze_account',
+        pathParameters: { scenarioId: 's1', toolName: 'freeze_account' },
+      }),
+      fakeContext()
+    );
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body as string);
+    expect(body).toEqual({ name: 'freeze_account', description: 'Freeze an account', inputSchema: { type: 'object' }, handlerKey: 'h' });
+  });
 });
 
 describe('PUT /scenarios/{scenarioId}/tools/{toolName}', () => {
@@ -80,6 +102,54 @@ describe('PUT /scenarios/{scenarioId}/tools/{toolName}', () => {
         path: '/scenarios/s1/tools/freeze_account',
         pathParameters: { scenarioId: 's1', toolName: 'freeze_account' },
         body: JSON.stringify({ description: 'x', inputSchema: 'not-an-object', handlerKey: 'h' }),
+      }),
+      fakeContext()
+    );
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a missing description with 400', async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { pk: 'SCENARIO#s1', sk: 'METADATA' } });
+
+    const res = await handler(
+      fakeApiGatewayEvent({
+        httpMethod: 'PUT',
+        path: '/scenarios/s1/tools/freeze_account',
+        pathParameters: { scenarioId: 's1', toolName: 'freeze_account' },
+        body: JSON.stringify({ inputSchema: { type: 'object' }, handlerKey: 'h' }),
+      }),
+      fakeContext()
+    );
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a missing handlerKey with 400', async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { pk: 'SCENARIO#s1', sk: 'METADATA' } });
+
+    const res = await handler(
+      fakeApiGatewayEvent({
+        httpMethod: 'PUT',
+        path: '/scenarios/s1/tools/freeze_account',
+        pathParameters: { scenarioId: 's1', toolName: 'freeze_account' },
+        body: JSON.stringify({ description: 'x', inputSchema: { type: 'object' } }),
+      }),
+      fakeContext()
+    );
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects an array inputSchema with 400', async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { pk: 'SCENARIO#s1', sk: 'METADATA' } });
+
+    const res = await handler(
+      fakeApiGatewayEvent({
+        httpMethod: 'PUT',
+        path: '/scenarios/s1/tools/freeze_account',
+        pathParameters: { scenarioId: 's1', toolName: 'freeze_account' },
+        body: JSON.stringify({ description: 'x', inputSchema: [1, 2], handlerKey: 'h' }),
       }),
       fakeContext()
     );

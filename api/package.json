@@ -7,6 +7,7 @@
     "build": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "seed": "node seed/seed.mjs",
     "seed:dry": "node seed/seed.mjs --dry-run"
   },
@@ -19,8 +20,11 @@
     "@aws-sdk/lib-dynamodb": "^3.700.0"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/aws-lambda": "^8.10.145",
     "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^2.1.9",
     "aws-sdk-client-mock": "^4.1.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

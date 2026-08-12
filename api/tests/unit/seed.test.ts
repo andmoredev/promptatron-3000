@@ -1,10 +1,11 @@
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildScenarioItems,
   datasetSk,
@@ -114,6 +115,12 @@ describe('buildScenarioItems: fraud-detection (real fixture)', () => {
     const retail = items.datasets.find((d) => d.id === 'retail-transactions');
     expect(retail?.content).toContain('transaction_id,account_id,amount,merchant,location,timestamp,category');
     expect(retail?.content).toContain('T0001,A1234,25.99,Coffee Shop,New York');
+    // every dataset in this fixture declares a description -- pin that it survives conversion
+    expect(retail?.description).toBe(fixture.scenario.datasets.find((d: any) => d.id === 'retail-transactions').description);
+    for (const dataset of items.datasets) {
+      const sourceDescription = fixture.scenario.datasets.find((d: any) => d.id === dataset.id).description;
+      expect(dataset.description).toBe(sourceDescription);
+    }
   });
 });
 
@@ -223,5 +230,159 @@ describe('upsertFixtures (write path, mocked DynamoDB)', () => {
     expect(results.map((r) => r.scenarioId)).toEqual(['fraud-detection-comprehensive', 'shipping-logistics']);
     expect(results.find((r) => r.scenarioId === 'fraud-detection-comprehensive')?.itemCount).toBe(18); // 1 + 4 + 5 + 4 + 4
     expect(results.find((r) => r.scenarioId === 'shipping-logistics')?.itemCount).toBe(14); // 1 + 1 + 1 + 10 + 1
+  });
+});
+
+describe('buildScenarioItems: edge cases (synthetic fixtures)', () => {
+  let tmpRoot: string;
+
+  beforeEach(() => {
+    tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'promptatron-seed-test-'));
+  });
+
+  afterEach(() => rmSync(tmpRoot, { recursive: true, force: true }));
+
+  it('throws a descriptive error when the fixture scenario.json has no "id"', () => {
+    const dir = path.join(tmpRoot, 'no-id');
+    mkdirSync(dir);
+    writeFileSync(path.join(dir, 'scenario.json'), JSON.stringify({ name: 'No Id' }));
+
+    const fixture = loadScenarioFixture(dir);
+    expect(() => buildScenarioItems(fixture)).toThrowError(/missing required "id"/);
+  });
+
+  it('omits the description field entirely when the scenario has none', () => {
+    const dir = path.join(tmpRoot, 'no-description');
+    mkdirSync(dir);
+    writeFileSync(path.join(dir, 'scenario.json'), JSON.stringify({ id: 'no-desc', name: 'No Desc' }));
+
+    const items = buildScenarioItems(loadScenarioFixture(dir));
+    expect(items.metadata).not.toHaveProperty('description');
+    expect(items.metadata).toEqual({
+      pk: 'SCENARIO#no-desc',
+      sk: 'METADATA',
+      GSI1PK: 'SCENARIO',
+      GSI1SK: 'No Desc',
+      id: 'no-desc',
+      name: 'No Desc',
+    });
+  });
+
+  it('produces empty arrays when systemPrompts/userPrompts/tools/datasets are entirely absent from scenario.json', () => {
+    const dir = path.join(tmpRoot, 'minimal');
+    mkdirSync(dir);
+    writeFileSync(path.join(dir, 'scenario.json'), JSON.stringify({ id: 'minimal-scenario', name: 'Minimal' }));
+
+    const items = buildScenarioItems(loadScenarioFixture(dir));
+    expect(items.systemPrompts).toEqual([]);
+    expect(items.userPrompts).toEqual([]);
+    expect(items.tools).toEqual([]);
+    expect(items.datasets).toEqual([]);
+  });
+
+  it('produces empty arrays when systemPrompts/userPrompts/tools/datasets are explicit empty arrays', () => {
+    const dir = path.join(tmpRoot, 'explicit-empty');
+    mkdirSync(dir);
+    writeFileSync(
+      path.join(dir, 'scenario.json'),
+      JSON.stringify({ id: 'explicit-empty', name: 'Explicit Empty', systemPrompts: [], userPrompts: [], tools: [], datasets: [] })
+    );
+
+    const items = buildScenarioItems(loadScenarioFixture(dir));
+    expect(items.systemPrompts).toEqual([]);
+    expect(items.userPrompts).toEqual([]);
+    expect(items.tools).toEqual([]);
+    expect(items.datasets).toEqual([]);
+  });
+
+  it('omits description on a CSV dataset item when the fixture dataset entry has none', () => {
+    const dir = path.join(tmpRoot, 'dataset-no-desc');
+    mkdirSync(dir);
+    writeFileSync(
+      path.join(dir, 'scenario.json'),
+      JSON.stringify({
+        id: 'dataset-no-desc',
+        name: 'Dataset No Desc',
+        datasets: [{ id: 'd1', name: 'D1', file: 'd1.csv' }],
+      })
+    );
+    writeFileSync(path.join(dir, 'd1.csv'), 'a,b\n1,2\n');
+
+    const items = buildScenarioItems(loadScenarioFixture(dir));
+    expect(items.datasets).toHaveLength(1);
+    expect(items.datasets[0]).not.toHaveProperty('description');
+    expect(items.datasets[0]).toEqual({
+      pk: 'SCENARIO#dataset-no-desc',
+      sk: 'DATASET#d1',
+      id: 'd1',
+      name: 'D1',
+      contentType: 'text/csv',
+      content: 'a,b\n1,2\n',
+    });
+  });
+
+  it('adds only the seed-data dataset when scenario.json declares no datasets but seed-data.json is present', () => {
+    const dir = path.join(tmpRoot, 'seed-data-only');
+    mkdirSync(dir);
+    writeFileSync(path.join(dir, 'scenario.json'), JSON.stringify({ id: 'seed-data-only', name: 'Seed Data Only' }));
+    writeFileSync(path.join(dir, 'seed-data.json'), JSON.stringify({ foo: 'bar' }));
+
+    const items = buildScenarioItems(loadScenarioFixture(dir));
+    expect(items.datasets).toHaveLength(1);
+    expect(items.datasets[0]).toMatchObject({ id: 'seed-data', contentType: 'application/json' });
+    expect(JSON.parse(items.datasets[0].content)).toEqual({ foo: 'bar' });
+  });
+});
+
+describe('discoverFixtureDirs: filters non-scenario directories', () => {
+  it('ignores subdirectories that lack a scenario.json and sorts the rest', () => {
+    const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'promptatron-discover-test-'));
+    try {
+      mkdirSync(path.join(tmpRoot, 'zeta'));
+      writeFileSync(path.join(tmpRoot, 'zeta', 'scenario.json'), JSON.stringify({ id: 'z', name: 'Z' }));
+      mkdirSync(path.join(tmpRoot, 'alpha'));
+      writeFileSync(path.join(tmpRoot, 'alpha', 'scenario.json'), JSON.stringify({ id: 'a', name: 'A' }));
+      mkdirSync(path.join(tmpRoot, 'not-a-scenario')); // no scenario.json -- must be skipped
+      writeFileSync(path.join(tmpRoot, 'stray-file.json'), '{}'); // not even a directory
+
+      const dirs = discoverFixtureDirs(tmpRoot).map((d) => path.basename(d));
+      expect(dirs).toEqual(['alpha', 'zeta']);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('upsertScenario: re-seed corner cases', () => {
+  const fixture = buildScenarioItems(loadScenarioFixture(path.join(FIXTURES_ROOT, 'fraud-detection')));
+
+  it('treats an existing METADATA item with no createdAt as if it were new (falls back to now)', async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { ...fixture.metadata } }); // no createdAt on the stored item
+    ddbMock.on(PutCommand).resolves({});
+
+    const now = '2026-08-12T00:00:00.000Z';
+    await upsertScenario(ddb, TABLE_NAME, fixture, { now });
+
+    const metadataPut = ddbMock.commandCalls(PutCommand).find((call) => call.args[0].input.Item?.sk === 'METADATA');
+    expect(metadataPut?.args[0].input.Item).toMatchObject({ createdAt: now, updatedAt: now });
+  });
+
+  it('re-running upsertScenario twice is idempotent: same item count and same final content both times', async () => {
+    ddbMock.on(GetCommand).resolves({});
+    ddbMock.on(PutCommand).resolves({});
+
+    const first = await upsertScenario(ddb, TABLE_NAME, fixture, { now: '2026-08-11T00:00:00.000Z' });
+    const secondRunExisting = { ...fixture.metadata, createdAt: '2026-08-11T00:00:00.000Z', updatedAt: '2026-08-11T00:00:00.000Z' };
+    ddbMock.on(GetCommand).resolves({ Item: secondRunExisting });
+    const second = await upsertScenario(ddb, TABLE_NAME, fixture, { now: '2026-08-12T00:00:00.000Z' });
+
+    expect(second.itemCount).toBe(first.itemCount);
+
+    const metadataPuts = ddbMock.commandCalls(PutCommand).filter((call) => call.args[0].input.Item?.sk === 'METADATA');
+    expect(metadataPuts).toHaveLength(2);
+    expect(metadataPuts[1].args[0].input.Item).toMatchObject({
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-12T00:00:00.000Z',
+    });
   });
 });

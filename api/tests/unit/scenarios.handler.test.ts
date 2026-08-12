@@ -1,4 +1,4 @@
-import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { handler } from '../../functions/scenarios/index';
@@ -115,6 +115,124 @@ describe('POST /scenarios', () => {
     );
     expect(res.statusCode).toBe(400);
   });
+
+  it('rethrows (and does not treat as a 409) an unrelated DynamoDB error, surfacing as a 500', async () => {
+    ddbMock.on(PutCommand).rejects(new Error('boom'));
+
+    const res = await handler(
+      fakeApiGatewayEvent({
+        httpMethod: 'POST',
+        path: '/scenarios',
+        body: JSON.stringify({ name: 'X' }),
+      }),
+      fakeContext()
+    );
+
+    expect(res.statusCode).toBe(500);
+  });
+
+  it('returns 409 with a message body when the id already exists', async () => {
+    const err: any = new Error('conflict');
+    err.name = 'ConditionalCheckFailedException';
+    ddbMock.on(PutCommand).rejects(err);
+
+    const res = await handler(
+      fakeApiGatewayEvent({
+        httpMethod: 'POST',
+        path: '/scenarios',
+        body: JSON.stringify({ id: 'dup', name: 'Dup' }),
+      }),
+      fakeContext()
+    );
+
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body as string).message).toMatch(/already exists/i);
+  });
+});
+
+describe('PUT /scenarios/{scenarioId}', () => {
+  it('returns 400 when neither name nor description is provided', async () => {
+    const res = await handler(
+      fakeApiGatewayEvent({
+        httpMethod: 'PUT',
+        path: '/scenarios/s1',
+        pathParameters: { scenarioId: 's1' },
+        body: JSON.stringify({}),
+      }),
+      fakeContext()
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('returns 204 and issues the UpdateCommand on a successful update', async () => {
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const res = await handler(
+      fakeApiGatewayEvent({
+        httpMethod: 'PUT',
+        path: '/scenarios/s1',
+        pathParameters: { scenarioId: 's1' },
+        body: JSON.stringify({ name: 'Renamed' }),
+      }),
+      fakeContext()
+    );
+
+    expect(res.statusCode).toBe(204);
+    expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(1);
+  });
+
+  it('returns 204 when only description is provided (no name)', async () => {
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const res = await handler(
+      fakeApiGatewayEvent({
+        httpMethod: 'PUT',
+        path: '/scenarios/s1',
+        pathParameters: { scenarioId: 's1' },
+        body: JSON.stringify({ description: 'New desc only' }),
+      }),
+      fakeContext()
+    );
+
+    expect(res.statusCode).toBe(204);
+    const call = ddbMock.commandCalls(UpdateCommand)[0];
+    expect(call.args[0].input.ExpressionAttributeValues).toMatchObject({ ':description': 'New desc only' });
+    expect(call.args[0].input.ExpressionAttributeValues).not.toHaveProperty(':name');
+  });
+
+  it('returns 404 when the scenario does not exist', async () => {
+    const err: any = new Error('not found');
+    err.name = 'ConditionalCheckFailedException';
+    ddbMock.on(UpdateCommand).rejects(err);
+
+    const res = await handler(
+      fakeApiGatewayEvent({
+        httpMethod: 'PUT',
+        path: '/scenarios/missing',
+        pathParameters: { scenarioId: 'missing' },
+        body: JSON.stringify({ name: 'x' }),
+      }),
+      fakeContext()
+    );
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('rethrows (and does not treat as a 404) an unrelated DynamoDB error, surfacing as a 500', async () => {
+    ddbMock.on(UpdateCommand).rejects(new Error('boom'));
+
+    const res = await handler(
+      fakeApiGatewayEvent({
+        httpMethod: 'PUT',
+        path: '/scenarios/s1',
+        pathParameters: { scenarioId: 's1' },
+        body: JSON.stringify({ name: 'x' }),
+      }),
+      fakeContext()
+    );
+
+    expect(res.statusCode).toBe(500);
+  });
 });
 
 describe('DELETE /scenarios/{scenarioId}', () => {
@@ -127,5 +245,23 @@ describe('DELETE /scenarios/{scenarioId}', () => {
     );
 
     expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 204 and deletes every item in the partition on success', async () => {
+    ddbMock.on(QueryCommand).resolves({
+      Items: [
+        { pk: 'SCENARIO#s1', sk: 'METADATA' },
+        { pk: 'SCENARIO#s1', sk: 'PROMPT#SYSTEM#p1' },
+      ],
+    });
+    ddbMock.on(DeleteCommand).resolves({});
+
+    const res = await handler(
+      fakeApiGatewayEvent({ httpMethod: 'DELETE', path: '/scenarios/s1', pathParameters: { scenarioId: 's1' } }),
+      fakeContext()
+    );
+
+    expect(res.statusCode).toBe(204);
+    expect(ddbMock.commandCalls(DeleteCommand)).toHaveLength(2);
   });
 });

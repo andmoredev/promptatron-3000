@@ -12,6 +12,15 @@ describe('pagination cursor', () => {
     expect(decodeCursor(token)).toEqual(key);
   });
 
+  it('round-trips non-ASCII bytes correctly (pins the utf8 input encoding)', () => {
+    // If encode/decode ever used a different intermediate encoding than utf8,
+    // multi-byte characters (e.g. from an international scenario name) would
+    // come back corrupted instead of byte-identical.
+    const key = { pk: 'SCENARIO#s1', sk: 'METADATA', GSI1SK: 'Détection de fraude 詐欺 🔍' };
+    const token = encodeCursor(key);
+    expect(decodeCursor(token)).toEqual(key);
+  });
+
   it('rejects a malformed cursor with a 400 BadRequestError', () => {
     expect(() => decodeCursor('not-valid-base64url-json')).toThrowError(/Invalid nextToken/);
   });
