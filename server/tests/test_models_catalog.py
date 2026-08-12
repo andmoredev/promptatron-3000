@@ -133,6 +133,7 @@ async def test_anthropic_listing_shape_and_headers(catalog, bedrock_catalog, stu
     request = route.calls.last.request
     assert request.headers["x-api-key"] == "sk-ant-test"
     assert request.headers["anthropic-version"] == "2023-06-01"
+    assert request.url.params["limit"] == "1000"
 
     entries = by_source(result.models, "anthropic")
     assert entries[0] == {
@@ -146,6 +147,19 @@ async def test_anthropic_listing_shape_and_headers(catalog, bedrock_catalog, stu
 
 
 @respx.mock
+async def test_anthropic_entry_without_a_display_name_falls_back_to_its_id(
+    catalog, bedrock_catalog, stub_bedrock
+):
+    payload = {"data": [{"type": "model", "id": "claude-opus-5"}], "has_more": False}
+    respx.get(ANTHROPIC_MODELS_URL).mock(return_value=httpx.Response(200, json=payload))
+
+    result = await catalog.collect(settings(anthropic_api_key="sk-ant-test"), bedrock_catalog)
+
+    entries = by_source(result.models, "anthropic")
+    assert entries[0]["name"] == "claude-opus-5"
+
+
+@respx.mock
 async def test_openai_listing_uses_a_bearer_token_and_filters_to_chat_models(
     catalog, bedrock_catalog, stub_bedrock
 ):
@@ -156,11 +170,20 @@ async def test_openai_listing_uses_a_bearer_token_and_filters_to_chat_models(
     result = await catalog.collect(settings(openai_api_key="sk-openai-test"), bedrock_catalog)
 
     assert route.calls.last.request.headers["authorization"] == "Bearer sk-openai-test"
-    assert [entry["model_id"] for entry in by_source(result.models, "openai")] == [
+    entries = by_source(result.models, "openai")
+    assert [entry["model_id"] for entry in entries] == [
         "gpt-4o",
         "o3-mini",
         "chatgpt-4o-latest",
     ]
+    assert entries[0] == {
+        "model_id": "gpt-4o",
+        "name": "gpt-4o",
+        "provider": "OpenAI",
+        "supports_streaming": True,
+        "kind": "model",
+        "source": "openai",
+    }
 
 
 @pytest.mark.parametrize(
@@ -200,11 +223,32 @@ async def test_ollama_listing_uses_the_configured_base_url(
     result = await catalog.collect(settings(ollama_base_url=OLLAMA_BASE_URL), bedrock_catalog)
 
     assert route.called
-    assert [entry["model_id"] for entry in by_source(result.models, "ollama")] == [
+    entries = by_source(result.models, "ollama")
+    assert [entry["model_id"] for entry in entries] == [
         "llama3.1:8b",
         "qwen2.5-coder:7b",
     ]
+    assert entries[0] == {
+        "model_id": "llama3.1:8b",
+        "name": "llama3.1:8b",
+        "provider": "Ollama",
+        "supports_streaming": True,
+        "kind": "model",
+        "source": "ollama",
+    }
     assert result.providers["ollama"] == {"configured": True, "reachable": True}
+
+
+async def test_ollama_base_url_is_stripped_of_a_trailing_slash():
+    from promptatron.models_catalog import fetch_ollama_models
+
+    with respx.mock:
+        route = respx.get(OLLAMA_TAGS_URL).mock(
+            return_value=httpx.Response(200, json=OLLAMA_PAYLOAD)
+        )
+        await fetch_ollama_models(OLLAMA_BASE_URL + "/")
+
+    assert route.calls.last.request.url == OLLAMA_TAGS_URL
 
 
 # --------------------------------------------------------------------------- #

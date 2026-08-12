@@ -281,6 +281,71 @@ def test_mapper_ignores_metadata_without_a_guardrail_trace():
     assert mapper.map({"event": {"metadata": {"usage": {"inputTokens": 1}}}}) == []
 
 
+def test_mapper_message_event_defaults_missing_role_and_content():
+    mapper = EventMapper()
+
+    events = mapper.map({"message": {}})
+
+    assert events[0].role == "assistant"
+    assert events[0].content == []
+
+
+def test_mapper_tool_use_start_defaults_missing_id_and_name_to_empty_string():
+    mapper = EventMapper()
+
+    events = mapper.map(
+        {
+            "event": {
+                "contentBlockStart": {
+                    "start": {"toolUse": {"unrecognizedKey": True}},
+                    "contentBlockIndex": 0,
+                }
+            }
+        }
+    )
+
+    assert events[0].tool_use_id == ""
+    assert events[0].name == ""
+
+
+def test_mapper_tool_input_delta_defaults_a_missing_name_on_the_delta():
+    mapper = EventMapper()
+
+    events = mapper.map(
+        {
+            "event": {
+                "contentBlockDelta": {
+                    "delta": {"toolUse": {"toolUseId": "tu-1", "input": "{}"}},
+                    "contentBlockIndex": 0,
+                }
+            }
+        }
+    )
+
+    assert events[0].tool_use_id == "tu-1"
+    # The (id, name) pair recorded for this block now carries an empty name.
+    assert mapper._tool_uses_by_block[0] == ("tu-1", "")
+
+
+def test_mapper_tool_input_delta_for_an_unseen_block_defaults_to_an_empty_id():
+    """A delta with no prior ``contentBlockStart`` for this index (block_index
+    is never in ``_tool_uses_by_block``) falls back to ``("", "")``."""
+    mapper = EventMapper()
+
+    events = mapper.map(
+        {
+            "event": {
+                "contentBlockDelta": {
+                    "delta": {"toolUse": {"input": "{}"}},
+                    "contentBlockIndex": 99,
+                }
+            }
+        }
+    )
+
+    assert events[0].tool_use_id == ""
+
+
 def test_mapper_ignores_citation_deltas():
     mapper = EventMapper()
 

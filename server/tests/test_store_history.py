@@ -259,6 +259,33 @@ def test_list_evaluations_paginates_by_cursor(session):
 # --------------------------------------------------------------------------- #
 
 
+def test_clamp_limit_boundaries():
+    from promptatron.store.history import _clamp_limit
+
+    assert _clamp_limit(1) == 1
+    assert _clamp_limit(0) == 1
+    assert _clamp_limit(-5) == 1
+    assert _clamp_limit(50) == 50
+    assert _clamp_limit(100) == 100
+    assert _clamp_limit(101) == 100
+    assert _clamp_limit(10_000) == 100
+
+
+def test_evaluation_record_carries_progress_and_error(session):
+    created = _make_evaluation(session)
+    history.update_evaluation(
+        session,
+        created.id,
+        progress={"completed": 1, "total": 3},
+        error={"code": "internal_error", "message": "boom"},
+    )
+
+    fetched = history.get_evaluation(session, created.id)
+
+    assert fetched.progress == {"completed": 1, "total": 3}
+    assert fetched.error == {"code": "internal_error", "message": "boom"}
+
+
 def test_an_invalid_run_cursor_is_a_bad_request(session):
     from promptatron.errors import BadRequestError
 

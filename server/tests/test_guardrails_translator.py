@@ -246,6 +246,48 @@ def test_round_trip_minimal_single_policy_configs(config):
     assert reconstructed == config
 
 
+def test_word_policy_config_is_included_with_only_words_set():
+    """``words or managed_word_lists`` -- either alone is enough; only *both*
+    being empty should omit ``wordPolicyConfig``."""
+    config = GuardrailConfig(
+        name="words-only-no-lists", word_policy=WordPolicy(words=["slur"])
+    )
+    bedrock = to_bedrock(config)
+    assert "wordPolicyConfig" in bedrock
+    assert bedrock["wordPolicyConfig"]["wordsConfig"][0]["text"] == "slur"
+
+
+def test_word_policy_config_is_included_with_only_managed_lists_set():
+    config = GuardrailConfig(
+        name="lists-only-no-words", word_policy=WordPolicy(managed_word_lists=["PROFANITY"])
+    )
+    bedrock = to_bedrock(config)
+    assert "wordPolicyConfig" in bedrock
+    assert bedrock["wordPolicyConfig"]["managedWordListsConfig"][0]["type"] == "PROFANITY"
+
+
+def test_topic_and_content_filter_hardcode_both_directions_enabled():
+    """``inputEnabled``/``outputEnabled`` are always ``True`` -- fixed request
+    constants with no simplified-schema counterpart, so the round-trip tests
+    (which only check ``from_bedrock(to_bedrock(x)) == x``) never look at them."""
+    config = GuardrailConfig(
+        name="enabled-check",
+        denied_topics=[DeniedTopic(name="t", definition="d")],
+        content_policy=ContentPolicy(filters=[ContentFilter(type="SEXUAL")]),
+    )
+    bedrock = to_bedrock(config)
+
+    topic = bedrock["topicPolicyConfig"]["topicsConfig"][0]
+    assert topic["inputEnabled"] is True
+    assert topic["outputEnabled"] is True
+
+    content_filter = bedrock["contentPolicyConfig"]["filtersConfig"][0]
+    assert content_filter["inputEnabled"] is True
+    assert content_filter["outputEnabled"] is True
+    assert content_filter["inputModalities"] == ["TEXT"]
+    assert content_filter["outputModalities"] == ["TEXT"]
+
+
 def test_from_bedrock_contextual_grounding_with_no_recognized_thresholds_is_none():
     """Filters are present but none of them are GROUNDING/RELEVANCE -- e.g. a
     guardrail whose grounding policy Bedrock reports as an empty/foreign

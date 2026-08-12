@@ -104,7 +104,8 @@ exclude_also = [
 # Every file below is business logic with no boto3/AWS/network call in it
 # (translation, parsing, cursor math, cache-key arithmetic) so a surviving
 # mutant is informative rather than "the mock didn't notice". `run` with these
-# nine files took ~2.5 minutes end to end (measured; see the coverage report).
+# nine files generates ~2862 mutants and takes 6.5-8.5 minutes end to end
+# (measured twice; see the mutation-testing report for kill-rate history).
 [tool.mutmut]
 source_paths = ["promptatron"]
 only_mutate = [

@@ -545,6 +545,45 @@ async def test_a_json_error_body_without_a_message_key_falls_back_to_the_default
 
 
 @respx.mock
+async def test_create_scenario_actually_sends_the_payload_body(client: ConfigStoreClient):
+    """Not just that a POST lands -- that the request carries the payload, not
+    an empty/dropped body."""
+    hydrated = _fixture("scenario-hydrated.json")
+    route = respx.post(f"{BASE_URL}/scenarios").mock(
+        return_value=httpx.Response(201, json=hydrated)
+    )
+
+    from promptatron.schemas.scenario import ScenarioCreateRequest
+
+    await client.create_scenario(ScenarioCreateRequest(name="New One", description="desc"))
+
+    sent = json.loads(route.calls.last.request.content)
+    assert sent == {"name": "New One", "description": "desc"}
+
+
+@respx.mock
+async def test_update_scenario_actually_sends_the_payload_body(client: ConfigStoreClient):
+    route = respx.put(f"{BASE_URL}/scenarios/x").mock(return_value=httpx.Response(204))
+
+    await client.update_scenario("x", ScenarioUpdateRequest(name="Renamed"))
+
+    sent = json.loads(route.calls.last.request.content)
+    assert sent == {"name": "Renamed"}
+
+
+@respx.mock
+async def test_get_scenario_uses_an_uppercase_get_method(client: ConfigStoreClient):
+    fixture = _fixture("scenario-hydrated.json")
+    route = respx.get(f"{BASE_URL}/scenarios/fraud-detection-comprehensive").mock(
+        return_value=httpx.Response(200, json=fixture)
+    )
+
+    await client.get_scenario("fraud-detection-comprehensive")
+
+    assert route.calls.last.request.method == "GET"
+
+
+@respx.mock
 async def test_an_unmapped_4xx_status_is_an_upstream_error(client: ConfigStoreClient):
     """401/403/etc aren't retried and aren't 400/404 -- they surface as upstream_error."""
     respx.get(f"{BASE_URL}/scenarios/x").mock(

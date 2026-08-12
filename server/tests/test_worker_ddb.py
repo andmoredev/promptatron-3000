@@ -500,6 +500,67 @@ def test_load_run_falls_back_to_dynamodb(store, monkeypatch):
     assert record.ts.isoformat() == RUN["ts"]
 
 
+def test_load_run_maps_every_field_of_the_dynamodb_record(store, monkeypatch):
+    """Every one of ``_to_run_record``'s field assignments, checked individually --
+    a partial round trip (some fields silently dropped or swapped) must fail
+    loudly rather than only show up as a missing key downstream."""
+    store.put_run(RUN)
+    monkeypatch.setattr(type(store), "_load_local_run", staticmethod(lambda run_id: None))
+
+    record = store.load_run("run-abc")
+
+    assert record.id == RUN["id"]
+    assert record.model_id == RUN["model_id"]
+    assert record.scenario_id == RUN["scenario_id"]
+    assert record.system_prompt == RUN["system_prompt"]
+    assert record.user_prompt == RUN["user_prompt"]
+    assert record.dataset_id == RUN["dataset_id"]
+    assert record.dataset_hash == RUN["dataset_hash"]
+    assert record.config == RUN["config"]
+    assert record.output == RUN["output"]
+    assert record.tool_transcript == RUN["tool_transcript"]
+    assert record.metrics == RUN["metrics"]
+    assert record.guardrail_trace == RUN["guardrail_trace"]
+    assert record.status == RUN["status"]
+    assert record.error == RUN["error"]
+
+
+def test_to_run_record_defaults_every_field_for_an_empty_record():
+    """The other half of the same map: every ``.get(key, default)`` fallback,
+    for a record that has none of the optional keys at all."""
+    from promptatron.worker.ddb import _to_run_record
+
+    record = _to_run_record({})
+
+    assert record.id == ""
+    assert record.model_id == ""
+    assert record.scenario_id is None
+    assert record.system_prompt == ""
+    assert record.user_prompt == ""
+    assert record.dataset_id is None
+    assert record.dataset_hash is None
+    assert record.config == {}
+    assert record.output is None
+    assert record.tool_transcript is None
+    assert record.metrics is None
+    assert record.guardrail_trace is None
+    assert record.status == "completed"
+    assert record.error is None
+
+
+def test_to_run_record_falls_back_to_now_on_an_unparseable_ts():
+    from datetime import datetime
+
+    from promptatron.worker.ddb import _to_run_record
+
+    record = _to_run_record({"ts": "not-a-timestamp"})
+
+    assert isinstance(record.ts, datetime)
+    # Specifically UTC, not naive -- a mutant that swaps ``UTC`` for ``None``
+    # here would otherwise pass every other assertion in this file.
+    assert record.ts.tzinfo is not None
+
+
 def test_load_run_raises_when_the_run_is_in_neither_store(store, monkeypatch):
     from promptatron.errors import NotFoundError
 
@@ -584,6 +645,49 @@ def test_a_failed_cancel_read_does_not_cancel_the_evaluation(store, client):
 def test_table_name_is_required():
     with pytest.raises(ValueError, match="table_name is required"):
         DynamoEvalStore("", EVAL_ID)
+
+
+# --------------------------------------------------------------------------- #
+# _json / _meta_attribute: the JSON-string encoding helpers directly
+# --------------------------------------------------------------------------- #
+
+
+def test_json_attribute_encodes_none_as_null():
+    from promptatron.worker.ddb import _json
+
+    assert _json(None) == {"NULL": True}
+
+
+def test_json_attribute_falls_back_to_str_for_non_native_json_values():
+    """``default=str`` is what lets a stray non-JSON-native value (e.g. a
+    ``datetime`` that slipped into a result/error payload) serialize instead
+    of raising -- ``json.dumps`` has no default fallback at all."""
+    from datetime import UTC, datetime
+
+    from promptatron.worker.ddb import _json
+
+    when = datetime(2026, 1, 1, tzinfo=UTC)
+    encoded = _json({"seen_at": when})
+
+    assert json.loads(encoded["S"]) == {"seen_at": str(when)}
+
+
+def test_now_iso_is_utc_not_naive_local_time():
+    from promptatron.worker.ddb import _now_iso
+
+    assert _now_iso().endswith("+00:00")
+
+
+def test_meta_attribute_run_ids_defaults_none_to_an_empty_json_list(store, client):
+    """``run_ids`` gets its own branch specifically so ``None`` serializes as
+    ``"[]"`` rather than as DynamoDB ``NULL`` -- the reader always expects a
+    JSON array string for this field, never a null."""
+    store.begin(REQUEST)
+
+    store.save_evaluation(run_ids=None)
+
+    item = meta(client)
+    assert item["run_ids"] == {"S": "[]"}
 
 
 # --------------------------------------------------------------------------- #

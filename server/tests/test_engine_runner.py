@@ -25,6 +25,7 @@ from promptatron.engine.events import (
     RunCompleteEvent,
     RunStartEvent,
     TextDeltaEvent,
+    ToolInputDeltaEvent,
     ToolResultEvent,
     ToolUseStartEvent,
 )
@@ -535,6 +536,19 @@ async def test_fake_model_settings_produce_a_visible_canned_answer(initialized_d
 
     assert events[-1].status == "completed"
     assert events[-1].final_text.startswith("[fake-model] ")
+
+
+def test_to_json_line_applies_field_aliases():
+    """``by_alias=True`` -- ``ToolInputDeltaEvent.json_text`` must serialize
+    under its wire alias ``json``, not its Python attribute name."""
+    event = ToolInputDeltaEvent(tool_use_id="tu-1", json_text='{"a": 1}')
+
+    line = event.to_json_line()
+
+    assert line.endswith("\n")
+    payload = json.loads(line)
+    assert payload["json"] == '{"a": 1}'
+    assert "json_text" not in payload
 
 
 async def test_run_start_timestamp_is_a_utc_iso8601_instant(initialized_db):

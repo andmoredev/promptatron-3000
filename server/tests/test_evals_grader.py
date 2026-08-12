@@ -71,6 +71,34 @@ def test_tool_signature_covers_name_and_input():
     assert metrics.tool_signature(None) == ()
 
 
+def test_tool_signature_skips_non_dict_entries_but_keeps_reading_the_rest():
+    """``continue``, not ``break`` -- a malformed entry mid-transcript must not
+    truncate every real call that follows it."""
+    transcript = ["not-a-dict", {"name": "t", "input": {}}]
+    assert metrics.tool_signature(transcript) == ("t({})",)
+
+
+def test_tool_signature_defaults_a_missing_name_to_empty_string():
+    assert metrics.tool_signature([{"input": {}}]) == ("({})",)
+
+
+def test_modal_value_of_an_empty_sequence_is_none():
+    assert metrics.modal_value([]) is None
+
+
+def test_local_metrics_of_an_empty_batch_is_the_zero_shape():
+    result = metrics.local_metrics([], [])
+
+    assert result == {
+        "runs_analyzed": 0,
+        "exact_match_count": 0,
+        "unique_outputs": 0,
+        "output_length_variance": 0.0,
+        "tool_sequence_consistency": 0.0,
+        "modal_tool_sequence": [],
+    }
+
+
 def test_score_bands_follow_the_legacy_grader():
     assert [rubrics.score_to_grade(s) for s in (100, 90, 89, 70, 69, 50, 49, 30, 29, 0)] == [
         "A",

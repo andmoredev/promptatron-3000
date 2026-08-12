@@ -59,19 +59,18 @@ def get_config_store_client(settings: Settings = Depends(get_settings)) -> Confi
     return _build_client(settings.config_api_url, settings.config_api_key)
 
 
-def _has_handler(tool_name: str) -> bool:
+def _has_handler(scenario_id: str, tool_name: str) -> bool:
     """Consult the local Python tool registry for a registered handler.
 
-    Imported lazily and defensively: the registry module is owned by another agent
-    and may not exist yet, so any failure to import or call it degrades to False
-    rather than breaking this endpoint.
+    Imported lazily and defensively: any failure to import or call the registry
+    degrades to False rather than breaking this endpoint.
     """
     try:
         from promptatron.tools.registry import has_handler
     except ImportError:
         return False
     try:
-        return bool(has_handler(tool_name))
+        return bool(has_handler(scenario_id, tool_name))
     except Exception:
         logger.exception("Tool registry lookup failed for %r", tool_name)
         return False
@@ -233,7 +232,7 @@ async def list_tools(
     items = []
     for tool in result.items:
         item = tool.model_dump(by_alias=True)
-        item["handler_registered"] = _has_handler(tool.name)
+        item["handler_registered"] = _has_handler(scenario_id, tool.name)
         items.append(item)
     return {"items": items, "count": result.count}
 

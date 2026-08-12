@@ -116,15 +116,17 @@ async def test_get_dataset_content_round_trip(scenario_client: httpx.AsyncClient
 
 
 @respx.mock
-async def test_list_tools_adds_handler_registered_false_fallback(
+async def test_list_tools_reports_registered_handlers(
     scenario_client: httpx.AsyncClient,
 ):
-    """promptatron.tools.registry doesn't exist in this package yet, so the router's
-    lazy/defensive import must fall back to handler_registered=False rather than error.
-    """
+    """A tool with a real Python handler in the registry gets
+    handler_registered=True; an unknown tool degrades to False."""
     tool_fixture = _fixture("tool.json")
+    unknown_tool = {**tool_fixture, "name": "not_a_real_tool"}
     respx.get(f"{BASE_URL}/scenarios/fraud-detection-comprehensive/tools").mock(
-        return_value=httpx.Response(200, json={"items": [tool_fixture], "count": 1})
+        return_value=httpx.Response(
+            200, json={"items": [tool_fixture, unknown_tool], "count": 2}
+        )
     )
 
     response = await scenario_client.get(
@@ -133,9 +135,10 @@ async def test_list_tools_adds_handler_registered_false_fallback(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["count"] == 1
+    assert body["count"] == 2
     assert body["items"][0]["name"] == "flag_suspicious_transaction"
-    assert body["items"][0]["handler_registered"] is False
+    assert body["items"][0]["handler_registered"] is True
+    assert body["items"][1]["handler_registered"] is False
 
 
 # --------------------------------------------------------------------------- #

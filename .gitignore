@@ -49,3 +49,4 @@ history.json
 templates.json
 dist/
 .build/
+server/mutants/
