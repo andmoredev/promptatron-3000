@@ -122,9 +122,17 @@ terminals instead; they run the exact same commands.
 | `PROMPTATRON_DB_PATH` | `./data/promptatron.db` | SQLite path for run/evaluation history |
 | `PROMPTATRON_CORS_ORIGINS` | `["http://localhost:3000"]` | Allowed CORS origins (JSON list) |
 | `PROMPTATRON_FAKE_MODEL` | `false` | Use the scripted fake model + judge instead of live Bedrock |
+| `PROMPTATRON_ANTHROPIC_API_KEY` | *(unset)* | Anthropic API key — enables the `anthropic` provider (falls back to `ANTHROPIC_API_KEY`) |
+| `PROMPTATRON_OPENAI_API_KEY` | *(unset)* | OpenAI API key — enables the `openai` provider (falls back to `OPENAI_API_KEY`) |
+| `PROMPTATRON_OLLAMA_BASE_URL` | *(unset)* | Ollama server base URL, e.g. `http://localhost:11434` — enables the `ollama` provider (falls back to `OLLAMA_HOST`) |
 
 AWS credentials themselves are **not** a setting — they come from the standard boto3 credential
 chain (`AWS_PROFILE`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, SSO, or an instance/task role).
+
+Bedrock is the default provider and the only one that needs no extra configuration. Setting any of
+the three keys above adds that provider's models to `GET /models` and lets runs, evaluations and
+graders select it with `"provider": "anthropic" | "openai" | "ollama"`. Guardrails remain
+Bedrock-only.
 
 ### App (`app/`)
 

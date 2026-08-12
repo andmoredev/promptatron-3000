@@ -236,8 +236,14 @@ class ProviderCatalog:
 
         try:
             models = await fetch(credential)
+        except (httpx.HTTPError, httpx.InvalidURL) as exc:
+            # The expected failures -- a refused connection, a 401, a timeout.
+            # One line, no traceback: /health polls this on a loop, and a laptop
+            # with no Ollama running would otherwise fill the log with stacks.
+            logger.warning("Failed to list %s models: %r", provider, exc)
+            return Listing(configured=True, reachable=False, cached=False)
         except Exception:
-            # Never fatal: the other providers still have a catalog to show.
+            # Never fatal either: the other providers still have a catalog.
             logger.warning("Failed to list %s models", provider, exc_info=True)
             return Listing(configured=True, reachable=False, cached=False)
 
