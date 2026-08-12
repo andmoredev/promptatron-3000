@@ -136,7 +136,9 @@ provision:
 | --- | --- |
 | `PIPELINE_EXECUTION_ROLE` | the role GitHub Actions assumes via OIDC |
 | `CLOUDFORMATION_EXECUTION_ROLE` | passed as `sam deploy --role-arn`, so CloudFormation builds resources under its own role |
-| `ARTIFACTS_BUCKET_NAME` | passed as `sam deploy --s3-bucket` for packaging artifacts |
+
+Packaging artifacts go to SAM's own managed bucket (`resolve_s3`) in both local and CI deploys,
+so there is no artifacts bucket to configure.
 
 | Workflow | Trigger | Stack |
 | --- | --- | --- |
@@ -149,8 +151,8 @@ a PR can never touch production, and each environment deploys one at a time. For
 — they never receive org secrets.
 
 The deploy job runs the same `make deploy` used locally, so there is one deploy definition rather
-than a CI copy that drifts. Local runs keep SAM's managed bucket and your own credentials; CI
-supplies the org bucket and roles through `DEPLOY_S3_BUCKET` / `DEPLOY_ROLE_ARN`.
+than a CI copy that drifts. Local runs use your own credentials; CI assumes the pipeline role and
+passes the CloudFormation execution role through `DEPLOY_ROLE_ARN`.
 
 > **Two permissions worth checking on the first run.** `make deploy` does a few things outside
 > CloudFormation, under `PIPELINE_EXECUTION_ROLE`: uploading the server zip to the stack's own
