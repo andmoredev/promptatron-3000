@@ -149,7 +149,9 @@ class EvalStore(Protocol):
     evaluation row, read a run back after it has been executed (or, for
     ``kind="grade"``, read one that already existed), and publish a finished
     run. The local lane backs all three with SQLite (:class:`SqliteEvalStore`);
-    the cloud worker backs them with DynamoDB items.
+    the cloud worker backs them with DynamoDB items
+    (:class:`promptatron.worker.ddb.DynamoEvalStore`, restated for that side as
+    :class:`promptatron.worker.interfaces.RunStore`).
     """
 
     #: The evaluation this store is bound to -- every ``save_evaluation`` targets it.
@@ -159,15 +161,21 @@ class EvalStore(Protocol):
         """Partially update the evaluation record (``status``, ``result``, ...)."""
         ...
 
-    def load_run(self, run_id: str) -> history.RunRecord:
-        """Read a run record back. Raises ``NotFoundError`` if it is gone."""
+    def load_run(self, run_id: str) -> Any:
+        """Read a run record back. Raises ``NotFoundError`` if it is gone.
+
+        Returns anything with the :class:`~promptatron.store.history.RunRecord`
+        attributes the engine reads (``id``, ``status``, ``output``,
+        ``user_prompt``, ``tool_transcript``, ``metrics``, ``error``).
+        """
         ...
 
     def save_run(self, run_id: str) -> None:
         """Publish a just-finished run, before its ``run_completed`` event.
 
         A no-op for the local lane, where ``execute_run`` has already written
-        the row to the same SQLite database the reader uses.
+        the row to the same SQLite database the reader uses; a copy of that row
+        into a ``RUN#`` item in the cloud lane.
         """
         ...
 
@@ -234,9 +242,9 @@ async def _execute_once(
 ) -> RunOutcome:
     """Run ``run_config`` once, consuming the engine's event stream internally.
 
-    ``store`` defaults to the local SQLite repository, which is where
-    ``execute_run`` has just written the row either way -- only the *cloud*
-    worker needs to say otherwise.
+    ``store`` defaults to the local SQLite repository -- which is where
+    ``execute_run`` has just written the row in *either* lane, the cloud store's
+    ``load_run`` simply preferring that same local row.
     """
     store = store or SqliteEvalStore()
     assert request.run_config is not None
@@ -329,12 +337,21 @@ async def _execute_batch(
             seam.publish(RunStartedEvent(index=index))
             outcome = await _execute_with_retries(index, request, seam.deps, seam.store)
         collected.append(outcome)
-        if outcome.run_id is not None:
-            seam.store.save_run(outcome.run_id)
-        _emit_run_result(seam, outcome)
+        _publish_run(seam, outcome)
 
     await asyncio.gather(*(one(index) for index in range(request.n)))
     collected.sort(key=lambda outcome: outcome.index)
+
+
+def _publish_run(seam: _Seam, outcome: RunOutcome) -> None:
+    """Hand the finished run to the store, *then* announce it.
+
+    That order is the contract's writer rule: a client that reacts to
+    ``run_completed`` by fetching the run must always find it.
+    """
+    if outcome.run_id is not None:
+        seam.store.save_run(outcome.run_id)
+    _emit_run_result(seam, outcome)
 
 
 def _emit_run_result(seam: _Seam, outcome: RunOutcome) -> None:
@@ -463,7 +480,7 @@ def _settle_cancelled(seam: _Seam, outcomes: list[RunOutcome]) -> dict[str, Any]
 
 
 async def execute_evaluation_with_seam(
-    request: EvaluationRequest,
+    request: EvaluationRequest | dict[str, Any],
     emit: EmitFn,
     store: EvalStore,
     cancelled: CancelledFn | None = None,
@@ -474,13 +491,14 @@ async def execute_evaluation_with_seam(
     """Execute + grade one evaluation against an injected emitter and store.
 
     This is the whole evaluation, lane-agnostic. ``emit`` publishes each
-    progress event as a plain dict, ``store`` persists the evaluation row and
-    its runs, and ``cancelled`` is polled between runs and before grading.
+    progress event as a plain dict, ``store`` publishes finished runs and reads
+    stored ones, and ``cancelled`` is polled between runs and before grading.
 
-    ``evaluation_id`` defaults to ``store.evaluation_id`` and ``deps`` to
-    :func:`default_deps`, so an out-of-process caller that has already bound its
-    store to an evaluation can call this with the four positional arguments and
-    nothing else.
+    ``request`` may be an :class:`EvaluationRequest` or the plain dict an
+    out-of-process caller received on the wire -- validation belongs to the
+    engine either way. ``evaluation_id`` defaults to ``store.evaluation_id``
+    and ``deps`` to :func:`default_deps`, so a host can call this with just the
+    four documented arguments.
 
     Returns the terminal state::
 
@@ -499,6 +517,9 @@ async def execute_evaluation_with_seam(
     )
     outcomes: list[RunOutcome] = []
     try:
+        if not isinstance(request, EvaluationRequest):
+            request = EvaluationRequest.model_validate(request)
+
         seam.store.save_evaluation(status="running")
         seam.publish(
             EvalStartEvent(

@@ -46,6 +46,10 @@ from promptatron.evals.ddb_reader import EvalTable
 from promptatron.evals.schemas import EvaluationRequest
 from promptatron.schemas.runs import EvaluationDetail, Page, RunDetail, RunSummary
 
+# The worker exports the session-id derivation (rather than each side inventing
+# one) so a retried invoke lands on the same AgentCore runtime session.
+from promptatron.worker.interfaces import session_id_for
+
 logger = logging.getLogger(__name__)
 
 #: How long the events stream waits between polls for new ``EVENT#`` items.
@@ -54,12 +58,6 @@ POLL_INTERVAL_SECONDS = 1.5
 #: Extra polls granted after ``META`` goes terminal, so the worker's own
 #: ``eval_complete`` (written *after* the terminal status) is never truncated.
 TERMINAL_GRACE_POLLS = 2
-
-#: ``InvokeAgentRuntime``'s ``runtimeSessionId`` is a 33..256 char string; our
-#: evaluation ids are 32-char uuid hex, so they are right-padded to the minimum.
-SESSION_ID_MIN_LENGTH = 33
-SESSION_ID_MAX_LENGTH = 256
-SESSION_ID_PAD_CHAR = "-"
 
 JSON_CONTENT_TYPE = "application/json"
 
@@ -100,12 +98,6 @@ def require_table(table: EvalTable | None) -> EvalTable:
 # --------------------------------------------------------------------------- #
 
 
-def runtime_session_id(evaluation_id: str) -> str:
-    """The evaluation id as a ``runtimeSessionId`` (padded to the API minimum)."""
-    padded = evaluation_id.ljust(SESSION_ID_MIN_LENGTH, SESSION_ID_PAD_CHAR)
-    return padded[:SESSION_ID_MAX_LENGTH]
-
-
 def worker_payload(evaluation_id: str, request: EvaluationRequest) -> dict[str, Any]:
     """The JSON body handed to the worker: id plus the request minus ``execution``."""
     return {
@@ -127,8 +119,10 @@ class AgentCoreInvoker:
     Botocore's ``bedrock-agentcore`` (api version 2024-02-28) models the
     operation as ``invoke_agent_runtime`` with ``agentRuntimeArn`` (uri),
     ``runtimeSessionId`` (the ``X-Amzn-Bedrock-AgentCore-Runtime-Session-Id``
-    header, min length 33), ``contentType``/``accept`` headers, and ``payload``
-    -- a blob, so the JSON body is encoded here.
+    header; ``SessionType`` is min 33 / max 256 chars, hence
+    :func:`~promptatron.worker.interfaces.session_id_for`),
+    ``contentType``/``accept`` headers, and ``payload`` -- a blob, so the JSON
+    body is encoded here.
 
     The worker acknowledges immediately and continues as an async task inside
     the runtime, so this call returns long before the evaluation finishes; the
@@ -151,7 +145,7 @@ class AgentCoreInvoker:
     def invoke(self, evaluation_id: str, payload: dict[str, Any]) -> Any:
         response = self.client.invoke_agent_runtime(
             agentRuntimeArn=self._runtime_arn,
-            runtimeSessionId=runtime_session_id(evaluation_id),
+            runtimeSessionId=session_id_for(evaluation_id),
             contentType=JSON_CONTENT_TYPE,
             accept=JSON_CONTENT_TYPE,
             payload=json.dumps(payload).encode("utf-8"),

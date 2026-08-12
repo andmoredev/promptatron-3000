@@ -60,8 +60,9 @@ def determinism(n: int = 3) -> EvaluationRequest:
 class RecordingStore:
     """An :class:`~promptatron.evals.engine.EvalStore` that remembers everything.
 
-    ``load_run`` still goes to SQLite -- that is where ``execute_run`` wrote the
-    row -- which is exactly the split the cloud worker's store has too.
+    ``load_run`` still delegates to SQLite -- that is where ``execute_run``
+    wrote the row -- which is exactly the split the cloud worker's store has,
+    only with DynamoDB on the far side of ``save_run``.
     """
 
     def __init__(self, evaluation_id: str = "eval-seam") -> None:
@@ -397,3 +398,78 @@ def test_default_deps_uses_the_settings_it_is_given():
 
     assert built.settings.fake_model is True
     assert isinstance(built.judge_factory("amazon.nova-pro-v1:0"), FakeJudgeModel)
+
+
+# --------------------------------------------------------------------------- #
+# The cloud worker's calling convention
+# --------------------------------------------------------------------------- #
+
+
+class HostOwnedStore(RecordingStore):
+    """A store bound to its own id, the way the worker's DynamoEvalStore is."""
+
+    def __init__(self, evaluation_id: str = "eval-cloud") -> None:
+        super().__init__(evaluation_id)
+
+
+async def test_the_seam_accepts_the_workers_call_shape(initialized_db, monkeypatch):
+    """Keyword arguments, a plain-dict request, and a store with no eval record."""
+    monkeypatch.setattr(evals_engine, "default_deps", deps)
+    recorder = Recorder()
+    store = HostOwnedStore()
+
+    terminal = await evals_engine.execute_evaluation_with_seam(
+        request={
+            "kind": "determinism",
+            "n": 2,
+            "run_config": {"model_id": "m", "user_prompt": "Assess B456"},
+        },
+        emit=recorder.emit,
+        store=store,
+        cancelled=lambda: False,
+    )
+
+    assert terminal["status"] == "completed"
+    assert terminal["evaluation_id"] == "eval-cloud"
+    assert len(terminal["run_ids"]) == 2
+    assert len(store.saved_runs) == 2
+    assert recorder.types[-1] == "eval_complete"
+
+
+async def test_the_seam_matches_the_workers_outcome_envelope(initialized_db, monkeypatch):
+    """What comes back is what ``interfaces.normalize_outcome`` expects."""
+    from promptatron.worker import interfaces
+
+    monkeypatch.setattr(evals_engine, "default_deps", deps)
+    recorder = Recorder()
+    store = HostOwnedStore()
+
+    terminal = await evals_engine.execute_evaluation_with_seam(
+        request=determinism(2).model_dump(),
+        emit=recorder.emit,
+        store=store,
+        cancelled=lambda: False,
+    )
+    normalized_outcome = interfaces.normalize_outcome(terminal)
+
+    assert normalized_outcome["status"] == terminal["status"] == "completed"
+    assert normalized_outcome["result"] == terminal["result"]
+    assert normalized_outcome["run_ids"] == terminal["run_ids"]
+    assert normalized_outcome["error"] is None
+
+
+async def test_an_invalid_request_dict_is_an_error_outcome(initialized_db, monkeypatch):
+    """Validation is the engine's, and a bad body is a terminal state, not a raise."""
+    monkeypatch.setattr(evals_engine, "default_deps", deps)
+    recorder = Recorder()
+
+    terminal = await evals_engine.execute_evaluation_with_seam(
+        request={"kind": "determinism"},  # no run_config
+        emit=recorder.emit,
+        store=HostOwnedStore(),
+        cancelled=lambda: False,
+    )
+
+    assert terminal["status"] == "error"
+    assert terminal["error"]["code"] == "internal_error"
+    assert recorder.types == ["eval_complete"]
