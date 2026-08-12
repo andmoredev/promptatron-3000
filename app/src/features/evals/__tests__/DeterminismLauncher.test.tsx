@@ -146,11 +146,13 @@ describe('DeterminismLauncher', () => {
         system_prompt: 'You are a fraud analyst.',
         tools_enabled: true,
         max_tool_iterations: 10,
+        provider: 'bedrock',
         stream: true
       },
       n: 5,
       grader: {
         model_id: MODELS[0].model_id,
+        provider: 'bedrock',
         system_prompt: 'You are a strict judge.'
       },
       rubric: 'Penalize inconsistent tool use.',
@@ -168,12 +170,41 @@ describe('DeterminismLauncher', () => {
     expect(startEvaluation).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'determinism',
-        grader: { model_id: DEFAULT_SETTINGS.defaultGraderModelId }
+        grader: { model_id: DEFAULT_SETTINGS.defaultGraderModelId, provider: 'bedrock' }
       })
     )
     const request = startEvaluation.mock.calls[0][0]
     expect(request.rubric).toBeUndefined()
     expect(request.grader.system_prompt).toBeUndefined()
+  })
+
+  it('sends the grader provider matching the chosen grader model source', async () => {
+    useRunConfigStore.setState({ model_id: MODELS[0].model_id, user_prompt: 'go' })
+    useScenarioStore.setState({
+      models: [
+        ...MODELS,
+        {
+          model_id: 'gpt-4o',
+          name: 'GPT-4o',
+          provider: 'OpenAI',
+          supports_streaming: true,
+          kind: 'foundation-model',
+          source: 'openai'
+        }
+      ],
+      modelsLoaded: true
+    })
+    render(<DeterminismLauncher />)
+    await waitFor(() => expect(healthMock).toHaveBeenCalledTimes(1))
+
+    fireEvent.change(screen.getByLabelText('Grader model'), { target: { value: 'gpt-4o' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Start evaluation' }))
+
+    expect(startEvaluation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        grader: expect.objectContaining({ model_id: 'gpt-4o', provider: 'openai' })
+      })
+    )
   })
 
   it('calls onStarted with the new evaluation id', async () => {

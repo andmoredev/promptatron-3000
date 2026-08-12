@@ -71,6 +71,37 @@ describe('api.health / api.models', () => {
 
     expect(urlOf(spy)).toBe(`${BASE}/models`)
     expect(result.cached).toBe(true)
+    // a server that hasn't shipped multi-provider yet omits `providers`
+    expect(result.providers).toBeUndefined()
+  })
+
+  it('GETs /models with the multi-provider shape (models[].source + providers)', async () => {
+    mockFetch(
+      jsonResponse({
+        models: [
+          {
+            model_id: 'llama3',
+            name: 'Llama 3',
+            provider: 'Ollama',
+            supports_streaming: false,
+            kind: 'foundation-model',
+            source: 'ollama'
+          }
+        ],
+        providers: {
+          bedrock: { configured: true },
+          anthropic: { configured: false },
+          openai: { configured: false },
+          ollama: { configured: true, reachable: false }
+        },
+        cached: false
+      })
+    )
+
+    const result = await api.models.list()
+
+    expect(result.models[0].source).toBe('ollama')
+    expect(result.providers?.ollama).toEqual({ configured: true, reachable: false })
   })
 })
 

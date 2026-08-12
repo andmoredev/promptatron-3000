@@ -168,6 +168,20 @@ export type RunStreamEventType = RunStreamEvent['type']
 export type RunStreamEventOf<K extends RunStreamEventType> = Extract<RunStreamEvent, { type: K }>
 
 /* -------------------------------------------------------------------------- */
+/* Providers — routers/models.py                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Which backend a model is served from.
+ *
+ * contract: multi-provider model selection doc — server work landing
+ * concurrently; typed from the doc, not from server code. `bedrock` is the
+ * default everywhere a `provider`/`source` is omitted (older wire payloads,
+ * fake-mode dev server).
+ */
+export type ModelSource = 'bedrock' | 'anthropic' | 'openai' | 'ollama'
+
+/* -------------------------------------------------------------------------- */
 /* Runs — engine/schemas.py + schemas/runs.py                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -202,6 +216,16 @@ export interface RunRequest {
   /** 1 – 100, defaults to 10. */
   max_tool_iterations?: number
   guardrail?: RunGuardrailConfig | null
+  /**
+   * Which backend `model_id` is served from. Defaults to `'bedrock'`
+   * server-side when omitted. A `guardrail` with a non-`'bedrock'` provider is
+   * a server-side 400 — the UI is responsible for never sending that
+   * combination (see `runConfigStore.setProvider`).
+   *
+   * contract: multi-provider model selection doc — "RunRequest.provider?:
+   * ... (default bedrock)".
+   */
+  provider?: ModelSource
   /** Defaults to `true` server-side. */
   stream?: boolean
 }
@@ -338,7 +362,7 @@ export interface EvaluationStoredConfig {
   n: number
   run_config: RunRequest | null
   rubric: string | null
-  grader: { model_id: string; system_prompt: string | null }
+  grader: { model_id: string; system_prompt: string | null; provider?: ModelSource }
   [key: string]: unknown
 }
 
@@ -400,6 +424,15 @@ export interface EvaluationListParams {
 export interface EvaluationGraderConfig {
   model_id?: string
   system_prompt?: string | null
+  /**
+   * Which backend the grader `model_id` is served from. Defaults to
+   * `'bedrock'` server-side when omitted (the built-in judge stays
+   * `bedrock`/nova unless overridden).
+   *
+   * contract: multi-provider model selection doc — "Grader config gains the
+   * same [provider field]".
+   */
+  provider?: ModelSource
 }
 
 /**
@@ -520,14 +553,54 @@ export type ModelKind = 'foundation-model' | 'inference-profile'
 export interface ModelInfo {
   model_id: string
   name: string
+  /** Human-readable provider label for display (e.g. "Amazon", "Anthropic"). */
   provider: string
   supports_streaming: boolean
   kind: ModelKind
+  /**
+   * Which backend serves this model — the machine-readable counterpart to
+   * `provider`. Optional on the wire type because pre-existing/fake-mode
+   * payloads predate the field; treat a missing value as `'bedrock'` (see
+   * `scenarioStore.groupModelsBySource`).
+   *
+   * contract: multi-provider model selection doc — `GET /models` row shape.
+   */
+  source?: ModelSource
 }
 
-/** `GET /api/v1/models`. */
+/** `GET /api/v1/models` -> `providers[source]`. */
+export interface ProviderStatus {
+  configured: boolean
+}
+
+/** `providers.ollama` additionally reports whether the local daemon answered. */
+export interface OllamaProviderStatus extends ProviderStatus {
+  /** `null` when configured but not yet (or unable to be) probed. */
+  reachable: boolean | null
+}
+
+/** `GET /api/v1/models` -> `providers`. */
+export interface ModelProviders {
+  bedrock: ProviderStatus
+  anthropic: ProviderStatus
+  openai: ProviderStatus
+  ollama: OllamaProviderStatus
+}
+
+/**
+ * `GET /api/v1/models`.
+ *
+ * `providers` is optional on the wire type: a server that has not yet shipped
+ * multi-provider support (e.g. the `PROMPTATRON_FAKE_MODEL` dev server) omits
+ * it entirely. Treat a missing `providers` as "only bedrock is configured"
+ * rather than crashing — see `scenarioStore.resolveModelProviders`.
+ *
+ * contract: multi-provider model selection doc — `GET /models` response
+ * shape.
+ */
 export interface ModelListResponse {
   models: ModelInfo[]
+  providers?: ModelProviders
   cached: boolean
 }
 

@@ -6,11 +6,17 @@
  * `run_config` is built with `toRunRequest` at submit time — same helper the
  * Workbench's Run button uses — so an evaluation always replays exactly the
  * request a manual run would send.
+ *
+ * The grader model picker is grouped the same way as the Workbench's
+ * `ModelPanel` (`groupModelsBySource`); picking a grader model sets its
+ * provider alongside it, same idea as `runConfigStore.selectModel`. Left
+ * untouched, the grader defaults stay `bedrock` / nova (`DEFAULT_GRADER_MODEL_ID`).
  */
 
 import { useEffect, useState } from 'react'
 import {
   findModel,
+  groupModelsBySource,
   selectCanRun,
   selectIsEvaluating,
   toRunRequest,
@@ -20,7 +26,12 @@ import {
   useSettingsStore
 } from '../../stores'
 import { api } from '../../api'
-import type { EvaluationExecution, EvaluationGraderConfig, EvaluationRequest } from '../../api'
+import type {
+  EvaluationExecution,
+  EvaluationGraderConfig,
+  EvaluationRequest,
+  ModelSource
+} from '../../api'
 
 const N_MIN = 2
 const N_MAX = 25
@@ -57,6 +68,7 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
   const canRun = useRunConfigStore(selectCanRun)
 
   const models = useScenarioStore((state) => state.models)
+  const modelProviders = useScenarioStore((state) => state.modelProviders)
   const scenarios = useScenarioStore((state) => state.scenarios)
   const loadModels = useScenarioStore((state) => state.loadModels)
   const loadScenarios = useScenarioStore((state) => state.loadScenarios)
@@ -72,6 +84,10 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
 
   const [n, setN] = useState(() => clampN(defaultN))
   const [graderModelId, setGraderModelId] = useState(defaultGraderModelId)
+  // Grader defaults stay bedrock/nova (`DEFAULT_GRADER_MODEL_ID`); switching
+  // the grader model picker updates this alongside the id, same as the
+  // Workbench's `selectModel`.
+  const [graderProvider, setGraderProvider] = useState<ModelSource>('bedrock')
   const [rubric, setRubric] = useState('')
   const [graderSystemPrompt, setGraderSystemPrompt] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -113,10 +129,17 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
   const model = findModel(models, modelId)
   const scenario = scenarios.find((entry) => entry.id === scenarioId) ?? null
   const graderReady = graderModelId.trim() !== ''
+  const graderGroups = groupModelsBySource(models, modelProviders).groups
+
+  function handleGraderModelChange(id: string) {
+    setGraderModelId(id)
+    const graderModel = findModel(models, id)
+    setGraderProvider(graderModel?.source ?? 'bedrock')
+  }
 
   async function handleStart() {
     setStartFailed(false)
-    const grader: EvaluationGraderConfig = { model_id: graderModelId }
+    const grader: EvaluationGraderConfig = { model_id: graderModelId, provider: graderProvider }
     if (graderSystemPrompt.trim() !== '') grader.system_prompt = graderSystemPrompt
 
     const request: EvaluationRequest = {
@@ -232,13 +255,17 @@ export default function DeterminismLauncher({ onStarted }: DeterminismLauncherPr
             id="grader-model-select"
             className="select-field"
             value={graderModelId}
-            onChange={(event) => setGraderModelId(event.target.value)}
+            onChange={(event) => handleGraderModelChange(event.target.value)}
           >
             <option value="">Select a model…</option>
-            {models.map((m) => (
-              <option key={m.model_id} value={m.model_id}>
-                {m.name}
-              </option>
+            {graderGroups.map((group) => (
+              <optgroup key={group.source} label={group.label} disabled={group.disabled}>
+                {group.models.map((m) => (
+                  <option key={m.model_id} value={m.model_id} disabled={group.disabled}>
+                    {m.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>

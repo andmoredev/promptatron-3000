@@ -6,6 +6,13 @@
  * than subscribing to the whole config — `toRunRequest` builds a fresh object,
  * which cannot be a zustand v5 selector, and the button only needs the boolean
  * from `selectCanRun`.
+ *
+ * Guardrails only run against the `bedrock` provider (a guardrail + a
+ * non-bedrock provider is a server-side 400), so the guardrail select is
+ * disabled whenever `provider !== 'bedrock'`. The complementary half of the
+ * invariant — clearing an already-selected guardrail when the provider
+ * changes away from bedrock — lives centrally in `runConfigStore.setProvider`
+ * / `.selectModel`, not here.
  */
 
 import { useEffect, useState } from 'react'
@@ -33,6 +40,7 @@ export default function RunControls() {
   const toolsEnabled = useRunConfigStore((state) => state.tools_enabled)
   const maxToolIterations = useRunConfigStore((state) => state.max_tool_iterations)
   const guardrail = useRunConfigStore((state) => state.guardrail)
+  const provider = useRunConfigStore((state) => state.provider)
   const setInference = useRunConfigStore((state) => state.setInference)
   const setToolsEnabled = useRunConfigStore((state) => state.setToolsEnabled)
   const setMaxToolIterations = useRunConfigStore((state) => state.setMaxToolIterations)
@@ -51,6 +59,8 @@ export default function RunControls() {
   }, [loadGuardrails])
 
   const attachable = readyGuardrails(guardrails)
+  const guardrailBlocked = provider !== 'bedrock'
+  const guardrailHint = 'Guardrails require the Bedrock provider'
 
   function handleRun() {
     void startRun(toRunRequest(useRunConfigStore.getState()))
@@ -98,8 +108,10 @@ export default function RunControls() {
           </label>
           <select
             id="guardrail-select"
-            className="select-field"
+            className="select-field disabled:opacity-50 disabled:cursor-not-allowed"
             value={guardrail?.id ?? ''}
+            disabled={guardrailBlocked}
+            title={guardrailBlocked ? guardrailHint : undefined}
             onChange={(event) =>
               setGuardrail(
                 event.target.value === '' ? null : { id: event.target.value, trace: true }
@@ -113,6 +125,7 @@ export default function RunControls() {
               </option>
             ))}
           </select>
+          {guardrailBlocked && <p className="mt-1 text-xs text-gray-500">{guardrailHint}</p>}
         </div>
 
         <div>

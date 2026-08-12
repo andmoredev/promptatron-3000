@@ -51,6 +51,7 @@ describe('defaults', () => {
   it('starts from DEFAULT_RUN_CONFIG with streaming on', () => {
     const state = useRunConfigStore.getState()
     expect(state.model_id).toBe('')
+    expect(state.provider).toBe('bedrock')
     expect(state.stream).toBe(true)
     expect(state.tools_enabled).toBe(false)
     expect(state.max_tool_iterations).toBe(10)
@@ -101,6 +102,51 @@ describe('setters', () => {
     expect(next.model_id).toBe('')
     expect(next.user_prompt).toBe('')
     expect(next.guardrail).toBeNull()
+    expect(next.provider).toBe('bedrock')
+  })
+})
+
+describe('provider / guardrail invariant', () => {
+  it('selectModel sets model_id and provider together', () => {
+    useRunConfigStore.getState().selectModel('claude-3-opus', 'anthropic')
+
+    const state = useRunConfigStore.getState()
+    expect(state.model_id).toBe('claude-3-opus')
+    expect(state.provider).toBe('anthropic')
+  })
+
+  it('setProvider clears an already-selected guardrail when leaving bedrock', () => {
+    useRunConfigStore.getState().setGuardrail({ id: 'gr-1', trace: true })
+    expect(useRunConfigStore.getState().guardrail).not.toBeNull()
+
+    useRunConfigStore.getState().setProvider('openai')
+
+    const state = useRunConfigStore.getState()
+    expect(state.provider).toBe('openai')
+    expect(state.guardrail).toBeNull()
+  })
+
+  it('selectModel clears an already-selected guardrail when switching to a non-bedrock model', () => {
+    useRunConfigStore.getState().setGuardrail({ id: 'gr-1', trace: true })
+
+    useRunConfigStore.getState().selectModel('gpt-4o', 'openai')
+
+    expect(useRunConfigStore.getState().guardrail).toBeNull()
+  })
+
+  it('setProvider back to bedrock does not resurrect a cleared guardrail', () => {
+    useRunConfigStore.getState().setGuardrail({ id: 'gr-1', trace: true })
+    useRunConfigStore.getState().setProvider('openai')
+    useRunConfigStore.getState().setProvider('bedrock')
+
+    expect(useRunConfigStore.getState().guardrail).toBeNull()
+  })
+
+  it('setProvider leaves an existing guardrail alone when staying on bedrock', () => {
+    useRunConfigStore.getState().setGuardrail({ id: 'gr-1', trace: true })
+    useRunConfigStore.getState().setProvider('bedrock')
+
+    expect(useRunConfigStore.getState().guardrail).toEqual({ id: 'gr-1', trace: true })
   })
 })
 
@@ -159,6 +205,7 @@ describe('toRunRequest', () => {
       user_prompt: 'hi',
       tools_enabled: false,
       max_tool_iterations: 10,
+      provider: 'bedrock',
       stream: true
     })
   })
@@ -186,8 +233,20 @@ describe('toRunRequest', () => {
       guardrail: { id: 'gr-1', version: '2', trace: true },
       tools_enabled: true,
       max_tool_iterations: 4,
+      provider: 'bedrock',
       stream: false
     })
+  })
+
+  it('always includes provider, even the bedrock default', () => {
+    const state = useRunConfigStore.getState()
+    state.setModelId('m')
+    state.setUserPrompt('hi')
+
+    expect(toRunRequest(useRunConfigStore.getState()).provider).toBe('bedrock')
+
+    state.setProvider('anthropic')
+    expect(toRunRequest(useRunConfigStore.getState()).provider).toBe('anthropic')
   })
 })
 
@@ -207,6 +266,7 @@ describe('persistence', () => {
     expect(parsed.version).toBe(1)
     expect(parsed.state).toEqual({
       model_id: 'anthropic.claude-3-sonnet',
+      provider: 'bedrock',
       system_prompt: 'be terse',
       user_prompt: 'where is B456?',
       scenario_id: null,
@@ -220,7 +280,7 @@ describe('persistence', () => {
       stream: true
     })
     // no functions leaked into the persisted payload
-    expect(Object.keys(parsed.state)).toHaveLength(12)
+    expect(Object.keys(parsed.state)).toHaveLength(13)
   })
 
   it('round-trips: a stored payload rehydrates back into the store', async () => {
@@ -234,6 +294,7 @@ describe('persistence', () => {
           user_prompt: 'restored prompt',
           scenario_id: 'shipping',
           inference: { max_tokens: 256 },
+          provider: 'anthropic',
           stream: false
         }
       })
@@ -246,8 +307,33 @@ describe('persistence', () => {
     expect(state.user_prompt).toBe('restored prompt')
     expect(state.scenario_id).toBe('shipping')
     expect(state.inference).toEqual({ max_tokens: 256 })
+    expect(state.provider).toBe('anthropic')
     expect(state.stream).toBe(false)
     // actions survive rehydration
     expect(typeof state.applyScenarioDefaults).toBe('function')
+  })
+
+  it('a payload predating provider rehydrates with the bedrock default', async () => {
+    // Simulates a pre-multi-provider persisted payload: no `provider` key at
+    // all (not even `undefined`), the way real old localStorage looked.
+    const withoutProvider: Record<string, unknown> = { ...DEFAULT_RUN_CONFIG }
+    delete withoutProvider.provider
+    localStorage.setItem(
+      RUN_CONFIG_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        state: {
+          ...withoutProvider,
+          model_id: 'amazon.nova-pro-v1:0',
+          user_prompt: 'restored prompt'
+        }
+      })
+    )
+
+    await useRunConfigStore.persist.rehydrate()
+
+    const state = useRunConfigStore.getState()
+    expect(state.model_id).toBe('amazon.nova-pro-v1:0')
+    expect(state.provider).toBe('bedrock')
   })
 })

@@ -60,12 +60,17 @@ export {
 export {
   useScenarioStore,
   findModel,
+  groupModelsBySource,
+  resolveModelProviders,
   selectScenarioDetail,
   selectScenarioLoading,
+  DEFAULT_MODEL_PROVIDERS,
   INITIAL_SCENARIO_STATE,
   type ScenarioStateData,
   type ScenarioActions,
-  type ScenarioStore
+  type ScenarioStore,
+  type ModelSourceGroup,
+  type GroupedModels
 } from './scenarioStore'
 
 export {

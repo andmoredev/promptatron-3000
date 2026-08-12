@@ -27,14 +27,16 @@ const MODELS: ModelInfo[] = [
     name: 'Claude 3.5 Sonnet',
     provider: 'Anthropic',
     supports_streaming: true,
-    kind: 'foundation-model'
+    kind: 'foundation-model',
+    source: 'bedrock'
   },
   {
     model_id: 'amazon.nova-pro-v1:0',
     name: 'Nova Pro',
     provider: 'Amazon',
     supports_streaming: true,
-    kind: 'foundation-model'
+    kind: 'foundation-model',
+    source: 'bedrock'
   }
 ]
 
@@ -99,6 +101,7 @@ describe('WorkbenchPage', () => {
       system_prompt: 'You are a fraud analyst.',
       tools_enabled: true,
       max_tool_iterations: 10,
+      provider: 'bedrock',
       stream: true
     })
   })

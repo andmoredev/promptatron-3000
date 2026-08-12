@@ -1,7 +1,13 @@
 /** scenarioStore: idempotent catalog loads and the detail cache. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ModelListResponse, ScenarioDetail, ScenarioListResponse } from '../../api'
+import type {
+  ModelInfo,
+  ModelListResponse,
+  ModelProviders,
+  ScenarioDetail,
+  ScenarioListResponse
+} from '../../api'
 
 const scenariosListMock = vi.fn()
 const scenariosGetMock = vi.fn()
@@ -23,6 +29,9 @@ const { ApiError } = await import('../../api')
 const {
   useScenarioStore,
   findModel,
+  groupModelsBySource,
+  resolveModelProviders,
+  DEFAULT_MODEL_PROVIDERS,
   selectScenarioDetail,
   selectScenarioLoading
 } = await import('../scenarioStore')
@@ -49,6 +58,13 @@ const detail: ScenarioDetail = {
   datasets: []
 }
 
+const modelProviders: ModelProviders = {
+  bedrock: { configured: true },
+  anthropic: { configured: true },
+  openai: { configured: false },
+  ollama: { configured: true, reachable: false }
+}
+
 const modelsResponse: ModelListResponse = {
   models: [
     {
@@ -56,9 +72,11 @@ const modelsResponse: ModelListResponse = {
       name: 'Claude 3 Sonnet',
       provider: 'Anthropic',
       supports_streaming: true,
-      kind: 'foundation-model'
+      kind: 'foundation-model',
+      source: 'bedrock'
     }
   ],
+  providers: modelProviders,
   cached: true
 }
 
@@ -137,6 +155,7 @@ describe('loadModels', () => {
     expect(state.models).toEqual(modelsResponse.models)
     expect(state.modelsCached).toBe(true)
     expect(state.modelsLoaded).toBe(true)
+    expect(state.modelProviders).toEqual(modelProviders)
   })
 
   it('findModel looks a row up by model_id', async () => {
@@ -146,6 +165,140 @@ describe('loadModels', () => {
     const models = useScenarioStore.getState().models
     expect(findModel(models, 'anthropic.claude-3-sonnet')?.name).toBe('Claude 3 Sonnet')
     expect(findModel(models, 'nope')).toBeNull()
+  })
+
+  it('stores modelProviders as null when the server omits it (older/fake-mode)', async () => {
+    modelsListMock.mockResolvedValue({ models: modelsResponse.models, cached: false })
+    await useScenarioStore.getState().loadModels()
+
+    expect(useScenarioStore.getState().modelProviders).toBeNull()
+  })
+})
+
+describe('resolveModelProviders', () => {
+  it('passes through a real providers object unchanged', () => {
+    expect(resolveModelProviders(modelProviders)).toBe(modelProviders)
+  })
+
+  it('falls back to "only bedrock configured" for null/undefined', () => {
+    expect(resolveModelProviders(null)).toEqual(DEFAULT_MODEL_PROVIDERS)
+    expect(resolveModelProviders(undefined)).toEqual(DEFAULT_MODEL_PROVIDERS)
+    expect(DEFAULT_MODEL_PROVIDERS.bedrock.configured).toBe(true)
+    expect(DEFAULT_MODEL_PROVIDERS.anthropic.configured).toBe(false)
+    expect(DEFAULT_MODEL_PROVIDERS.openai.configured).toBe(false)
+    expect(DEFAULT_MODEL_PROVIDERS.ollama).toEqual({ configured: false, reachable: null })
+  })
+})
+
+describe('groupModelsBySource', () => {
+  const models: ModelInfo[] = [
+    {
+      model_id: 'm-bedrock',
+      name: 'Bedrock model',
+      provider: 'Amazon',
+      supports_streaming: true,
+      kind: 'foundation-model',
+      source: 'bedrock'
+    },
+    {
+      model_id: 'm-anthropic',
+      name: 'Anthropic model',
+      provider: 'Anthropic',
+      supports_streaming: true,
+      kind: 'foundation-model',
+      source: 'anthropic'
+    },
+    {
+      model_id: 'm-ollama',
+      name: 'Ollama model',
+      provider: 'Ollama',
+      supports_streaming: false,
+      kind: 'foundation-model',
+      source: 'ollama'
+    },
+    {
+      model_id: 'm-no-source',
+      name: 'Legacy model',
+      provider: 'Amazon',
+      supports_streaming: true,
+      kind: 'foundation-model'
+      // no `source` — pre-multi-provider / fake-mode row
+    }
+  ]
+
+  it('groups in a fixed Bedrock/Anthropic/OpenAI/Ollama order, only for sources with rows', () => {
+    const { groups } = groupModelsBySource(models, {
+      bedrock: { configured: true },
+      anthropic: { configured: true },
+      openai: { configured: true },
+      ollama: { configured: true, reachable: true }
+    })
+
+    expect(groups.map((g) => g.source)).toEqual(['bedrock', 'anthropic', 'ollama'])
+    // the sourceless row folds into bedrock
+    expect(groups[0].models.map((m) => m.model_id)).toEqual(['m-bedrock', 'm-no-source'])
+    expect(groups.some((g) => g.disabled)).toBe(false)
+  })
+
+  it('disables and suffixes an unconfigured source', () => {
+    const { groups } = groupModelsBySource(models, {
+      bedrock: { configured: true },
+      anthropic: { configured: false },
+      openai: { configured: true },
+      ollama: { configured: true, reachable: true }
+    })
+
+    const anthropicGroup = groups.find((g) => g.source === 'anthropic')
+    expect(anthropicGroup?.disabled).toBe(true)
+    expect(anthropicGroup?.label).toBe('Anthropic (not configured)')
+  })
+
+  it('disables and suffixes a configured-but-unreachable ollama', () => {
+    const { groups } = groupModelsBySource(models, {
+      bedrock: { configured: true },
+      anthropic: { configured: true },
+      openai: { configured: true },
+      ollama: { configured: true, reachable: false }
+    })
+
+    const ollamaGroup = groups.find((g) => g.source === 'ollama')
+    expect(ollamaGroup?.disabled).toBe(true)
+    expect(ollamaGroup?.label).toBe('Ollama (local) (unreachable)')
+  })
+
+  it('does not disable ollama when reachable is unknown (null)', () => {
+    const { groups } = groupModelsBySource(models, {
+      bedrock: { configured: true },
+      anthropic: { configured: true },
+      openai: { configured: true },
+      ollama: { configured: true, reachable: null }
+    })
+
+    const ollamaGroup = groups.find((g) => g.source === 'ollama')
+    expect(ollamaGroup?.disabled).toBe(false)
+    expect(ollamaGroup?.label).toBe('Ollama (local)')
+  })
+
+  it('footnotes an unconfigured source that has no catalog rows at all', () => {
+    const { groups, unavailable } = groupModelsBySource(models, {
+      bedrock: { configured: true },
+      anthropic: { configured: true },
+      openai: { configured: false },
+      ollama: { configured: false, reachable: null }
+    })
+
+    expect(groups.some((g) => g.source === 'openai')).toBe(false)
+    expect(unavailable).toEqual([{ source: 'openai', label: 'OpenAI' }])
+  })
+
+  it('treats a missing providers object as bedrock-only, without crashing', () => {
+    const { groups, unavailable } = groupModelsBySource(models, undefined)
+
+    const bedrockGroup = groups.find((g) => g.source === 'bedrock')
+    const anthropicGroup = groups.find((g) => g.source === 'anthropic')
+    expect(bedrockGroup?.disabled).toBe(false)
+    expect(anthropicGroup?.disabled).toBe(true)
+    expect(unavailable).toEqual([{ source: 'openai', label: 'OpenAI' }])
   })
 })
 

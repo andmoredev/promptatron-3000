@@ -15,6 +15,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type {
   InferenceConfig,
+  ModelSource,
   RunGuardrailConfig,
   RunRequest,
   ScenarioDetail
@@ -26,6 +27,12 @@ export const RUN_CONFIG_STORAGE_KEY = 'promptatron.run-config.v1'
 /** The serializable half of the store (this is exactly what is persisted). */
 export interface RunConfigData {
   model_id: string
+  /**
+   * Which backend `model_id` is served from. Guardrails only work with
+   * `'bedrock'` — see `setProvider`, which clears `guardrail` whenever this
+   * is set to anything else, keeping that invariant enforced in one place.
+   */
+  provider: ModelSource
   system_prompt: string
   user_prompt: string
   scenario_id: string | null
@@ -47,6 +54,18 @@ export interface RunConfigData {
 
 export interface RunConfigActions {
   setModelId(modelId: string): void
+  /**
+   * Sets `provider` alone (e.g. from the manual-model-id fallback's provider
+   * select). Switching away from `'bedrock'` clears `guardrail`, since a
+   * guardrail with a non-bedrock provider is a server-side 400.
+   */
+  setProvider(provider: ModelSource): void
+  /**
+   * Sets `model_id` and `provider` together, as the catalog picker does
+   * (`ModelInfo.source` -> `provider`). Applies the same guardrail-clearing
+   * invariant as `setProvider`.
+   */
+  selectModel(modelId: string, source: ModelSource): void
   setSystemPrompt(text: string): void
   setUserPrompt(text: string): void
   setScenarioId(scenarioId: string | null): void
@@ -75,6 +94,7 @@ export type RunConfigStore = RunConfigData & RunConfigActions
 
 export const DEFAULT_RUN_CONFIG: RunConfigData = {
   model_id: '',
+  provider: 'bedrock',
   system_prompt: '',
   user_prompt: '',
   scenario_id: null,
@@ -101,6 +121,9 @@ export function toRunRequest(config: RunConfigData): RunRequest {
     user_prompt: config.user_prompt,
     tools_enabled: config.tools_enabled,
     max_tool_iterations: config.max_tool_iterations,
+    // Always included (not just when non-default): a simpler, contract-legal
+    // request shape beats the marginal byte savings of omitting 'bedrock'.
+    provider: config.provider,
     stream: config.stream
   }
   if (config.system_prompt.trim() !== '') request.system_prompt = config.system_prompt
@@ -141,12 +164,31 @@ export function scenarioDefaults(
   return next
 }
 
+/**
+ * Guardrails only run against Bedrock (a non-bedrock provider + guardrail is
+ * a server-side 400). Central place that enforces it: any state change that
+ * sets `provider` should route through this so `guardrail` never gets left
+ * pointing at a now-incompatible provider.
+ */
+function providerPatch(
+  current: Pick<RunConfigData, 'guardrail'>,
+  provider: ModelSource
+): Pick<RunConfigData, 'provider' | 'guardrail'> {
+  return {
+    provider,
+    guardrail: provider === 'bedrock' ? current.guardrail : null
+  }
+}
+
 export const useRunConfigStore = create<RunConfigStore>()(
   persist(
     (set, get) => ({
       ...DEFAULT_RUN_CONFIG,
 
       setModelId: (modelId) => set({ model_id: modelId }),
+      setProvider: (provider) => set((state) => providerPatch(state, provider)),
+      selectModel: (modelId, source) =>
+        set((state) => ({ model_id: modelId, ...providerPatch(state, source) })),
       setSystemPrompt: (text) => set({ system_prompt: text }),
       setUserPrompt: (text) => set({ user_prompt: text }),
       setScenarioId: (scenarioId) => set({ scenario_id: scenarioId }),
@@ -182,9 +224,15 @@ export const useRunConfigStore = create<RunConfigStore>()(
     }),
     {
       name: RUN_CONFIG_STORAGE_KEY,
+      // `provider` was added without a version bump: zustand's default
+      // `merge` is `{ ...currentState, ...persistedState }`, so a payload
+      // that predates it (and therefore doesn't mention it) falls through to
+      // the freshly-created store's `'bedrock'` default rather than being
+      // clobbered with `undefined`. Same pattern as `settingsStore`.
       version: 1,
       partialize: (state): RunConfigData => ({
         model_id: state.model_id,
+        provider: state.provider,
         system_prompt: state.system_prompt,
         user_prompt: state.user_prompt,
         scenario_id: state.scenario_id,
