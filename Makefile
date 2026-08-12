@@ -146,7 +146,7 @@ deploy-api:
 			--output text 2>/dev/null || true; \
 	}; \
 	OVERRIDES=""; \
-	for PARAM in EvalWorkerArtifactKey ServerArtifactKey; do \
+	for PARAM in EvalWorkerArtifactKey ServerArtifactKey ArtifactsBucketName; do \
 		VALUE=$$(current_param $$PARAM); \
 		if [ -n "$$VALUE" ] && [ "$$VALUE" != "None" ]; then \
 			echo "deploy-api: preserving deployed $$PARAM=$$VALUE"; \
@@ -193,11 +193,16 @@ deploy-worker:
 			--query "Stacks[0].Outputs[?OutputKey=='$$1'].OutputValue" \
 			--output text 2>/dev/null || true; \
 	}; \
-	BUCKET=$$(resolve_output EvalWorkerArtifactBucket); \
-	if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
-		echo "deploy-worker: stack '$(STACK_NAME)' has no artifact bucket yet -- bootstrapping"; \
-		( cd api && npm ci && sam build && sam deploy $(SAM_DEPLOY_ARGS) ); \
+	if [ -n "$(DEPLOY_S3_BUCKET)" ]; then \
+		BUCKET="$(DEPLOY_S3_BUCKET)"; \
+		echo "deploy-worker: using the supplied artifact bucket $$BUCKET"; \
+	else \
 		BUCKET=$$(resolve_output EvalWorkerArtifactBucket); \
+		if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
+			echo "deploy-worker: stack '$(STACK_NAME)' has no artifact bucket yet -- bootstrapping"; \
+			( cd api && npm ci && sam build && sam deploy $(SAM_DEPLOY_ARGS) ); \
+			BUCKET=$$(resolve_output EvalWorkerArtifactBucket); \
+		fi; \
 	fi; \
 	if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
 		echo "deploy-worker: could not resolve EvalWorkerArtifactBucket from stack '$(STACK_NAME)'" >&2; \
@@ -216,6 +221,7 @@ deploy-worker:
 	fi; \
 	( cd api && npm ci && sam build && sam deploy $(SAM_DEPLOY_ARGS) --parameter-overrides \
 		"EvalWorkerArtifactKey=$$ARTIFACT_KEY" \
+		$${DEPLOY_S3_BUCKET:+"ArtifactsBucketName=$(DEPLOY_S3_BUCKET)"} \
 		$${CURRENT_SERVER_KEY:+"ServerArtifactKey=$$CURRENT_SERVER_KEY"} \
 		$${EVAL_WORKER_CONFIG_API_KEY:+"EvalWorkerConfigApiKey=$$EVAL_WORKER_CONFIG_API_KEY"} ); \
 	ARN=$$(resolve_output EvalWorkerRuntimeArn); \
@@ -255,11 +261,16 @@ deploy:
 			--query "Stacks[0].Outputs[?OutputKey=='$$1'].OutputValue" \
 			--output text 2>/dev/null || true; \
 	}; \
-	BUCKET=$$(resolve_output ArtifactBucket); \
-	if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
-		echo "deploy: stack '$(STACK_NAME)' has no artifact bucket yet -- bootstrapping"; \
-		( cd api && npm ci && sam build && sam deploy $(SAM_DEPLOY_ARGS) ); \
+	if [ -n "$(DEPLOY_S3_BUCKET)" ]; then \
+		BUCKET="$(DEPLOY_S3_BUCKET)"; \
+		echo "deploy: using the supplied artifact bucket $$BUCKET"; \
+	else \
 		BUCKET=$$(resolve_output ArtifactBucket); \
+		if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
+			echo "deploy: stack '$(STACK_NAME)' has no artifact bucket yet -- bootstrapping"; \
+			( cd api && npm ci && sam build && sam deploy $(SAM_DEPLOY_ARGS) ); \
+			BUCKET=$$(resolve_output ArtifactBucket); \
+		fi; \
 	fi; \
 	if [ -z "$$BUCKET" ] || [ "$$BUCKET" = "None" ]; then \
 		echo "deploy: could not resolve ArtifactBucket from stack '$(STACK_NAME)'" >&2; \
@@ -279,6 +290,7 @@ deploy:
 	fi; \
 	( cd api && npm ci && sam build && sam deploy $(SAM_DEPLOY_ARGS) --parameter-overrides \
 		"ServerArtifactKey=$$ARTIFACT_KEY" \
+		$${DEPLOY_S3_BUCKET:+"ArtifactsBucketName=$(DEPLOY_S3_BUCKET)"} \
 		$${WORKER_KEY:+"EvalWorkerArtifactKey=$$WORKER_KEY"} \
 		$${SERVER_MEMORY:+"ServerMemorySize=$$SERVER_MEMORY"} ); \
 	TABLE=$$(resolve_output TableName); \

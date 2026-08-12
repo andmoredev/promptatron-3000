@@ -68,6 +68,16 @@ Parameters:
       exists resets this to '' and DELETES the function, bucket and
       distribution. Use `make deploy`.
 
+  ArtifactsBucketName:
+    Type: String
+    Default: ''
+    Description: >
+      Existing S3 bucket to hold this stack's deployable zips (the eval worker
+      and server CodeZip artifacts). CI passes the shared org artifacts bucket,
+      because the pipeline role is scoped to it and cannot write to a bucket
+      this stack creates. Left empty (local deploys), the stack creates and
+      owns its own bucket instead.
+
   ServerMemorySize:
     Type: Number
     Default: 1024
@@ -121,6 +131,9 @@ Parameters:
       not publish.
 
 Conditions:
+  # An artifact bucket was supplied, so do not create one.
+  HasExternalArtifactBucket: !Not [!Equals [!Ref ArtifactsBucketName, '']]
+  CreatesArtifactBucket: !Equals [!Ref ArtifactsBucketName, '']
   # The worker is opt-in. Everything below is skipped entirely until an artifact
   # key is supplied, so the config store deploys exactly as it did before.
   DeployEvalWorker: !Not [!Equals [!Ref EvalWorkerArtifactKey, '']]
@@ -495,6 +508,7 @@ Resources:
   # AgentCore runtime holds a reference to a specific key.
   EvalWorkerArtifactBucket:
     Type: AWS::S3::Bucket
+    Condition: CreatesArtifactBucket
     Properties:
       VersioningConfiguration:
         Status: Enabled
@@ -527,7 +541,7 @@ Resources:
         CodeConfiguration:
           Code:
             S3:
-              Bucket: !Ref EvalWorkerArtifactBucket
+              Bucket: !If [HasExternalArtifactBucket, !Ref ArtifactsBucketName, !Ref EvalWorkerArtifactBucket]
               Prefix: !Ref EvalWorkerArtifactKey
           # The zip's root-level entry module. AgentCore executes it; it starts
           # the bedrock-agentcore SDK's server on :8080 (/invocations + /ping).
@@ -580,10 +594,10 @@ Resources:
               # Read the CodeZip artifact at create/update time.
               - Effect: Allow
                 Action: s3:GetObject
-                Resource: !Sub ${EvalWorkerArtifactBucket.Arn}/*
+                Resource: !Sub ['arn:${AWS::Partition}:s3:::${B}/*', {B: !If [HasExternalArtifactBucket, !Ref ArtifactsBucketName, !Ref EvalWorkerArtifactBucket]}]
               - Effect: Allow
                 Action: s3:ListBucket
-                Resource: !GetAtt EvalWorkerArtifactBucket.Arn
+                Resource: !Sub ['arn:${AWS::Partition}:s3:::${B}', {B: !If [HasExternalArtifactBucket, !Ref ArtifactsBucketName, !Ref EvalWorkerArtifactBucket]}]
               # The evaluation itself: the model under test, plus the judge.
               - Effect: Allow
                 Action:
@@ -658,7 +672,7 @@ Resources:
       SkipBuild: true
     Properties:
       CodeUri:
-        Bucket: !Ref EvalWorkerArtifactBucket
+        Bucket: !If [HasExternalArtifactBucket, !Ref ArtifactsBucketName, !Ref EvalWorkerArtifactBucket]
         Key: !Ref ServerArtifactKey
       # `run.sh` at the root of the zip, exec'd by the adapter's bootstrap.
       Handler: run.sh
@@ -977,13 +991,13 @@ Outputs:
     Value: !Ref ScenariosTable
   EvalWorkerArtifactBucket:
     Description: S3 bucket the eval worker's CodeZip artifact is uploaded to
-    Value: !Ref EvalWorkerArtifactBucket
+    Value: !If [HasExternalArtifactBucket, !Ref ArtifactsBucketName, !Ref EvalWorkerArtifactBucket]
   ArtifactBucket:
     Description: >
       Alias of EvalWorkerArtifactBucket. The same bucket holds BOTH deployable
       zips (eval-worker/<sha>.zip and server/<sha>.zip); the neutral name is
       what `make deploy` looks up.
-    Value: !Ref EvalWorkerArtifactBucket
+    Value: !If [HasExternalArtifactBucket, !Ref ArtifactsBucketName, !Ref EvalWorkerArtifactBucket]
   EvalWorkerRuntimeArn:
     Condition: DeployEvalWorker
     Description: >

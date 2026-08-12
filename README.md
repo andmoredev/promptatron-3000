@@ -138,9 +138,12 @@ provision:
 | `CLOUDFORMATION_EXECUTION_ROLE` | passed as `sam deploy --role-arn`, so CloudFormation builds resources under its own role |
 | `ARTIFACTS_BUCKET_NAME` | passed as `sam deploy --s3-bucket` for packaging artifacts |
 
-The artifacts bucket is not optional in CI: the pipeline role is scoped to that bucket, so
-letting SAM resolve its own managed bucket fails with `AccessDenied` when it uploads the
-`AWS::Include` openapi.yaml. Local deploys pass no bucket and use `--resolve-s3` as before.
+The artifacts bucket is not optional in CI, and it does double duty. The pipeline role is scoped
+to it, so letting SAM resolve its own managed bucket fails with `AccessDenied`, and the same
+applies to the server/worker zips — hence the `ArtifactsBucketName` template parameter, which
+points the stack's `CodeUri` at that bucket instead of one the stack creates. Local deploys pass
+no bucket: SAM uses `--resolve-s3` and the stack creates and owns its own artifact bucket, as
+before.
 
 | Workflow | Trigger | Stack |
 | --- | --- | --- |
